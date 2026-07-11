@@ -30,7 +30,7 @@ class DeviceRegistry:
 
     def __init__(self, storage):
         self.storage = storage
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def register_device(self, device: dict) -> dict:
         """Register or update one device record."""
