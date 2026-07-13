@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.auth import get_current_user
+# Auth Import
+from app.api.auth import get_current_user, require_device_manager
+
+# API Imports
 from app.api.devices import get_device_registry
+
+# Lease Models
 from app.models.leases import (
     LeaseDeviceInfo,
     LeaseRecord,
@@ -11,8 +16,14 @@ from app.models.leases import (
     LeaseReleaseResponse,
     LeaseRequest,
     LeaseRequestResponse,
+    LeaseValidationRequest,
+    LeaseValidationResponse,
 )
+
+# User Models
 from app.models.users import AuthenticatedUser
+
+# Services
 from app.services.DeviceRegistry import DeviceRegistry
 from app.services.LeaseManager import (
     DeviceBusyError,
@@ -20,6 +31,7 @@ from app.services.LeaseManager import (
     DeviceNotFoundError,
     LeaseManager,
     LeaseNotFoundError,
+    LeaseExpiredError,
     PermissionDeniedError,
 )
 
@@ -113,3 +125,42 @@ def release_lease(
         success=True,
         released=True,
     )
+
+@router.post(
+    "/{lease_id}/validate",
+    response_model=LeaseValidationResponse,
+)
+def validate_lease(
+    lease_id: str,
+    body: LeaseValidationRequest,
+    current_user: AuthenticatedUser = Depends(require_device_manager),
+    lease_manager: LeaseManager = Depends(get_lease_manager),
+) -> LeaseValidationResponse:
+    """
+    Validate that a lease is active for a specific device.
+
+    Called by the Lab PC before executing an RPC method.
+    """
+
+    try:
+        result = lease_manager.validate_lease(
+            lease_id=lease_id,
+            device_id=body.device_id,
+        )
+    except LeaseNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Lease not found.",
+        ) from exc
+    except LeaseExpiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Lease expired.",
+        ) from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Lease is not valid for this device.",
+        ) from exc
+
+    return LeaseValidationResponse.model_validate(result)
