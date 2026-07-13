@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from typing import Any
 
 from labnet.client import LabClient
 from labnet.exceptions import (
@@ -9,50 +10,7 @@ from labnet.exceptions import (
     ResourceNotFoundError,
 )
 
-
-class FakeDeviceInterface(ABC):
-    """
-    Shared contract for physical and remote fake devices.
-
-    Experiment code can use either implementation through this interface.
-    """
-
-    device_type = "fake_device"
-
-    @property
-    @abstractmethod
-    def device_id(self) -> str:
-        """Return the unique device ID."""
-
-    @abstractmethod
-    def read_value(self) -> float:
-        """Read a value from the device."""
-
-    @abstractmethod
-    def write_value(self, value: float) -> None:
-        """Write a value to the device."""
-
-
-class PhysicalFakeDevice(FakeDeviceInterface):
-    """
-    Minimal local implementation demonstrating the shared interface.
-
-    This is not used by the network test.
-    """
-
-    def __init__(self, device_id: str = "fake_device_1"):
-        self._device_id = device_id
-        self._value = 0.0
-
-    @property
-    def device_id(self) -> str:
-        return self._device_id
-
-    def read_value(self) -> float:
-        return self._value
-
-    def write_value(self, value: float) -> None:
-        self._value = value
+from labnet_shared import FakeDeviceInterface
 
 
 class RemoteFakeDevice(FakeDeviceInterface):
@@ -108,6 +66,10 @@ class RemoteFakeDevice(FakeDeviceInterface):
     def lease_expired(self) -> bool:
         return datetime.now(timezone.utc) >= self.lease.expires_at
 
+    def metadata(self) -> dict[str, Any]:
+        """Return device metadata."""
+        raise NotImplementedError
+    
     def read_value(self) -> float:
         raise NotImplementedError(
             "Remote method calls require the Device Manager RPC layer."

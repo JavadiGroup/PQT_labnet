@@ -1,0 +1,7 @@
+{
+  "python.analysis.extraPaths": [
+    "./shared",
+    "./lab_pc",
+    "./client_library"
+  ]
+}

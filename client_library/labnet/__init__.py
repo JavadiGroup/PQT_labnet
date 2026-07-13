@@ -10,7 +10,6 @@ from.util import (
 # Device Classes
 from .devices.fake_device import (
     RemoteFakeDevice,
-    PhysicalFakeDevice
 )
 
 # Exceptions
@@ -39,7 +38,6 @@ __all__ = [
     "ServerConnectionError",
     "ServerResponseError",
     "RemoteFakeDevice",
-    "PhysicalFakeDevice",
     "retrieve_client_info",
     "setup_client"
 ]

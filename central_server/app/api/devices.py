@@ -7,8 +7,10 @@ from app.api.auth import (
     require_device_manager,
 )
 from app.models.devices import (
+    DeviceHeartbeatRequest,
     DeviceListResponse,
     DeviceRecord,
+    DeviceRegistrationRequest,
     DeviceStatus,
     DeviceStatusUpdateRequest,
 )
@@ -104,3 +106,90 @@ def update_device_status(
         ) from exc
 
     return DeviceRecord.model_validate(device)
+
+
+@router.post(
+    "/register",
+    response_model=DeviceListResponse,
+)
+def register_devices(
+    body: DeviceRegistrationRequest,
+    current_user: AuthenticatedUser = Depends(require_device_manager),
+    registry: DeviceRegistry = Depends(get_device_registry),
+) -> DeviceListResponse:
+    """
+    Register all devices reported by one lab PC / Device Manager.
+
+    This is called when the lab PC script starts.
+    """
+
+    devices = registry.register_host_devices(
+        host=body.host,
+        rpc_url=body.rpc_url,
+        devices_payload=[
+            device.model_dump()
+            for device in body.devices
+        ],
+    )
+
+    return DeviceListResponse(devices=devices)
+
+
+@router.post(
+    "/heartbeat",
+    response_model=DeviceListResponse,
+)
+def heartbeat(
+    body: DeviceHeartbeatRequest,
+    current_user: AuthenticatedUser = Depends(require_device_manager),
+    registry: DeviceRegistry = Depends(get_device_registry),
+) -> DeviceListResponse:
+    """
+    Update last_seen and status for all devices on one lab PC.
+
+    This is called periodically by the lab PC script.
+    """
+
+    updated_devices = []
+
+    for device in body.devices:
+        payload = {
+            "device_id": device.device_id,
+            "device_type": "unknown",
+            "host": body.host,
+            "rpc_url": body.rpc_url,
+            "status": device.status,
+            "metadata": device.metadata.model_dump() if device.metadata else {},
+        }
+
+        # Prefer updating existing devices.
+        try:
+            existing = registry.get_device(device.device_id)
+
+            payload["device_type"] = existing["device_type"]
+
+            updated = registry.update_status(
+                device_id=device.device_id,
+                status=device.status,
+            )
+
+            # Keep host/rpc_url/current metadata fresh.
+            devices = registry.storage.load_devices()
+            devices[device.device_id]["host"] = body.host
+            devices[device.device_id]["rpc_url"] = body.rpc_url
+            devices[device.device_id]["last_seen"] = registry._utc_now_iso()
+
+            if device.metadata is not None:
+                devices[device.device_id]["metadata"] = device.metadata.model_dump()
+
+            registry.storage.save_devices(devices)
+
+            updated_devices.append(devices[device.device_id])
+
+        except DeviceNotFoundError:
+            # If the device is not known yet, register it.
+            updated_devices.append(
+                registry.register_device(payload)
+            )
+
+    return DeviceListResponse(devices=updated_devices)

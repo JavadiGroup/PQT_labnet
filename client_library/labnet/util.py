@@ -17,7 +17,7 @@ def retrieve_client_info() -> tuple:
         "http://127.0.0.1:8008",
     )
 
-    api_key = os.getenv("LABNET_API_KEY")
+    api_key = os.getenv("API_KEY")
     
     return url, api_key
 

@@ -1,1 +1,3 @@
-client/.env
+# client_library/.env
+# lab_pc/.env
+# central_server/.env
