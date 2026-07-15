@@ -26,6 +26,12 @@ from .exceptions import (
 # Data Models
 from .models import AuthenticatedUser
 
+# RPC 
+from .rpc import (
+    RpcError,
+    RpcConnectionClosedError,
+)
+
 
 __all__ = [
     "LabClient",
@@ -39,5 +45,7 @@ __all__ = [
     "ServerResponseError",
     "RemoteFakeDevice",
     "retrieve_client_info",
-    "setup_client"
+    "setup_client",
+    "RpcError",
+    "RpcConnectionClosedError"
 ]

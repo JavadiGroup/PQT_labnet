@@ -46,7 +46,6 @@ def main() -> None:
         )
 
         print(f"Lease created: {test_device.lease_id}")
-        print(f"Lease expires: {test_device.lease_expires_at}")
 
         device_info = client.get_device(selected_id)
 

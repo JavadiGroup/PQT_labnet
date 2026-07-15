@@ -126,6 +126,7 @@ def release_lease(
         released=True,
     )
 
+
 @router.post(
     "/{lease_id}/validate",
     response_model=LeaseValidationResponse,

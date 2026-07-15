@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,17 +8,20 @@ from labnet.exceptions import (
     NoAvailableDeviceError,
     ResourceNotFoundError,
 )
-
-from labnet_shared import FakeDeviceInterface
+from labnet.rpc import PersistentRpcConnection
+from labnet_shared.devices.fake_device import FakeDeviceInterface
 
 
 class RemoteFakeDevice(FakeDeviceInterface):
     """
     Remote fake-device proxy.
 
-    For this test it performs discovery and lease management only.
-    RPC method forwarding will be added with the Device Manager.
+    This object owns:
+    - one Central Server lease
+    - one persistent WebSocket connection to the Lab PC
     """
+
+    device_type = "fake_device"
 
     def __init__(
         self,
@@ -50,6 +52,24 @@ class RemoteFakeDevice(FakeDeviceInterface):
         self.lease = grant.lease
         self.device = grant.device
 
+        self.rpc = PersistentRpcConnection(
+            rpc_url=self.device.rpc_url,
+            timeout_seconds=5.0,
+        )
+
+        # Open immediately so constructor fails early if the Lab PC RPC
+        # server is unreachable.
+        try:
+            self.rpc.connect()
+        except Exception:
+            # Avoid leaving a lease active if the RPC connection fails.
+            try:
+                self.client.release_lease(self.lease.lease_id)
+            finally:
+                self._closed = True
+
+            raise
+
     @property
     def device_id(self) -> str:
         return self.device.device_id
@@ -59,37 +79,45 @@ class RemoteFakeDevice(FakeDeviceInterface):
         return self.lease.lease_id
 
     @property
-    def lease_expires_at(self) -> datetime:
-        return self.lease.expires_at
-
-    @property
     def lease_expired(self) -> bool:
         return datetime.now(timezone.utc) >= self.lease.expires_at
 
     def metadata(self) -> dict[str, Any]:
-        """Return device metadata."""
-        raise NotImplementedError
-    
+        return {"metadata": "None"}
+
     def read_value(self) -> float:
-        raise NotImplementedError(
-            "Remote method calls require the Device Manager RPC layer."
+        result = self.rpc.call(
+            lease_id=self.lease.lease_id,
+            device_id=self.device.device_id,
+            method="read_value",
         )
 
+        return float(result)
+
     def write_value(self, value: float) -> None:
-        raise NotImplementedError(
-            "Remote method calls require the Device Manager RPC layer."
+        self.rpc.call(
+            lease_id=self.lease.lease_id,
+            device_id=self.device.device_id,
+            method="write_value",
+            args=[value],
         )
 
     def close(self) -> None:
-        """Release the lease unless it was already expired or released."""
+        """
+        Close RPC connection and release the lease.
+
+        Close RPC first so no more commands can be sent after release.
+        """
 
         if self._closed:
             return
 
+        self.rpc.close()
+
         try:
-            self.client.release_lease(self.lease_id)
+            self.client.release_lease(self.lease.lease_id)
         except ResourceNotFoundError:
-            # The cleanup task may already have expired the lease.
+            # Lease may already have expired and been cleaned up.
             pass
 
         self._closed = True
