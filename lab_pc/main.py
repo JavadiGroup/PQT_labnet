@@ -182,7 +182,7 @@ app = create_app()
 
 def main() -> None:
     uvicorn.run(
-        "lab_pc:app",
+        "main:app",
         host="127.0.0.1",
         port=9001,
         reload=False,

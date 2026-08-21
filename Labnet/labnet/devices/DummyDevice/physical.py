@@ -1,8 +1,9 @@
 from __future__ import annotations
-from labnet_shared import FakeDeviceInterface
+
+from .interface import DummyDeviceInterface
 from typing import Any
 
-class PhysicalFakeDevice(FakeDeviceInterface):
+class PhysicalDummyDevice(DummyDeviceInterface):
     """
     Fake physical device running on the lab PC.
 

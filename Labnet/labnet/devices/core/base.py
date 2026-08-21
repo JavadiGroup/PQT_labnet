@@ -6,7 +6,9 @@ from typing import Any
 
 class BaseDeviceInterface(ABC):
     """
-    Generic interface that every physical and remote device should satisfy.
+    Generic interface that every physical and remote device should satisfy. This is meant to
+    be minimal in nature and simply ensure that each device class has some minimum functionality
+    for diagnostics and testing.
     """
 
     device_type: str
@@ -15,9 +17,4 @@ class BaseDeviceInterface(ABC):
     @abstractmethod
     def device_id(self) -> str:
         """Return the unique device ID."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def metadata(self) -> dict[str, Any]:
-        """Return device metadata."""
         raise NotImplementedError

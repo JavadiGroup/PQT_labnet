@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from labnet import LabClient
 from labnet.devices import RemoteFakeDevice
-from labnet.rpc import RpcError, RpcConnectionClosedError
+from Labnet.labnet.devices.core.rpc import RpcError, RpcConnectionClosedError
 
 from labnet import (
     LabClient,

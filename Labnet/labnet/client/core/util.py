@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-from .client import LabClient
+from .lab_client import LabClient
 
 from .exceptions import (
     AuthenticationError,

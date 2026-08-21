@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
-from labnet_shared.devices.base import BaseDeviceInterface
+from ..core.base import BaseDeviceInterface
 
 
-class FakeDeviceInterface(BaseDeviceInterface):
+class DummyDeviceInterface(BaseDeviceInterface):
     """
     Interface shared by physical and remote fake devices.
     """

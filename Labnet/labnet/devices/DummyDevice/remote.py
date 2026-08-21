@@ -3,16 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from labnet.client import LabClient
-from labnet.exceptions import (
+from ...client.core.lab_client import LabClient
+from ...client.core.exceptions import (
     NoAvailableDeviceError,
     ResourceNotFoundError,
 )
-from labnet.rpc import PersistentRpcConnection
-from labnet_shared.devices.fake_device import FakeDeviceInterface
+from ..core.rpc import PersistentRpcConnection
+from .interface import DummyDeviceInterface
 
 
-class RemoteFakeDevice(FakeDeviceInterface):
+class RemoteDummyDevice(DummyDeviceInterface):
     """
     Remote fake-device proxy.
 
