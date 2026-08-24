@@ -91,7 +91,9 @@ Edit `lab_pc/device_inventory.py` to construct the physical adapters installed o
 
 ### 3. Client
 
-The async API owns the Central lease and reusable gRPC channel. Closing the device cancels active streams, closes its channel, and releases the lease:
+The async API owns the Central lease and reusable gRPC channel. Use
+`try`/`finally` so every exit path closes the stream, releases the device lease,
+and closes the Central HTTP client:
 
 ```python
 import asyncio
@@ -100,46 +102,60 @@ from labnet import AsyncLabClient
 
 
 async def main() -> None:
-    async with AsyncLabClient(
+    central = AsyncLabClient(
         "http://127.0.0.1:8008",
         "<researcher API key>",
-    ) as central:
+    )
+
+    try:
+        await central.authenticate()
         devices = await central.list_available_devices("dummy_device")
         print([device.device_id for device in devices])
 
-        async with await central.acquire_dummy(
+        device = await central.acquire_dummy(
             devices[0].device_id,
             duration_seconds=60,
-        ) as device:
+        )
+
+        try:
             await device.write_value(384_230_000_000_000.0)
             measurement = await device.read_value()
             print(measurement.value, measurement.unit)
 
-            async with device.open_stream(
+            samples = device.stream_data(
                 sample_rate_hz=10,
                 sample_count=20,
-            ) as samples:
+            )
+            try:
                 async for sample in samples:
                     print(sample.sequence, sample.value)
+            finally:
+                await samples.aclose()
+        finally:
+            await device.aclose()
+    finally:
+        await central.aclose()
 
 
 asyncio.run(main())
 ```
 
-`LabClient` and `RemoteDummyDevice` provide a synchronous alternative
-without requiring a context manager:
+`LabClient` and `RemoteDummyDevice` provide the same explicit cleanup pattern
+for synchronous programs:
 
 ```python
 from labnet import LabClient, RemoteDummyDevice
 
 central = LabClient("http://127.0.0.1:8008", "<researcher API key>")
-device = RemoteDummyDevice(central, device_id="dummy-device-1")
 
 try:
-    device.write_value(12.5, channel="phase")
-    print(device.read_value(channel="phase"))
+    device = RemoteDummyDevice(central, device_id="dummy-device-1")
+    try:
+        device.write_value(12.5, channel="phase")
+        print(device.read_value(channel="phase"))
+    finally:
+        device.close()
 finally:
-    device.close()
     central.close()
 ```
 
