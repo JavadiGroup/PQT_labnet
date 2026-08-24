@@ -1,31 +1,167 @@
+"""Synchronous and async-first clients for the versioned Central API."""
+
 from __future__ import annotations
 
-from typing import Any
+import ipaddress
+import uuid
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 
 from .exceptions import (
     AuthenticationError,
+    NoAvailableDeviceError,
     PermissionDeniedError,
     ResourceConflictError,
     ResourceNotFoundError,
     ServerConnectionError,
     ServerResponseError,
 )
-from .models import (
-    AuthenticatedUser,
-    DeviceInfo,
-    LeaseGrant,
-    LeaseInfo
-)
+from .models import AuthenticatedUser, DeviceInfo, LeaseGrant, LeaseInfo
+
+if TYPE_CHECKING:
+    from .grpc_client import AsyncDummyDeviceClient, GrpcTlsConfig
+
+
+API_PREFIX = "/api/v1"
+
+
+def _validate_central_url(server_url: str) -> str:
+    if not server_url:
+        raise ValueError("server_url cannot be empty.")
+    parsed = urlsplit(server_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("server_url must be an absolute HTTP or HTTPS URL.")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("server_url cannot contain credentials, a query, or a fragment.")
+    if parsed.scheme == "http" and not _is_loopback(parsed.hostname):
+        raise ValueError("Plaintext Central HTTP is allowed only on loopback.")
+    return server_url.rstrip("/")
+
+
+def _is_loopback(host: str) -> bool:
+    normalized = host.rstrip(".").lower()
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_duration(duration_seconds: int) -> int:
+    if isinstance(duration_seconds, bool) or not isinstance(duration_seconds, int):
+        raise TypeError("duration_seconds must be an integer.")
+    if duration_seconds <= 0:
+        raise ValueError("duration_seconds must be greater than zero.")
+    return duration_seconds
+
+
+def _idempotency_key(value: str | None) -> str:
+    key = str(uuid.uuid4()) if value is None else value.strip()
+    if (
+        not key
+        or len(key) > 128
+        or any(not 0x21 <= ord(character) <= 0x7E for character in key)
+    ):
+        raise ValueError("idempotency_key must be 1-128 visible ASCII characters.")
+    return key
+
+
+def _resource_path(resource: str) -> str:
+    value = resource.strip()
+    if not value:
+        raise ValueError("resource identifier cannot be empty.")
+    return quote(value, safe="")
+
+
+def _response_json(response: httpx.Response) -> Any:
+    if not response.content:
+        return None
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ServerResponseError(
+            response.status_code, "Server returned invalid JSON."
+        ) from exc
+
+
+def _error_detail(response: httpx.Response) -> tuple[str, str | None]:
+    try:
+        data = response.json()
+    except ValueError:
+        return response.text or "Unknown server error.", None
+    if not isinstance(data, Mapping):
+        return str(data), None
+    detail = data.get("detail", data.get("error"))
+    if isinstance(detail, Mapping):
+        message = detail.get("message", detail.get("detail", str(detail)))
+        code = detail.get("code")
+        return str(message), str(code) if code is not None else None
+    if detail is not None:
+        return str(detail), None
+    return f"Request failed with HTTP {response.status_code}.", None
+
+
+def _raise_http_error(response: httpx.Response) -> None:
+    message, error_code = _error_detail(response)
+    if response.status_code == 401:
+        raise AuthenticationError(message)
+    if response.status_code == 403:
+        raise PermissionDeniedError(message)
+    if response.status_code == 404:
+        raise ResourceNotFoundError(message)
+    if response.status_code == 409:
+        raise ResourceConflictError(message)
+    raise ServerResponseError(response.status_code, message, error_code=error_code)
+
+
+def _mapping(value: Any, description: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ServerResponseError(200, f"Central returned an invalid {description}.")
+    return value
+
+
+def _parse_devices(data: Any) -> list[DeviceInfo]:
+    payload = _mapping(data, "device-list response")
+    records = payload.get("devices")
+    if not isinstance(records, list):
+        raise ServerResponseError(200, "Central device list is missing 'devices'.")
+    try:
+        return [DeviceInfo.from_dict(_mapping(record, "device record")) for record in records]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ServerResponseError(200, f"Central returned an invalid device record: {exc}") from exc
+
+
+def _parse_device(data: Any) -> DeviceInfo:
+    payload = _mapping(data, "device response")
+    record = payload.get("device", payload)
+    try:
+        return DeviceInfo.from_dict(_mapping(record, "device record"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ServerResponseError(200, f"Central returned an invalid device record: {exc}") from exc
+
+
+def _parse_grant(data: Any) -> LeaseGrant:
+    try:
+        return LeaseGrant.from_dict(_mapping(data, "lease response"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ServerResponseError(200, f"Central returned an invalid lease grant: {exc}") from exc
+
+
+def _parse_lease(data: Any) -> LeaseInfo:
+    payload = _mapping(data, "lease response")
+    record = payload.get("lease", payload)
+    try:
+        return LeaseInfo.from_dict(_mapping(record, "lease record"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ServerResponseError(200, f"Central returned an invalid lease record: {exc}") from exc
 
 
 class LabClient:
-    """
-    HTTP client for the Lab Network Central Server.
-
-    The API key is automatically included in every protected request.
-    """
+    """Blocking Central client for scripts and synchronous device wrappers."""
 
     def __init__(
         self,
@@ -33,148 +169,129 @@ class LabClient:
         api_key: str,
         timeout_seconds: float = 10.0,
         authenticate_on_start: bool = True,
-    ):
-        if not server_url:
-            raise ValueError("server_url cannot be empty.")
-
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self.server_url = _validate_central_url(server_url)
         if not api_key:
             raise ValueError("api_key cannot be empty.")
-
-        self.server_url = server_url.rstrip("/")
         self.api_key = api_key
         self.current_user: AuthenticatedUser | None = None
-
         self._http = httpx.Client(
             base_url=self.server_url,
             timeout=timeout_seconds,
+            transport=transport,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Accept": "application/json",
             },
         )
-
         if authenticate_on_start:
-            self.authenticate()
+            try:
+                self.authenticate()
+            except BaseException as exc:
+                try:
+                    self._http.close()
+                except BaseException as cleanup_exc:
+                    exc.add_note(
+                        "Closing the HTTP client after authentication failure also "
+                        f"failed: {cleanup_exc}"
+                    )
+                raise
 
     def authenticate(self) -> AuthenticatedUser:
-        """
-        Validate the API key and retrieve the associated user.
-
-        Calls GET /auth/me.
-        """
-        data = self._request(
-            method="GET",
-            path="/auth/me",
-        )
-
-        user = AuthenticatedUser(
-            user=data["user"],
-            role=data["role"],
-        )
-
+        data = _mapping(self._request("GET", f"{API_PREFIX}/auth/me"), "auth response")
+        try:
+            user = AuthenticatedUser.from_dict(data)
+        except ValueError as exc:
+            raise ServerResponseError(200, f"Central returned an invalid user: {exc}") from exc
         self.current_user = user
         return user
 
     def health(self) -> dict[str, Any]:
-        """
-        Check whether the Central Server is running.
+        """Return Central readiness (compatibility alias for ``health_ready``)."""
 
-        Requires GET /health to be implemented later.
-        """
-        return self._request(
-            method="GET",
-            path="/health",
+        return self.health_ready()
+
+    def health_live(self) -> dict[str, Any]:
+        return dict(
+            _mapping(self._request("GET", "/health/live"), "liveness response")
+        )
+
+    def health_ready(self) -> dict[str, Any]:
+        return dict(
+            _mapping(self._request("GET", "/health/ready"), "readiness response")
         )
 
     def list_devices(
         self,
         device_type: str | None = None,
-        status: str | None = None,
+        *,
+        runtime_state: str | None = None,
+        availability: str | None = None,
+        effective_available: bool | None = None,
     ) -> list[DeviceInfo]:
-        """List devices, optionally filtered by type and status."""
-
-        params = {}
-
+        params: dict[str, str] = {}
         if device_type is not None:
             params["device_type"] = device_type
-
-        if status is not None:
-            params["status"] = status
-
-        data = self._request(
-            method="GET",
-            path="/devices",
-            params=params,
+        if runtime_state is not None:
+            params["runtime_state"] = runtime_state
+        if availability is not None:
+            params["availability"] = availability
+        if effective_available is not None:
+            params["effective_available"] = str(effective_available).lower()
+        return _parse_devices(
+            self._request("GET", f"{API_PREFIX}/devices", params=params)
         )
 
+    def list_available_devices(self, device_type: str | None = None) -> list[DeviceInfo]:
         return [
-            DeviceInfo.from_dict(device)
-            for device in data["devices"]
+            device
+            for device in self.list_devices(device_type, availability="available")
+            if device.effective_available
         ]
-    
-    def list_available_devices(
-        self,
-        device_type: str | None = None,
-    ) -> list[DeviceInfo]:
-        """Return idle devices available for leasing."""
-
-        return self.list_devices(
-            device_type=device_type,
-            status="idle",
-        )
 
     def get_device(self, device_id: str) -> DeviceInfo:
-        """Retrieve one device record."""
-
-        data = self._request(
-            method="GET",
-            path=f"/devices/{device_id}",
+        return _parse_device(
+            self._request(
+                "GET", f"{API_PREFIX}/devices/{_resource_path(device_id)}"
+            )
         )
-
-        return DeviceInfo.from_dict(data)
 
     def request_lease(
         self,
         device_id: str,
         duration_seconds: int,
+        *,
+        idempotency_key: str | None = None,
     ) -> LeaseGrant:
-        """Request exclusive access to one device."""
-
-        if duration_seconds <= 0:
-            raise ValueError(
-                "duration_seconds must be greater than zero."
+        return _parse_grant(
+            self._request(
+                "POST",
+                f"{API_PREFIX}/leases",
+                json={
+                    "device_id": device_id,
+                    "duration_seconds": _validate_duration(duration_seconds),
+                },
+                headers={"Idempotency-Key": _idempotency_key(idempotency_key)},
             )
-
-        data = self._request(
-            method="POST",
-            path="/leases/request",
-            json={
-                "device_id": device_id,
-                "duration_seconds": duration_seconds,
-            },
         )
 
-        # Fetch the full device record after the lease changes its status.
-        device = self.get_device(device_id)
-
-        return LeaseGrant(
-            lease=LeaseInfo.from_dict(data["lease"]),
-            device=device,
+    def renew_lease(self, lease_id: str, duration_seconds: int) -> LeaseInfo:
+        return _parse_lease(
+            self._request(
+                "POST",
+                f"{API_PREFIX}/leases/{_resource_path(lease_id)}/renew",
+                json={"duration_seconds": _validate_duration(duration_seconds)},
+            )
         )
 
     def release_lease(self, lease_id: str) -> None:
-        """Release one active lease."""
-
         self._request(
-            method="POST",
-            path="/leases/release",
-            json={
-                "lease_id": lease_id,
-            },
+            "DELETE", f"{API_PREFIX}/leases/{_resource_path(lease_id)}"
         )
 
     def close(self) -> None:
-        """Close the underlying HTTP connection pool."""
         self._http.close()
 
     def __enter__(self) -> "LabClient":
@@ -187,78 +304,268 @@ class LabClient:
         self,
         method: str,
         path: str,
+        *,
         json: dict[str, Any] | None = None,
-        params: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
-        """Send one request and translate HTTP errors into client exceptions."""
         try:
             response = self._http.request(
-                method=method,
-                url=path,
-                json=json,
-                params=params,
+                method, path, json=json, params=params, headers=headers
             )
         except httpx.RequestError as exc:
             raise ServerConnectionError(
-                f"Could not connect to Central Server at "
-                f"{self.server_url}: {exc}"
+                f"Could not connect to Central Server at {self.server_url}: {exc}"
             ) from exc
+        if not response.is_success:
+            _raise_http_error(response)
+        return _response_json(response)
 
-        if response.is_success:
-            if not response.content:
-                return None
 
-            try:
-                return response.json()
-            except ValueError as exc:
-                raise ServerResponseError(
-                    response.status_code,
-                    "Server returned invalid JSON.",
-                ) from exc
+class AsyncLabClient:
+    """Async-first Central client with managed lease/device context cleanup."""
 
-        message = self._extract_error_message(response)
+    def __init__(
+        self,
+        server_url: str,
+        api_key: str,
+        timeout_seconds: float = 10.0,
+        authenticate_on_start: bool = True,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self.server_url = _validate_central_url(server_url)
+        if not api_key:
+            raise ValueError("api_key cannot be empty.")
+        self.api_key = api_key
+        self.current_user: AuthenticatedUser | None = None
+        self._authenticate_on_start = authenticate_on_start
+        self._http = httpx.AsyncClient(
+            base_url=self.server_url,
+            timeout=timeout_seconds,
+            transport=transport,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Accept": "application/json",
+            },
+        )
+        self._devices: set[Any] = set()
+        self._closed = False
 
-        if response.status_code == 401:
-            raise AuthenticationError(message)
+    async def authenticate(self) -> AuthenticatedUser:
+        data = _mapping(
+            await self._request("GET", f"{API_PREFIX}/auth/me"), "auth response"
+        )
+        try:
+            user = AuthenticatedUser.from_dict(data)
+        except ValueError as exc:
+            raise ServerResponseError(200, f"Central returned an invalid user: {exc}") from exc
+        self.current_user = user
+        return user
 
-        if response.status_code == 403:
-            raise PermissionDeniedError(message)
+    async def health(self) -> dict[str, Any]:
+        """Return Central readiness (compatibility alias for ``health_ready``)."""
 
-        if response.status_code == 404:
-            raise ResourceNotFoundError(message)
+        return await self.health_ready()
 
-        if response.status_code == 409:
-            raise ResourceConflictError(message)
-
-        raise ServerResponseError(
-            response.status_code,
-            message,
+    async def health_live(self) -> dict[str, Any]:
+        return dict(
+            _mapping(
+                await self._request("GET", "/health/live"), "liveness response"
+            )
         )
 
-    def _extract_error_message(
+    async def health_ready(self) -> dict[str, Any]:
+        return dict(
+            _mapping(
+                await self._request("GET", "/health/ready"), "readiness response"
+            )
+        )
+
+    async def list_devices(
         self,
-        response: httpx.Response,
-    ) -> str:
-        """Extract a useful message from a FastAPI error response."""
+        device_type: str | None = None,
+        *,
+        runtime_state: str | None = None,
+        availability: str | None = None,
+        effective_available: bool | None = None,
+    ) -> list[DeviceInfo]:
+        params: dict[str, str] = {}
+        if device_type is not None:
+            params["device_type"] = device_type
+        if runtime_state is not None:
+            params["runtime_state"] = runtime_state
+        if availability is not None:
+            params["availability"] = availability
+        if effective_available is not None:
+            params["effective_available"] = str(effective_available).lower()
+        return _parse_devices(
+            await self._request("GET", f"{API_PREFIX}/devices", params=params)
+        )
+
+    async def list_available_devices(
+        self, device_type: str | None = None
+    ) -> list[DeviceInfo]:
+        return [
+            device
+            for device in await self.list_devices(
+                device_type, availability="available"
+            )
+            if device.effective_available
+        ]
+
+    async def get_device(self, device_id: str) -> DeviceInfo:
+        return _parse_device(
+            await self._request(
+                "GET", f"{API_PREFIX}/devices/{_resource_path(device_id)}"
+            )
+        )
+
+    async def request_lease(
+        self,
+        device_id: str,
+        duration_seconds: int,
+        *,
+        idempotency_key: str | None = None,
+    ) -> LeaseGrant:
+        return _parse_grant(
+            await self._request(
+                "POST",
+                f"{API_PREFIX}/leases",
+                json={
+                    "device_id": device_id,
+                    "duration_seconds": _validate_duration(duration_seconds),
+                },
+                headers={"Idempotency-Key": _idempotency_key(idempotency_key)},
+            )
+        )
+
+    async def renew_lease(self, lease_id: str, duration_seconds: int) -> LeaseInfo:
+        return _parse_lease(
+            await self._request(
+                "POST",
+                f"{API_PREFIX}/leases/{_resource_path(lease_id)}/renew",
+                json={"duration_seconds": _validate_duration(duration_seconds)},
+            )
+        )
+
+    async def release_lease(self, lease_id: str) -> None:
+        await self._request(
+            "DELETE", f"{API_PREFIX}/leases/{_resource_path(lease_id)}"
+        )
+
+    async def acquire_dummy(
+        self,
+        device_id: str | None = None,
+        *,
+        duration_seconds: int = 600,
+        idempotency_key: str | None = None,
+        tls: GrpcTlsConfig | None = None,
+        connection_timeout_seconds: float = 10.0,
+        default_rpc_timeout_seconds: float = 10.0,
+    ) -> AsyncDummyDeviceClient:
+        """Lease and connect a typed async DummyDevice in one safe operation."""
+
+        from .grpc_client import AsyncDummyDeviceClient
+
+        if device_id is None:
+            available = await self.list_available_devices("dummy_device")
+            if not available:
+                raise NoAvailableDeviceError("No available dummy_device was found.")
+            device_id = available[0].device_id
+        grant = await self.request_lease(
+            device_id,
+            duration_seconds,
+            idempotency_key=idempotency_key,
+        )
         try:
-            data = response.json()
-        except ValueError:
-            return response.text or "Unknown server error."
+            device = AsyncDummyDeviceClient(
+                grant,
+                central=self,
+                tls=tls,
+                default_timeout_seconds=default_rpc_timeout_seconds,
+            )
+        except BaseException as exc:
+            try:
+                await self.release_lease(grant.lease.lease_id)
+            except BaseException as cleanup_exc:
+                exc.add_note(
+                    "Lease rollback also failed after device-client construction: "
+                    f"{cleanup_exc}"
+                )
+            raise
+        self._devices.add(device)
+        try:
+            await device.connect(connection_timeout_seconds)
+        except BaseException:
+            try:
+                await device.aclose()
+            except Exception:
+                pass
+            raise
+        return device
 
-        detail = data.get("detail")
+    def _discard_device(self, device: object) -> None:
+        self._devices.discard(device)
 
-        if isinstance(detail, str):
-            return detail
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        first_error: BaseException | None = None
+        for device in list(self._devices):
+            try:
+                await device.aclose()
+            except BaseException as exc:
+                first_error = first_error or exc
+        await self._http.aclose()
+        self._closed = True
+        if first_error is not None:
+            raise first_error
 
-        if detail is not None:
-            return str(detail)
+    async def __aenter__(self) -> "AsyncLabClient":
+        if self._authenticate_on_start and self.current_user is None:
+            try:
+                await self.authenticate()
+            except BaseException as exc:
+                try:
+                    await self.aclose()
+                except BaseException as cleanup_exc:
+                    exc.add_note(
+                        "Closing the HTTP client after authentication failure also "
+                        f"failed: {cleanup_exc}"
+                    )
+                raise
+        return self
 
-        error = data.get("error")
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        try:
+            await self.aclose()
+        except Exception:
+            if exc_type is None:
+                raise
 
-        if isinstance(error, dict):
-            return error.get("message", str(error))
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        if self._closed:
+            raise RuntimeError("The async LabClient is closed.")
+        try:
+            response = await self._http.request(
+                method, path, json=json, params=params, headers=headers
+            )
+        except httpx.RequestError as exc:
+            raise ServerConnectionError(
+                f"Could not connect to Central Server at {self.server_url}: {exc}"
+            ) from exc
+        if not response.is_success:
+            _raise_http_error(response)
+        return _response_json(response)
 
-        if isinstance(error, str):
-            return error
 
-        return f"Request failed with HTTP {response.status_code}."
+__all__ = ["API_PREFIX", "AsyncLabClient", "LabClient"]

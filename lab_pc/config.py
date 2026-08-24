@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
+from labnet.identifiers import validate_labnet_identifier
 
 
 _LAB_PC_DIRECTORY = Path(__file__).resolve().parent
@@ -144,6 +145,7 @@ class LabPCSettings:
     """Validated process configuration for one Lab PC deployment."""
 
     environment: str
+    lab_pc_id: str
     lab_pc_host: str
 
     central_enabled: bool
@@ -198,6 +200,7 @@ class LabPCSettings:
         load_dotenv(path, override=False)
 
         environment = os.getenv("LABNET_ENVIRONMENT", "development").strip().lower()
+        lab_pc_id = os.getenv("LABNET_LAB_PC_ID", "lab-pc-dev-01")
         lab_pc_host = os.getenv("LABNET_LAB_PC_HOST", "lab-pc-test").strip()
         grpc_bind_host = os.getenv("LABNET_GRPC_BIND_HOST", "127.0.0.1").strip()
         grpc_port = _get_int("LABNET_GRPC_PORT", 50051)
@@ -206,9 +209,15 @@ class LabPCSettings:
             if grpc_bind_host in {"0.0.0.0", "::", "[::]"}
             else grpc_bind_host.strip("[]")
         )
+        default_advertised_target_host = (
+            f"[{default_advertised_host}]"
+            if ":" in default_advertised_host
+            else default_advertised_host
+        )
 
         settings = cls(
             environment=environment,
+            lab_pc_id=lab_pc_id,
             lab_pc_host=lab_pc_host,
             central_enabled=_get_bool("LABNET_CENTRAL_ENABLED", False),
             central_server_url=os.getenv(
@@ -225,7 +234,7 @@ class LabPCSettings:
             grpc_port=grpc_port,
             grpc_advertised_target=os.getenv(
                 "LABNET_GRPC_ADVERTISED_TARGET",
-                f"{default_advertised_host}:{grpc_port}",
+                f"{default_advertised_target_host}:{grpc_port}",
             ).strip(),
             grpc_tls_server_name=(
                 os.getenv("LABNET_GRPC_TLS_SERVER_NAME", "").strip() or None
@@ -288,6 +297,14 @@ class LabPCSettings:
             raise ValueError(
                 "LABNET_ENVIRONMENT must be development, test, or production."
             )
+
+        try:
+            validate_labnet_identifier(
+                self.lab_pc_id,
+                name="LABNET_LAB_PC_ID",
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
         if not self.lab_pc_host:
             raise ValueError("LABNET_LAB_PC_HOST cannot be empty.")

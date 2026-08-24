@@ -50,7 +50,13 @@ class LeaseValidator(Protocol):
 
 
 class HttpLeaseValidator:
-    """Fail-closed Central Server lease validator."""
+    """Fail-closed Central Server v1 lease validator.
+
+    A successful response must contain ``valid: true``, the same ``lease_id``
+    and ``device_id`` that were requested, and a timezone-aware ``expires_at``.
+    ``user`` is optional. Any malformed, mismatched, expired, or unavailable
+    response is rejected rather than granting device access.
+    """
 
     def __init__(
         self,
@@ -61,20 +67,21 @@ class HttpLeaseValidator:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         server_url = validate_central_server_url(server_url)
-        if not api_key.strip():
+        api_key = api_key.strip()
+        if not api_key:
             raise InvalidConfigurationError("api_key must be non-empty.")
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise InvalidConfigurationError("timeout_seconds must be positive.")
 
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=server_url,
             timeout=timeout_seconds,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
         )
         self._closed = False
 
@@ -85,8 +92,9 @@ class HttpLeaseValidator:
 
         try:
             response = await self._client.post(
-                f"/leases/{quote(lease_id, safe='')}/validate",
+                f"/api/v1/leases/{quote(lease_id, safe='')}/validate",
                 json={"device_id": device_id},
+                headers=self._headers,
             )
         except httpx.HTTPError as exc:
             raise LeaseValidationUnavailableError(

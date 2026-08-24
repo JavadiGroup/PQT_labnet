@@ -42,27 +42,33 @@ class HttpCentralRegistryClient:
     def __init__(
         self,
         *,
+        manager_id: str,
         server_url: str,
         api_key: str,
         timeout_seconds: float = 10.0,
         client: httpx.AsyncClient | None = None,
-        registration_path: str = "/devices/register",
-        heartbeat_path: str = "/devices/heartbeat",
+        registration_path: str = "/api/v1/device-managers/register",
+        heartbeat_path: str = "/api/v1/device-managers/heartbeat",
     ) -> None:
         server_url = validate_central_server_url(server_url)
-        if not api_key.strip():
+        manager_id = manager_id.strip()
+        if not manager_id:
+            raise InvalidConfigurationError("manager_id must be non-empty.")
+        api_key = api_key.strip()
+        if not api_key:
             raise InvalidConfigurationError("Central Server API key must be non-empty.")
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise InvalidConfigurationError("timeout_seconds must be positive.")
+        self._manager_id = manager_id
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=server_url,
             timeout=timeout_seconds,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
         )
         self._registration_path = registration_path
         self._heartbeat_path = heartbeat_path
@@ -78,9 +84,10 @@ class HttpCentralRegistryClient:
         await self._post(
             self._registration_path,
             {
+                "manager_id": self._manager_id,
                 "host": host,
                 "endpoint": endpoint.to_dict(),
-                "devices": [item.to_registration_dict() for item in devices],
+                "devices": [_registration_device(item) for item in devices],
             },
         )
 
@@ -95,10 +102,11 @@ class HttpCentralRegistryClient:
         await self._post(
             self._heartbeat_path,
             {
+                "manager_id": self._manager_id,
                 "host": host,
                 "endpoint": endpoint.to_dict(),
                 "timestamp": timestamp.astimezone(timezone.utc).isoformat(),
-                "devices": [item.to_heartbeat_dict() for item in devices],
+                "devices": [_heartbeat_device(item) for item in devices],
             },
         )
 
@@ -115,7 +123,11 @@ class HttpCentralRegistryClient:
                 "The Central Server registry client is closed."
             )
         try:
-            response = await self._client.post(path, json=payload)
+            response = await self._client.post(
+                path,
+                json=payload,
+                headers=self._headers,
+            )
             response.raise_for_status()
         except httpx.HTTPError as exc:
             status_code = (
@@ -130,6 +142,35 @@ class HttpCentralRegistryClient:
                     "status_code": status_code,
                 },
             ) from exc
+
+
+def _device_metadata(snapshot: DeviceSnapshot) -> dict[str, object]:
+    metadata: dict[str, object] = dict(snapshot.metadata)
+    metadata.setdefault("capabilities", list(snapshot.allowed_methods))
+    if snapshot.failure is not None:
+        metadata["failure"] = snapshot.failure.to_dict()
+    return metadata
+
+
+def _registration_device(snapshot: DeviceSnapshot) -> dict[str, object]:
+    return {
+        "device_id": snapshot.device_id,
+        "device_type": snapshot.device_type,
+        "runtime_state": snapshot.state.value,
+        "availability": snapshot.availability.value,
+        "status": snapshot.status,
+        "metadata": _device_metadata(snapshot),
+    }
+
+
+def _heartbeat_device(snapshot: DeviceSnapshot) -> dict[str, object]:
+    return {
+        "device_id": snapshot.device_id,
+        "runtime_state": snapshot.state.value,
+        "availability": snapshot.availability.value,
+        "status": snapshot.status,
+        "metadata": _device_metadata(snapshot),
+    }
 
 
 __all__ = ["CentralRegistryClient", "HttpCentralRegistryClient"]

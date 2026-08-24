@@ -1,23 +1,85 @@
-"""Core Central client with dotenv-based convenience helpers kept optional."""
+"""Public Central and direct-device client APIs."""
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import Any
+from .exceptions import (
+    AuthenticationError,
+    DeviceAbortedError,
+    DeviceAlreadyExistsError,
+    DeviceAuthenticationError,
+    DeviceCancelledError,
+    DeviceDataLossError,
+    DeviceDeadlineExceededError,
+    DeviceFailedPreconditionError,
+    DeviceInternalError,
+    DeviceNotFoundError,
+    DeviceOutOfRangeError,
+    DevicePermissionDeniedError,
+    DeviceResourceExhaustedError,
+    DeviceRpcError,
+    DeviceUnavailableError,
+    DeviceUnimplementedError,
+    InvalidDeviceArgumentError,
+    LabClientError,
+    NoAvailableDeviceError,
+    PermissionDeniedError,
+    ResourceConflictError,
+    ResourceNotFoundError,
+    ServerConnectionError,
+    ServerResponseError,
+)
+from .grpc_client import (
+    AsyncDummyDeviceClient,
+    DummyDeviceGrpcClient,
+    GrpcTlsConfig,
+)
+from .lab_client import AsyncLabClient, LabClient
+from .models import (
+    AuthenticatedUser,
+    DeviceInfo,
+    EndpointDescriptor,
+    LeaseGrant,
+    LeaseInfo,
+    Measurement,
+    MeasurementQuality,
+)
 
-from .lab_client import LabClient
 
-
-__all__ = ["LabClient", "retrieve_client_info", "setup_client"]
-
-
-def __getattr__(name: str) -> Any:
-    if name not in {"retrieve_client_info", "setup_client"}:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(".util", __name__), name)
-    globals()[name] = value
-    return value
-
-
-def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(__all__))
+__all__ = [
+    "AsyncDummyDeviceClient",
+    "AsyncLabClient",
+    "AuthenticatedUser",
+    "AuthenticationError",
+    "DeviceAbortedError",
+    "DeviceAlreadyExistsError",
+    "DeviceAuthenticationError",
+    "DeviceCancelledError",
+    "DeviceDataLossError",
+    "DeviceDeadlineExceededError",
+    "DeviceFailedPreconditionError",
+    "DeviceInfo",
+    "DeviceInternalError",
+    "DeviceNotFoundError",
+    "DeviceOutOfRangeError",
+    "DevicePermissionDeniedError",
+    "DeviceResourceExhaustedError",
+    "DeviceRpcError",
+    "DeviceUnavailableError",
+    "DeviceUnimplementedError",
+    "DummyDeviceGrpcClient",
+    "EndpointDescriptor",
+    "GrpcTlsConfig",
+    "InvalidDeviceArgumentError",
+    "LabClient",
+    "LabClientError",
+    "LeaseGrant",
+    "LeaseInfo",
+    "Measurement",
+    "MeasurementQuality",
+    "NoAvailableDeviceError",
+    "PermissionDeniedError",
+    "ResourceConflictError",
+    "ResourceNotFoundError",
+    "ServerConnectionError",
+    "ServerResponseError",
+]

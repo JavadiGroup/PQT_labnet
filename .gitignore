@@ -24,3 +24,9 @@ dist/
 
 # Runtime logs
 *.log
+
+# Central Server local database files
+central_server/data/*.db
+central_server/data/*.db-journal
+central_server/data/*.db-shm
+central_server/data/*.db-wal

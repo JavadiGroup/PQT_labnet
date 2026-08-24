@@ -56,7 +56,7 @@ class DummyDevice(PhysicalDummyDevice, RemoteDummyDevice):
 
     def connect(self) -> None:
         if self._is_remote:
-            self.rpc.connect()
+            RemoteDummyDevice.connect(self)
             return
         PhysicalDummyDevice.connect(self)
 
@@ -68,9 +68,9 @@ class DummyDevice(PhysicalDummyDevice, RemoteDummyDevice):
 
     def status(self) -> str:
         if self._is_remote:
-            if self._closed:
+            if self._channel_closed:
                 return "disconnected"
-            return self.device.status
+            return self.device.runtime_state
         return PhysicalDummyDevice.status(self)
 
     def allowed_methods(self) -> list[str]:
@@ -86,6 +86,11 @@ class DummyDevice(PhysicalDummyDevice, RemoteDummyDevice):
             RemoteDummyDevice.write_value(self, value, channel)
             return
         PhysicalDummyDevice.write_value(self, value, channel)
+
+    def stream_data(self, **kwargs: Any) -> Any:
+        if not self._is_remote:
+            raise RuntimeError("Use the Lab-PC stream service for streamed acquisition.")
+        return RemoteDummyDevice.stream_data(self, **kwargs)
 
     def close(self) -> None:
         """Release remote resources, or disconnect the physical device."""

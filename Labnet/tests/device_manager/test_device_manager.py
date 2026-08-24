@@ -15,6 +15,7 @@ from labnet.device_manager import (
     DeviceShutdownError,
     DeviceState,
     DuplicateDeviceIdError,
+    InvalidConfigurationError,
     LeaseInvalidError,
     MethodNotAllowedError,
     ManagerState,
@@ -105,6 +106,15 @@ def test_catalog_rejects_duplicate_device_ids() -> None:
 
     assert caught.value.code == "DUPLICATE_DEVICE_ID"
     assert caught.value.details["device_id"] == "same"
+
+
+@pytest.mark.parametrize(
+    "device_id",
+    [" leading-space", "trailing-space ", "path/device", "", "a" * 129],
+)
+def test_catalog_rejects_ids_outside_the_wire_contract(device_id: str) -> None:
+    with pytest.raises(InvalidConfigurationError, match="device_id"):
+        DeviceCatalog([RecordingDevice(device_id)])
 
 
 @pytest.mark.asyncio

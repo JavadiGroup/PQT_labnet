@@ -1,72 +1,74 @@
 from __future__ import annotations
+
 from enum import Enum
-from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from labnet.identifiers import LABNET_IDENTIFIER_PATTERN
+
+
+LabNetIdentifier = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=128,
+        pattern=rf"^(?:{LABNET_IDENTIFIER_PATTERN})$",
+    ),
+]
 
 
 class ErrorCode(str, Enum):
-    """Stable error codes returned by the API."""
-
     AUTH_FAILED = "AUTH_FAILED"
     PERMISSION_DENIED = "PERMISSION_DENIED"
-
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    NOT_FOUND = "NOT_FOUND"
+    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
+    DEVICE_MANAGER_NOT_FOUND = "DEVICE_MANAGER_NOT_FOUND"
+    DEVICE_OWNERSHIP_CONFLICT = "DEVICE_OWNERSHIP_CONFLICT"
     DEVICE_NOT_FOUND = "DEVICE_NOT_FOUND"
-    DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED"
+    DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
     DEVICE_BUSY = "DEVICE_BUSY"
-
     LEASE_NOT_FOUND = "LEASE_NOT_FOUND"
     LEASE_EXPIRED = "LEASE_EXPIRED"
     LEASE_INVALID = "LEASE_INVALID"
-
-    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
-    DEVICE_METHOD_ERROR = "DEVICE_METHOD_ERROR"
-
-    VALIDATION_ERROR = "VALIDATION_ERROR"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
+    DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
 class ErrorDetail(BaseModel):
-    """Details describing one API error."""
-
     model_config = ConfigDict(extra="forbid")
 
     code: ErrorCode
-    message: str = Field(..., min_length=1)
+    message: str = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ErrorResponse(BaseModel):
-    """Standard error response returned by HTTP endpoints."""
-
     model_config = ConfigDict(extra="forbid")
 
     success: Literal[False] = False
     error: ErrorDetail
 
 
-class MessageResponse(BaseModel):
-    """Standard successful response containing a message."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    success: Literal[True] = True
-    message: str = Field(..., min_length=1)
-
-
 class HealthResponse(BaseModel):
-    """Response returned by GET /health."""
-
     model_config = ConfigDict(extra="forbid")
 
-    status: Literal["ok"] = "ok"
-    service: str = "central-server"
+    status: Literal["ok", "not_ready"]
+    service: Literal["central-server"] = "central-server"
 
 
-class OperationResponse(BaseModel):
-    """Generic response for simple successful operations."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    success: Literal[True] = True
-    operation: str = Field(..., min_length=1)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+class ServiceError(Exception):
+    def __init__(
+        self,
+        code: ErrorCode,
+        message: str,
+        *,
+        status_code: int,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        self.metadata = metadata or {}

@@ -1,9 +1,4 @@
-"""Public package for Labnet device and network-control components.
-
-Legacy client exports remain available lazily while the client migration is
-pending. Importing a Lab-PC server module therefore does not load the retired
-WebSocket client transport.
-"""
+"""Public package for Labnet device, Central, and gRPC client components."""
 
 from __future__ import annotations
 
@@ -12,17 +7,42 @@ from typing import Any
 
 
 _CLIENT_EXPORTS = {
+    "AsyncDummyDeviceClient",
+    "AsyncLabClient",
+    "AuthenticatedUser",
     "AuthenticationError",
+    "DeviceAbortedError",
+    "DeviceAlreadyExistsError",
+    "DeviceAuthenticationError",
+    "DeviceCancelledError",
+    "DeviceDataLossError",
+    "DeviceDeadlineExceededError",
+    "DeviceFailedPreconditionError",
+    "DeviceInfo",
+    "DeviceInternalError",
+    "DeviceNotFoundError",
+    "DeviceOutOfRangeError",
+    "DevicePermissionDeniedError",
+    "DeviceResourceExhaustedError",
+    "DeviceRpcError",
+    "DeviceUnavailableError",
+    "DeviceUnimplementedError",
+    "DummyDeviceGrpcClient",
+    "EndpointDescriptor",
+    "GrpcTlsConfig",
+    "InvalidDeviceArgumentError",
     "LabClient",
     "LabClientError",
+    "LeaseGrant",
+    "LeaseInfo",
+    "Measurement",
+    "MeasurementQuality",
     "NoAvailableDeviceError",
     "PermissionDeniedError",
     "ResourceConflictError",
     "ResourceNotFoundError",
     "ServerConnectionError",
     "ServerResponseError",
-    "retrieve_client_info",
-    "setup_client",
 }
 _DEVICE_EXPORTS = {
     "DummyDevice": ".devices.DummyDevice.device",
@@ -30,9 +50,7 @@ _DEVICE_EXPORTS = {
     "PhysicalDummyDevice": ".devices.DummyDevice.physical",
     "RemoteDummyDevice": ".devices.DummyDevice.remote",
 }
-_RPC_EXPORTS = {"RpcConnectionClosedError", "RpcError"}
-
-__all__ = sorted(_CLIENT_EXPORTS | set(_DEVICE_EXPORTS) | _RPC_EXPORTS)
+__all__ = sorted(_CLIENT_EXPORTS | set(_DEVICE_EXPORTS))
 
 
 def __getattr__(name: str) -> Any:
@@ -44,8 +62,6 @@ def __getattr__(name: str) -> Any:
             value = getattr(import_module(".client.core.exceptions", __name__), name)
     elif name in _DEVICE_EXPORTS:
         value = getattr(import_module(_DEVICE_EXPORTS[name], __name__), name)
-    elif name in _RPC_EXPORTS:
-        value = getattr(import_module(".devices.core.rpc", __name__), name)
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

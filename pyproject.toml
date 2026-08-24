@@ -21,22 +21,31 @@ lab-pc = [
     "python-dotenv>=1.0,<2.0",
     "uvicorn>=0.30,<1.0",
 ]
-legacy-client = [
-    "python-dotenv>=1.0,<2.0",
-    "websockets>=13.0,<18.0",
+central = [
+    "alembic>=1.19.1,<2.0",
+    "fastapi>=0.115,<1.0",
+    "SQLAlchemy>=2.0.52,<3.0",
+    "uvicorn>=0.30,<1.0",
+]
+postgres = [
+    "psycopg[binary]>=3.2,<4.0",
 ]
 dev = [
+    "alembic>=1.19.1,<2.0",
     "fastapi>=0.115,<1.0",
     "grpcio-health-checking>=1.81.1,<2.0",
     "grpcio-tools==1.81.1",
     "pytest>=8.0,<10.0",
     "pytest-asyncio>=0.24,<2.0",
     "python-dotenv>=1.0,<2.0",
+    "SQLAlchemy>=2.0.52,<3.0",
     "uvicorn>=0.30,<1.0",
 ]
 
 [project.scripts]
 labnet-lab-pc = "lab_pc.main:main"
+labnet-central = "central_server.app.main:main"
+labnet-central-admin = "central_server.manage:main"
 
 [tool.setuptools]
 packages = [
@@ -51,13 +60,27 @@ packages = [
     "labnet.grpc.generated",
     "labnet.grpc.services",
     "lab_pc",
+    "central_server",
+    "central_server.app",
+    "central_server.app.api",
+    "central_server.app.models",
+    "central_server.app.services",
+    "central_server.app.storage",
 ]
-package-dir = { labnet = "Labnet/labnet", lab_pc = "lab_pc" }
+package-dir = { labnet = "Labnet/labnet", lab_pc = "lab_pc", central_server = "central_server" }
 
 [tool.setuptools.package-data]
 labnet = ["py.typed"]
 "labnet.grpc.generated" = ["*.pyi"]
 lab_pc = [".env.example"]
+central_server = [
+    ".env.example",
+    "README.md",
+    "alembic.ini",
+    "alembic/*.py",
+    "alembic/*.mako",
+    "alembic/versions/*.py",
+]
 
 [tool.setuptools.data-files]
 "share/labnet/protos/labnet/devices/v1" = [
@@ -65,6 +88,6 @@ lab_pc = [".env.example"]
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["Labnet/tests"]
+testpaths = ["Labnet/tests", "central_server/tests"]
 addopts = "-ra"
 asyncio_mode = "auto"

@@ -205,6 +205,7 @@ def _create_device_manager(
     if settings.central_enabled:
         assert settings.device_manager_api_key is not None
         central_client = HttpCentralRegistryClient(
+            manager_id=settings.lab_pc_id,
             server_url=settings.central_server_url,
             api_key=settings.device_manager_api_key,
         )

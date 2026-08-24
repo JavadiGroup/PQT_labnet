@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import math
 import numbers
-import re
 import time
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -14,13 +13,14 @@ from typing import Any, Protocol
 
 import grpc
 
+from labnet.identifiers import LABNET_IDENTIFIER_REGEX, validate_labnet_identifier
+
 from ..auth import extract_lease_id
 from ..generated import common_pb2, dummy_device_pb2, dummy_device_pb2_grpc
 from ..generated import transfer_pb2
 from ..status import GrpcServiceError, abort_from_exception
 
 
-_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _MAX_CHANNEL_LENGTH = 128
 _MAX_UNIT_LENGTH = 32
 _MAX_STATUS_LENGTH = 64
@@ -535,18 +535,11 @@ def _bounded_result_text(raw: Any, default: str, maximum_length: int) -> str:
 
 
 def _validate_identifier(value: str, field_name: str) -> str:
-    value = value.strip()
-    if not _IDENTIFIER_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"{field_name} must be 1-128 characters and contain only letters, "
-            "numbers, '.', '_', ':', or '-'."
-        )
-    return value
+    return validate_labnet_identifier(value, name=field_name)
 
 
 def _safe_operation_id(value: str) -> str | None:
-    value = value.strip()
-    return value if _IDENTIFIER_PATTERN.fullmatch(value) else None
+    return value if LABNET_IDENTIFIER_REGEX.fullmatch(value) else None
 
 
 def _optional_channel(request: Any) -> str:

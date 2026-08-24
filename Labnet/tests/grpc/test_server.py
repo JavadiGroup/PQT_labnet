@@ -74,7 +74,9 @@ async def running_server(executor: _FakeExecutor):
         executor,
         config=GrpcServerConfig(bind="127.0.0.1:0"),
         stream_policy=StreamPolicy(
-            lease_revalidation_interval_seconds=0.000001,
+            # Keep this below the 20 ms test sample period while staying above
+            # the coarse event-loop clock resolution seen on some Windows hosts.
+            lease_revalidation_interval_seconds=0.005,
         ),
         default_unit="Hz",
     )
@@ -127,17 +129,13 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
             transfer_pb2.StreamDataRequest(
                 device_id="dummy-1",
                 operation_id="stream-1",
-                sample_rate_hz=200.0,
+                sample_rate_hz=50.0,
                 sample_count=3,
             ),
             metadata=LEASE_METADATA,
         )
     ]
     assert [item.measurement.sequence for item in responses] == [0, 1, 2]
-    for _ in range(100):
-        if executor.revalidations:
-            break
-        await asyncio.sleep(0.001)
     assert executor.revalidations
 
     health_stub = health_pb2_grpc.HealthStub(channel)

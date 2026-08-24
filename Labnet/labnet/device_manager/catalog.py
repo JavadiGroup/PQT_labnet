@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 
 from labnet.devices.core.protocol import PhysicalDevice
+from labnet.identifiers import validate_labnet_identifier
 
 from .errors import (
     DeviceNotFoundError,
@@ -17,12 +18,16 @@ class DeviceCatalog:
     def __init__(self, devices: Iterable[PhysicalDevice]) -> None:
         by_id: dict[str, PhysicalDevice] = {}
         for device in devices:
-            device_id = device.device_id
-            if not isinstance(device_id, str) or not device_id.strip():
-                raise InvalidConfigurationError(
-                    "Every physical device must have a non-empty string device_id."
+            try:
+                device_id = validate_labnet_identifier(
+                    device.device_id,
+                    name="device_id",
                 )
-            device_id = device_id.strip()
+            except ValueError as exc:
+                raise InvalidConfigurationError(
+                    str(exc),
+                    details={"device_id": repr(device.device_id)},
+                ) from exc
             if device_id in by_id:
                 raise DuplicateDeviceIdError(
                     f"Duplicate physical device ID: {device_id}",

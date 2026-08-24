@@ -26,6 +26,8 @@ def test_local_development_defaults_are_safe(missing_env_file: Path) -> None:
     settings = LabPCSettings.from_env(missing_env_file)
 
     assert settings.environment == "development"
+    assert settings.lab_pc_id == "lab-pc-dev-01"
+    assert settings.lab_pc_id != settings.lab_pc_host
     assert settings.central_enabled is False
     assert settings.development_lease_bypass is True
     assert settings.grpc_bind_host == "127.0.0.1"
@@ -39,6 +41,31 @@ def test_local_development_defaults_are_safe(missing_env_file: Path) -> None:
     assert settings.device_start_timeout_seconds == 10.0
 
 
+def test_lab_pc_id_is_stable_and_separate_from_host_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_env_file: Path,
+) -> None:
+    monkeypatch.setenv("LABNET_LAB_PC_ID", "optics-rack-manager-01")
+    monkeypatch.setenv("LABNET_LAB_PC_HOST", "temporary-hostname")
+
+    settings = LabPCSettings.from_env(missing_env_file)
+
+    assert settings.lab_pc_id == "optics-rack-manager-01"
+    assert settings.lab_pc_host == "temporary-hostname"
+
+
+@pytest.mark.parametrize("manager_id", ["rack/manager", " rack-manager", "rack manager"])
+def test_lab_pc_id_rejects_values_outside_the_shared_wire_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_env_file: Path,
+    manager_id: str,
+) -> None:
+    monkeypatch.setenv("LABNET_LAB_PC_ID", manager_id)
+
+    with pytest.raises(ValueError, match="LABNET_LAB_PC_ID"):
+        LabPCSettings.from_env(missing_env_file)
+
+
 def test_plaintext_grpc_rejects_non_loopback_bind(
     monkeypatch: pytest.MonkeyPatch,
     missing_env_file: Path,
@@ -50,6 +77,19 @@ def test_plaintext_grpc_rejects_non_loopback_bind(
         match="Plaintext gRPC is permitted only on a loopback bind address",
     ):
         LabPCSettings.from_env(missing_env_file)
+
+
+@pytest.mark.parametrize("bind_host", ["::1", "[::1]"])
+def test_ipv6_loopback_default_advertised_target_is_bracketed(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_env_file: Path,
+    bind_host: str,
+) -> None:
+    monkeypatch.setenv("LABNET_GRPC_BIND_HOST", bind_host)
+
+    settings = LabPCSettings.from_env(missing_env_file)
+
+    assert settings.grpc_advertised_target == "[::1]:50051"
 
 
 def test_tls_requires_certificate_and_key(

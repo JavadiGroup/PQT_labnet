@@ -17,7 +17,8 @@ async def test_http_lease_validator_accepts_matching_unexpired_grant() -> None:
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=1)
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/leases/lease-1/validate"
+        assert request.url.path == "/api/v1/leases/lease-1/validate"
+        assert request.headers["authorization"] == "Bearer test-key"
         return httpx.Response(
             200,
             json={
@@ -81,7 +82,7 @@ async def test_http_lease_validator_encodes_lease_as_one_path_segment() -> None:
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.raw_path == (
-            b"/leases/lease%2Fwith%3Freserved%23characters/validate"
+            b"/api/v1/leases/lease%2Fwith%3Freserved%23characters/validate"
         )
         return httpx.Response(403)
 
