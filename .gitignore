@@ -1,3 +1,26 @@
-# client_library/.env
-# lab_pc/.env
-# central_server/.env
+# Local credentials and environment overrides
+.env
+**/.env
+lab_pc/tls/
+*.key
+*.p12
+*.pfx
+
+# Keep safe templates in version control
+!.env.example
+!**/.env.example
+
+# Python-generated artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local environments and build artifacts
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Runtime logs
+*.log

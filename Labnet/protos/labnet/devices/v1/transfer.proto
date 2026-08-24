@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package labnet.devices.v1;
+
+import "common.proto";
+import "google/protobuf/duration.proto";
+
+// Requests a low-latency stream of scalar measurements. At least one sample is
+// sent immediately. When both sample_count and duration are supplied, the
+// stream stops at whichever limit is reached first. When neither is supplied,
+// the stream runs until the client cancels it or its RPC deadline expires.
+message StreamDataRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+
+  // Requested samples per second. The server advertises and enforces its own
+  // configured bounds; the default Labnet policy accepts 0.1 through 1000 Hz.
+  double sample_rate_hz = 4;
+
+  optional uint64 sample_count = 5;
+  google.protobuf.Duration duration = 6;
+}
+
+message StreamDataResponse {
+  string operation_id = 1;
+  ScalarMeasurement measurement = 2;
+}

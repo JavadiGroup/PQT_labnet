@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from .interface import DummyDeviceInterface
 from typing import Any
+
+from ..core import DeviceAvailability
+from .interface import DummyDeviceInterface
+
 
 class PhysicalDummyDevice(DummyDeviceInterface):
     """
-    Fake physical device running on the lab PC.
+    Dummy physical device running on the lab PC.
 
     This simulates a real hardware wrapper.
     """
 
-    def __init__(self, device_id: str = "fake_device_1"):
+    def __init__(self, device_id: str = "dummy_device_1"):
         self._device_id = device_id
         self._connected = False
-        self._value = 0.0
+        self._values: dict[str, float] = {"": 0.0}
 
     @property
     def device_id(self) -> str:
@@ -31,10 +34,20 @@ class PhysicalDummyDevice(DummyDeviceInterface):
 
         return "idle"
 
+    def availability(self) -> DeviceAvailability:
+        """Return an explicit control-readiness signal for health checks."""
+
+        return (
+            DeviceAvailability.AVAILABLE
+            if self._connected
+            else DeviceAvailability.UNAVAILABLE
+        )
+
     def metadata(self) -> dict[str, Any]:
         return {
             "manufacturer": "LabNet",
-            "model": "FakeDeviceV1",
+            "model": "DummyDeviceV1",
+            "channel_addressable": True,
             "capabilities": self.allowed_methods(),
         }
 
@@ -44,8 +57,8 @@ class PhysicalDummyDevice(DummyDeviceInterface):
             "write_value",
         ]
 
-    def read_value(self) -> float:
-        return self._value
+    def read_value(self, channel: str | None = None) -> float:
+        return self._values.get(channel or "", 0.0)
 
-    def write_value(self, value: float) -> None:
-        self._value = value
+    def write_value(self, value: float, channel: str | None = None) -> None:
+        self._values[channel or ""] = float(value)

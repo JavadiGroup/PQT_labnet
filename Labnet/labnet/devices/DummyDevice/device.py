@@ -76,16 +76,16 @@ class DummyDevice(PhysicalDummyDevice, RemoteDummyDevice):
     def allowed_methods(self) -> list[str]:
         return PhysicalDummyDevice.allowed_methods(self)
 
-    def read_value(self) -> float:
+    def read_value(self, channel: str | None = None) -> float:
         if self._is_remote:
-            return RemoteDummyDevice.read_value(self)
-        return PhysicalDummyDevice.read_value(self)
+            return RemoteDummyDevice.read_value(self, channel)
+        return PhysicalDummyDevice.read_value(self, channel)
 
-    def write_value(self, value: float) -> None:
+    def write_value(self, value: float, channel: str | None = None) -> None:
         if self._is_remote:
-            RemoteDummyDevice.write_value(self, value)
+            RemoteDummyDevice.write_value(self, value, channel)
             return
-        PhysicalDummyDevice.write_value(self, value)
+        PhysicalDummyDevice.write_value(self, value, channel)
 
     def close(self) -> None:
         """Release remote resources, or disconnect the physical device."""

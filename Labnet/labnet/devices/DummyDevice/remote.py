@@ -21,7 +21,7 @@ class RemoteDummyDevice(DummyDeviceInterface):
     - one persistent WebSocket connection to the Lab PC
     """
 
-    device_type = "fake_device"
+    device_type = "dummy_device"
 
     def __init__(
         self,
@@ -39,7 +39,7 @@ class RemoteDummyDevice(DummyDeviceInterface):
 
             if not available:
                 raise NoAvailableDeviceError(
-                    "No idle fake_device is available."
+                    "No idle dummy_device is available."
                 )
 
             device_id = available[0].device_id
@@ -85,21 +85,25 @@ class RemoteDummyDevice(DummyDeviceInterface):
     def metadata(self) -> dict[str, Any]:
         return {"metadata": "None"}
 
-    def read_value(self) -> float:
+    def read_value(self, channel: str | None = None) -> float:
+        kwargs = {"channel": channel} if channel is not None else None
         result = self.rpc.call(
             lease_id=self.lease.lease_id,
             device_id=self.device.device_id,
             method="read_value",
+            kwargs=kwargs,
         )
 
         return float(result)
 
-    def write_value(self, value: float) -> None:
+    def write_value(self, value: float, channel: str | None = None) -> None:
+        kwargs = {"channel": channel} if channel is not None else None
         self.rpc.call(
             lease_id=self.lease.lease_id,
             device_id=self.device.device_id,
             method="write_value",
             args=[value],
+            kwargs=kwargs,
         )
 
     def close(self) -> None:
@@ -122,7 +126,7 @@ class RemoteDummyDevice(DummyDeviceInterface):
 
         self._closed = True
 
-    def __enter__(self) -> "RemoteFakeDevice":
+    def __enter__(self) -> "RemoteDummyDevice":
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:

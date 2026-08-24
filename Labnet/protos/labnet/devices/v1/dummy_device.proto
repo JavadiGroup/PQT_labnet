@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package labnet.devices.v1;
+
+import "common.proto";
+import "transfer.proto";
+
+message ReadValueRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+}
+
+message ReadValueResponse {
+  string operation_id = 1;
+  ScalarMeasurement measurement = 2;
+}
+
+message WriteValueRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+
+  // An absolute setpoint, not an increment. Repeating the same request value
+  // is therefore idempotent when recovering from an ambiguous deadline.
+  double value = 4;
+
+  // Must match the service's configured unit; implicit conversion is rejected.
+  optional string unit = 5;
+}
+
+message WriteValueResponse {
+  string operation_id = 1;
+  ScalarMeasurement measurement = 2;
+}
+
+// Typed control and scalar acquisition surface for the Labnet dummy device.
+service DummyDeviceService {
+  rpc ReadValue(ReadValueRequest) returns (ReadValueResponse);
+  rpc WriteValue(WriteValueRequest) returns (WriteValueResponse);
+  rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse);
+}

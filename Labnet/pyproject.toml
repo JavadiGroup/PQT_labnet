@@ -1,8 +1,0 @@
-[project]
-name = "Lab-Devices"
-version = "0.1.1"
-description = "Shared interfaces and protocol models for the lab network"
-requires-python = ">=3.11"
-
-[tool.setuptools.packages.find]
-where = ["."]

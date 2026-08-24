@@ -1,11 +1,31 @@
-from .device import DummyDevice
-from .interface import DummyDeviceInterface
-from .physical import PhysicalDummyDevice
-from .remote import RemoteDummyDevice
+"""Dummy device implementations, imported only when requested."""
 
-__all__ = [
-    "DummyDevice",
-    "DummyDeviceInterface",
-    "PhysicalDummyDevice",
-    "RemoteDummyDevice",
-]
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+
+_EXPORT_MODULES = {
+    "DummyDevice": ".device",
+    "DummyDeviceInterface": ".interface",
+    "PhysicalDummyDevice": ".physical",
+    "RemoteDummyDevice": ".remote",
+}
+__all__ = list(_EXPORT_MODULES)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name = _EXPORT_MODULES[name]
+    except KeyError as exc:
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}"
+        ) from exc
+    value = getattr(import_module(module_name, __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

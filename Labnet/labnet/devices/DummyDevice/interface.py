@@ -7,17 +7,17 @@ from ..core.base import BaseDeviceInterface
 
 class DummyDeviceInterface(BaseDeviceInterface):
     """
-    Interface shared by physical and remote fake devices.
+    Interface shared by physical and remote dummy devices.
     """
 
-    device_type = "fake_device"
+    device_type = "dummy_device"
 
     @abstractmethod
-    def read_value(self) -> float:
-        """Read the current fake value."""
+    def read_value(self, channel: str | None = None) -> float:
+        """Read the current value, optionally selecting a named channel."""
         raise NotImplementedError
 
     @abstractmethod
-    def write_value(self, value: float) -> None:
-        """Write a fake value."""
+    def write_value(self, value: float, channel: str | None = None) -> None:
+        """Write a value, optionally selecting a named channel."""
         raise NotImplementedError

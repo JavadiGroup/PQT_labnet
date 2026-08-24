@@ -1,0 +1,3 @@
+include tools/generate_protos.py
+recursive-include Labnet/protos *.proto
+include lab_pc/.env.example

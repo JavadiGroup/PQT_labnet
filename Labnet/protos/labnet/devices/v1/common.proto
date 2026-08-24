@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package labnet.devices.v1;
+
+// The confidence a consumer should place in a scalar measurement.
+// Device adapters may provide more detailed status text alongside this enum.
+enum MeasurementQuality {
+  MEASUREMENT_QUALITY_UNSPECIFIED = 0;
+  MEASUREMENT_QUALITY_GOOD = 1;
+  MEASUREMENT_QUALITY_SUSPECT = 2;
+  MEASUREMENT_QUALITY_BAD = 3;
+}
+
+// A single scalar observation. This shape is intentionally suitable for
+// wavemeters, temperature sensors, power meters, and similar feedback signals.
+message ScalarMeasurement {
+  // Zero-based sequence number within a stream. Unary reads use zero.
+  uint64 sequence = 1;
+
+  // UTC Unix epoch timestamp in nanoseconds. Hardware/driver acquisition time
+  // is preferred; scalar-only adapters fall back to server receipt time.
+  int64 timestamp_ns = 2;
+
+  double value = 3;
+  string unit = 4;
+  MeasurementQuality quality = 5;
+
+  // A short, stable machine-readable status such as "OK" or "NON_FINITE".
+  string status = 6;
+
+  // Empty when the device is not channel-addressable.
+  string channel = 7;
+}
