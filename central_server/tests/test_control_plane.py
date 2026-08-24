@@ -16,7 +16,12 @@ from central_server.app.config import Settings
 from central_server.app.main import create_app
 from central_server.app.models.common import ErrorCode, ServiceError
 from central_server.app.services.auth import UserService
-from central_server.app.services.leases import _locked_device_statement
+from central_server.app.services.leases import (
+    _locked_active_device_leases_statement,
+    _locked_device_statement,
+    _locked_expiring_leases_statement,
+    _locked_manager_devices_statement,
+)
 from central_server.manage import _alembic_config
 from central_server.app.storage.database import Database
 from central_server.app.storage.orm import DeviceManagerRow
@@ -391,6 +396,34 @@ def test_postgresql_device_lock_targets_only_the_device_table() -> None:
     normalized = " ".join(sql.split()).upper()
     assert "FOR UPDATE OF DEVICES" in normalized
     assert "FOR UPDATE OF DEVICE_MANAGERS" not in normalized
+
+
+def test_postgresql_maintenance_locks_only_expiry_candidates() -> None:
+    sql = str(
+        _locked_expiring_leases_statement(["lease-1"]).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+    normalized = " ".join(sql.split()).upper()
+    assert "LEASES.LEASE_ID IN" in normalized
+    assert "FOR UPDATE OF LEASES" in normalized
+    assert "DEVICE_MANAGERS" not in normalized
+    assert "DEVICES" not in normalized
+
+
+def test_postgresql_offline_sweep_locks_devices_then_active_leases() -> None:
+    device_sql = str(
+        _locked_manager_devices_statement("lab-pc-01").compile(
+            dialect=postgresql.dialect()
+        )
+    )
+    lease_sql = str(
+        _locked_active_device_leases_statement(["wavemeter-1"]).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+    assert "FOR UPDATE OF DEVICES" in " ".join(device_sql.split()).upper()
+    assert "FOR UPDATE OF LEASES" in " ".join(lease_sql.split()).upper()
 
 
 def test_alembic_upgrade_creates_the_expected_revision(tmp_path: Path) -> None:

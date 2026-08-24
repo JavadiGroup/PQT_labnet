@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
+import math
 import uuid
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlsplit
 
 import httpx
+
+from labnet.lease_policy import (
+    DEFAULT_LEASE_DURATION_SECONDS,
+    DEFAULT_RENEWAL_INTERVAL_SECONDS,
+)
 
 from .exceptions import (
     AuthenticationError,
@@ -57,6 +64,30 @@ def _validate_duration(duration_seconds: int) -> int:
     if duration_seconds <= 0:
         raise ValueError("duration_seconds must be greater than zero.")
     return duration_seconds
+
+
+def _validate_timeout(timeout_seconds: float) -> float:
+    timeout = float(timeout_seconds)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout_seconds must be finite and greater than zero.")
+    return timeout
+
+
+def _validate_renewal_policy(
+    duration_seconds: int,
+    renewal_interval_seconds: float,
+) -> tuple[int, float]:
+    duration = _validate_duration(duration_seconds)
+    interval = float(renewal_interval_seconds)
+    if not math.isfinite(interval) or interval <= 0:
+        raise ValueError(
+            "renewal_interval_seconds must be finite and greater than zero."
+        )
+    if interval >= duration:
+        raise ValueError(
+            "renewal_interval_seconds must be less than duration_seconds."
+        )
+    return duration, interval
 
 
 def _idempotency_key(value: str | None) -> str:
@@ -108,13 +139,13 @@ def _error_detail(response: httpx.Response) -> tuple[str, str | None]:
 def _raise_http_error(response: httpx.Response) -> None:
     message, error_code = _error_detail(response)
     if response.status_code == 401:
-        raise AuthenticationError(message)
+        raise AuthenticationError(message, error_code=error_code)
     if response.status_code == 403:
-        raise PermissionDeniedError(message)
+        raise PermissionDeniedError(message, error_code=error_code)
     if response.status_code == 404:
-        raise ResourceNotFoundError(message)
+        raise ResourceNotFoundError(message, error_code=error_code)
     if response.status_code == 409:
-        raise ResourceConflictError(message)
+        raise ResourceConflictError(message, error_code=error_code)
     raise ServerResponseError(response.status_code, message, error_code=error_code)
 
 
@@ -176,6 +207,8 @@ class LabClient:
         if not api_key:
             raise ValueError("api_key cannot be empty.")
         self.api_key = api_key
+        timeout_seconds = _validate_timeout(timeout_seconds)
+        self._request_timeout_seconds = timeout_seconds
         self.current_user: AuthenticatedUser | None = None
         self._http = httpx.Client(
             base_url=self.server_url,
@@ -261,7 +294,7 @@ class LabClient:
     def request_lease(
         self,
         device_id: str,
-        duration_seconds: int,
+        duration_seconds: int = DEFAULT_LEASE_DURATION_SECONDS,
         *,
         idempotency_key: str | None = None,
     ) -> LeaseGrant:
@@ -338,6 +371,7 @@ class AsyncLabClient:
         if not api_key:
             raise ValueError("api_key cannot be empty.")
         self.api_key = api_key
+        timeout_seconds = _validate_timeout(timeout_seconds)
         self.current_user: AuthenticatedUser | None = None
         self._authenticate_on_start = authenticate_on_start
         self._http = httpx.AsyncClient(
@@ -351,6 +385,10 @@ class AsyncLabClient:
         )
         self._devices: set[Any] = set()
         self._closed = False
+        self._closing = False
+        self._active_acquires = 0
+        self._lifecycle_condition = asyncio.Condition()
+        self._close_lock = asyncio.Lock()
 
     async def authenticate(self) -> AuthenticatedUser:
         data = _mapping(
@@ -424,7 +462,7 @@ class AsyncLabClient:
     async def request_lease(
         self,
         device_id: str,
-        duration_seconds: int,
+        duration_seconds: int = DEFAULT_LEASE_DURATION_SECONDS,
         *,
         idempotency_key: str | None = None,
     ) -> LeaseGrant:
@@ -458,7 +496,9 @@ class AsyncLabClient:
         self,
         device_id: str | None = None,
         *,
-        duration_seconds: int = 600,
+        duration_seconds: int = DEFAULT_LEASE_DURATION_SECONDS,
+        auto_renew: bool = True,
+        renewal_interval_seconds: float = DEFAULT_RENEWAL_INTERVAL_SECONDS,
         idempotency_key: str | None = None,
         tls: GrpcTlsConfig | None = None,
         connection_timeout_seconds: float = 10.0,
@@ -468,59 +508,101 @@ class AsyncLabClient:
 
         from .grpc_client import AsyncDummyDeviceClient
 
-        if device_id is None:
-            available = await self.list_available_devices("dummy_device")
-            if not available:
-                raise NoAvailableDeviceError("No available dummy_device was found.")
-            device_id = available[0].device_id
-        grant = await self.request_lease(
-            device_id,
-            duration_seconds,
-            idempotency_key=idempotency_key,
-        )
+        acquire_started = False
         try:
-            device = AsyncDummyDeviceClient(
-                grant,
-                central=self,
-                tls=tls,
-                default_timeout_seconds=default_rpc_timeout_seconds,
-            )
-        except BaseException as exc:
-            try:
-                await self.release_lease(grant.lease.lease_id)
-            except BaseException as cleanup_exc:
-                exc.add_note(
-                    "Lease rollback also failed after device-client construction: "
-                    f"{cleanup_exc}"
+            await self._begin_acquire()
+            acquire_started = True
+            if not isinstance(auto_renew, bool):
+                raise TypeError("auto_renew must be a boolean.")
+            if auto_renew:
+                duration_seconds, renewal_interval_seconds = _validate_renewal_policy(
+                    duration_seconds, renewal_interval_seconds
                 )
-            raise
-        self._devices.add(device)
-        try:
-            await device.connect(connection_timeout_seconds)
-        except BaseException:
+            else:
+                duration_seconds = _validate_duration(duration_seconds)
+
+            if device_id is None:
+                available = await self.list_available_devices("dummy_device")
+                if not available:
+                    raise NoAvailableDeviceError("No available dummy_device was found.")
+                device_id = available[0].device_id
+            grant = await self.request_lease(
+                device_id,
+                duration_seconds,
+                idempotency_key=idempotency_key,
+            )
             try:
-                await device.aclose()
-            except Exception:
-                pass
-            raise
-        return device
+                device = AsyncDummyDeviceClient(
+                    grant,
+                    central=self,
+                    lease_duration_seconds=duration_seconds,
+                    auto_renew=auto_renew,
+                    renewal_interval_seconds=renewal_interval_seconds,
+                    tls=tls,
+                    default_timeout_seconds=default_rpc_timeout_seconds,
+                )
+            except BaseException as exc:
+                try:
+                    await self.release_lease(grant.lease.lease_id)
+                except BaseException as cleanup_exc:
+                    exc.add_note(
+                        "Lease rollback also failed after device-client construction: "
+                        f"{cleanup_exc}"
+                    )
+                raise
+            self._devices.add(device)
+            try:
+                await device.connect(connection_timeout_seconds)
+            except BaseException:
+                try:
+                    await device.aclose()
+                except Exception:
+                    pass
+                raise
+            device._start_auto_renewal()
+            return device
+        finally:
+            if acquire_started:
+                await asyncio.shield(self._end_acquire())
+
+    async def _begin_acquire(self) -> None:
+        async with self._lifecycle_condition:
+            if self._closing or self._closed:
+                raise RuntimeError("The async LabClient is closing or closed.")
+            self._active_acquires += 1
+
+    async def _end_acquire(self) -> None:
+        async with self._lifecycle_condition:
+            if self._active_acquires > 0:
+                self._active_acquires -= 1
+                if self._active_acquires == 0:
+                    self._lifecycle_condition.notify_all()
 
     def _discard_device(self, device: object) -> None:
         self._devices.discard(device)
 
     async def aclose(self) -> None:
-        if self._closed:
-            return
-        first_error: BaseException | None = None
-        for device in list(self._devices):
+        async with self._close_lock:
+            if self._closed:
+                return
+            async with self._lifecycle_condition:
+                self._closing = True
+                await self._lifecycle_condition.wait_for(
+                    lambda: self._active_acquires == 0
+                )
+            first_error: BaseException | None = None
+            for device in list(self._devices):
+                try:
+                    await device.aclose()
+                except BaseException as exc:
+                    first_error = first_error or exc
             try:
-                await device.aclose()
+                await self._http.aclose()
             except BaseException as exc:
                 first_error = first_error or exc
-        await self._http.aclose()
-        self._closed = True
-        if first_error is not None:
-            raise first_error
+            self._closed = True
+            if first_error is not None:
+                raise first_error
 
     async def __aenter__(self) -> "AsyncLabClient":
         if self._authenticate_on_start and self.current_user is None:

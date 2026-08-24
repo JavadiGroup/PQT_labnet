@@ -1,0 +1,15 @@
+"""Shared default policy values for renewable LabNet leases."""
+
+from __future__ import annotations
+
+
+DEFAULT_LEASE_DURATION_SECONDS = 60
+DEFAULT_RENEWAL_INTERVAL_SECONDS = 20.0
+DEFAULT_IDLE_TIMEOUT_SECONDS = 15 * 60
+
+
+__all__ = [
+    "DEFAULT_IDLE_TIMEOUT_SECONDS",
+    "DEFAULT_LEASE_DURATION_SECONDS",
+    "DEFAULT_RENEWAL_INTERVAL_SECONDS",
+]

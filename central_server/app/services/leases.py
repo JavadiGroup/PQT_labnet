@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
+from labnet.lease_policy import DEFAULT_IDLE_TIMEOUT_SECONDS
+
 from ..models.common import ErrorCode, ServiceError
 from ..models.devices import EndpointDescriptor
 from ..models.leases import (
@@ -36,11 +38,13 @@ class LeaseService:
         *,
         min_duration_seconds: int,
         max_duration_seconds: int,
+        default_idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT_SECONDS,
         heartbeat_timeout_seconds: int = 30,
     ) -> None:
         self.database = database
         self.min_duration_seconds = min_duration_seconds
         self.max_duration_seconds = max_duration_seconds
+        self.default_idle_timeout_seconds = default_idle_timeout_seconds
         self.heartbeat_timeout_seconds = heartbeat_timeout_seconds
 
     def request_lease(
@@ -60,6 +64,7 @@ class LeaseService:
                 actor=actor,
                 device_id=device_id,
                 duration_seconds=duration_seconds,
+                idle_timeout_seconds=self.default_idle_timeout_seconds,
                 idempotency_key=key,
                 request_hash=request_hash,
             )
@@ -86,6 +91,7 @@ class LeaseService:
         actor: AuthenticatedUser,
         device_id: str,
         duration_seconds: int,
+        idle_timeout_seconds: int | None,
         idempotency_key: str,
         request_hash: str,
     ) -> LeaseGrantResponse:
@@ -133,8 +139,11 @@ class LeaseService:
                 .with_for_update()
             )
             now = datetime.now(timezone.utc)
-            if active is not None and _as_utc(active.expires_at) <= now:
-                _terminalize(active, "expired", now, "lease_duration_elapsed")
+            expiration_reason = (
+                _expiration_reason(active, now) if active is not None else None
+            )
+            if active is not None and expiration_reason is not None:
+                _terminalize(active, "expired", now, expiration_reason)
                 session.add(_lease_event("LEASE_EXPIRED", active))
                 session.flush()
                 active = None
@@ -165,6 +174,9 @@ class LeaseService:
                 active_slot=True,
                 created_at=now,
                 expires_at=now + timedelta(seconds=duration_seconds),
+                last_renewed_at=now,
+                last_activity_at=now,
+                idle_timeout_seconds=idle_timeout_seconds,
             )
             session.add(lease)
             session.flush()
@@ -183,7 +195,10 @@ class LeaseService:
                     manager_id=device.manager_id,
                     device_id=device_id,
                     lease_id=lease.lease_id,
-                    details={"expires_at": lease.expires_at.isoformat()},
+                    details={
+                        "expires_at": lease.expires_at.isoformat(),
+                        "idle_timeout_seconds": lease.idle_timeout_seconds,
+                    },
                 )
             )
             # Load the relationships needed to build the public response.
@@ -234,13 +249,14 @@ class LeaseService:
                     "Only an active lease can be renewed.",
                     status_code=409,
                 )
-            if _as_utc(lease.expires_at) <= now:
-                _terminalize(lease, "expired", now, "lease_duration_elapsed")
+            expiration_reason = _expiration_reason(lease, now)
+            if expiration_reason is not None:
+                _terminalize(lease, "expired", now, expiration_reason)
                 session.add(_lease_event("LEASE_EXPIRED", lease))
                 expired = True
             else:
                 lease.expires_at = now + timedelta(seconds=duration_seconds)
-                lease.renewed_at = now
+                lease.last_renewed_at = now
                 session.add(_lease_event("LEASE_RENEWED", lease))
                 result = _lease_public(lease)
         if expired:
@@ -261,8 +277,11 @@ class LeaseService:
             now = datetime.now(timezone.utc)
             _require_lease_owner(lease, actor)
             released = False
-            if lease.state == "active" and _as_utc(lease.expires_at) <= now:
-                _terminalize(lease, "expired", now, "lease_duration_elapsed")
+            expiration_reason = (
+                _expiration_reason(lease, now) if lease.state == "active" else None
+            )
+            if lease.state == "active" and expiration_reason is not None:
+                _terminalize(lease, "expired", now, expiration_reason)
                 session.add(_lease_event("LEASE_EXPIRED", lease))
             elif lease.state == "active":
                 _terminalize(lease, "released", now, "released_by_owner")
@@ -294,18 +313,27 @@ class LeaseService:
                     invalid = True
                 elif lease.device_id != device_id or lease.state != "active":
                     invalid = True
-                elif _as_utc(lease.expires_at) <= now:
-                    _terminalize(lease, "expired", now, "lease_duration_elapsed")
-                    session.add(_lease_event("LEASE_EXPIRED", lease))
-                    invalid = True
                 else:
-                    response = LeaseValidationResponse(
-                        valid=True,
-                        lease_id=lease.lease_id,
-                        device_id=lease.device_id,
-                        user=lease.user.username,
-                        expires_at=lease.expires_at,
-                    )
+                    expiration_reason = _expiration_reason(lease, now)
+                    if expiration_reason is not None:
+                        _terminalize(lease, "expired", now, expiration_reason)
+                        session.add(_lease_event("LEASE_EXPIRED", lease))
+                        invalid = True
+                    else:
+                        # Successful validation means a real Lab-PC operation
+                        # is using the lease. Renewal deliberately does not
+                        # touch this independent command-activity clock.
+                        lease.last_activity_at = now
+                        authorization_deadline = _effective_authorization_deadline(
+                            lease
+                        )
+                        response = LeaseValidationResponse(
+                            valid=True,
+                            lease_id=lease.lease_id,
+                            device_id=lease.device_id,
+                            user=lease.user.username,
+                            expires_at=authorization_deadline,
+                        )
         if invalid:
             raise ServiceError(
                 ErrorCode.LEASE_INVALID,
@@ -324,24 +352,56 @@ class LeaseService:
                 .where(LeaseRow.state == "active", LeaseRow.expires_at > now)
                 .order_by(LeaseRow.created_at)
             ).all()
-            return [_lease_public(lease) for lease in leases]
+            return [
+                _lease_public(lease)
+                for lease in leases
+                if _expiration_reason(lease, now) is None
+            ]
 
     def maintain(self, *, heartbeat_timeout_seconds: int) -> dict[str, int]:
         expired_count = 0
         revoked_count = 0
         offline_count = 0
-        with self.database.transaction(immediate=True) as session:
-            now = datetime.now(timezone.utc)
-            cutoff = now - timedelta(seconds=heartbeat_timeout_seconds)
-            for lease in session.scalars(
-                select(LeaseRow).where(
-                    LeaseRow.state == "active", LeaseRow.expires_at <= now
-                ).with_for_update(of=LeaseRow)
-            ):
-                _terminalize(lease, "expired", now, "lease_duration_elapsed")
-                session.add(_lease_event("LEASE_EXPIRED", lease))
-                expired_count += 1
+        now = datetime.now(timezone.utc)
 
+        # Commit the lease-only sweep before acquiring manager/device locks in
+        # the offline sweep. Acquisition uses Device -> Lease; holding Lease
+        # while later requesting Device would invert that order on PostgreSQL.
+        with self.database.transaction(immediate=True) as session:
+            candidates = session.execute(
+                select(
+                    LeaseRow.lease_id,
+                    LeaseRow.expires_at,
+                    LeaseRow.last_activity_at,
+                    LeaseRow.idle_timeout_seconds,
+                ).where(LeaseRow.state == "active")
+            ).all()
+            candidate_ids = [
+                lease_id
+                for lease_id, expires_at, last_activity_at, idle_timeout in candidates
+                if _timestamps_expired(
+                    expires_at=expires_at,
+                    last_activity_at=last_activity_at,
+                    idle_timeout_seconds=idle_timeout,
+                    now=now,
+                )
+            ]
+            expiring = (
+                session.scalars(_locked_expiring_leases_statement(candidate_ids)).all()
+                if candidate_ids
+                else []
+            )
+            for lease in expiring:
+                expiration_reason = _expiration_reason(lease, now)
+                if expiration_reason is not None:
+                    _terminalize(lease, "expired", now, expiration_reason)
+                    session.add(_lease_event("LEASE_EXPIRED", lease))
+                    expired_count += 1
+
+        # Separate transaction: Manager -> Device -> Lease. It never holds a
+        # lease lock while waiting to acquire a device lock.
+        with self.database.transaction(immediate=True) as session:
+            cutoff = now - timedelta(seconds=heartbeat_timeout_seconds)
             stale = session.scalars(
                 select(DeviceManagerRow).where(
                     DeviceManagerRow.status == "online",
@@ -351,22 +411,20 @@ class LeaseService:
             for manager in stale:
                 manager.status = "offline"
                 offline_count += 1
-                device_ids = session.scalars(
-                    select(DeviceRow.device_id).where(
-                        DeviceRow.manager_id == manager.manager_id
-                    )
+                # Lock every managed device before taking the active-lease
+                # snapshot. A concurrent acquisition either commits first and
+                # is included below, or blocks and rechecks manager readiness
+                # after this offline transition commits.
+                devices = session.scalars(
+                    _locked_manager_devices_statement(manager.manager_id)
                 ).all()
-                for device in session.scalars(
-                    select(DeviceRow).where(DeviceRow.manager_id == manager.manager_id)
-                ):
+                device_ids = [device.device_id for device in devices]
+                for device in devices:
                     device.availability = "unknown"
                     device.status_text = "Device Manager heartbeat timed out."
                 if device_ids:
                     leases = session.scalars(
-                        select(LeaseRow).where(
-                            LeaseRow.state == "active",
-                            LeaseRow.device_id.in_(device_ids),
-                        )
+                        _locked_active_device_leases_statement(device_ids)
                     ).all()
                     for lease in leases:
                         _terminalize(
@@ -438,6 +496,37 @@ def _locked_device_statement(device_id: str):
     )
 
 
+def _locked_expiring_leases_statement(lease_ids: list[str]):
+    """Lock only already-identified expiry candidates, never all live leases."""
+    return (
+        select(LeaseRow)
+        .where(
+            LeaseRow.state == "active",
+            LeaseRow.lease_id.in_(lease_ids),
+        )
+        .with_for_update(of=LeaseRow)
+    )
+
+
+def _locked_manager_devices_statement(manager_id: str):
+    return (
+        select(DeviceRow)
+        .where(DeviceRow.manager_id == manager_id)
+        .with_for_update(of=DeviceRow)
+    )
+
+
+def _locked_active_device_leases_statement(device_ids: list[str]):
+    return (
+        select(LeaseRow)
+        .where(
+            LeaseRow.state == "active",
+            LeaseRow.device_id.in_(device_ids),
+        )
+        .with_for_update(of=LeaseRow)
+    )
+
+
 def _grant(lease: LeaseRow) -> LeaseGrantResponse:
     manager = lease.device.manager
     return LeaseGrantResponse(
@@ -458,7 +547,10 @@ def _grant(lease: LeaseRow) -> LeaseGrantResponse:
 
 
 def _replay_grant(lease: LeaseRow) -> LeaseGrantResponse:
-    if lease.state != "active" or _as_utc(lease.expires_at) <= datetime.now(timezone.utc):
+    if (
+        lease.state != "active"
+        or _expiration_reason(lease, datetime.now(timezone.utc)) is not None
+    ):
         raise ServiceError(
             ErrorCode.IDEMPOTENCY_CONFLICT,
             "The original idempotent lease request is no longer active.",
@@ -474,6 +566,9 @@ def _lease_public(lease: LeaseRow) -> LeasePublic:
         user=lease.user.username,
         created_at=lease.created_at,
         expires_at=lease.expires_at,
+        last_renewed_at=lease.last_renewed_at,
+        last_activity_at=lease.last_activity_at,
+        idle_timeout_seconds=lease.idle_timeout_seconds,
         state=lease.state,  # type: ignore[arg-type]
     )
 
@@ -491,11 +586,15 @@ def _terminalize(lease: LeaseRow, state: str, now: datetime, reason: str) -> Non
 def _lease_event(
     event_type: str, lease: LeaseRow, actor_user_id: str | None = None
 ) -> AuditEventRow:
+    details = {}
+    if lease.terminal_reason is not None:
+        details["reason"] = lease.terminal_reason
     return AuditEventRow(
         event_type=event_type,
         actor_user_id=actor_user_id or lease.user_id,
         device_id=lease.device_id,
         lease_id=lease.lease_id,
+        details=details,
     )
 
 
@@ -536,6 +635,46 @@ def _request_hash(device_id: str, duration_seconds: int) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _expiration_reason(lease: LeaseRow, now: datetime) -> str | None:
+    """Return the first terminal expiration policy currently satisfied."""
+    if _as_utc(lease.expires_at) <= now:
+        return "lease_duration_elapsed"
+    if lease.idle_timeout_seconds is not None:
+        idle_deadline = _as_utc(lease.last_activity_at) + timedelta(
+            seconds=lease.idle_timeout_seconds
+        )
+        if idle_deadline <= now:
+            return "command_idle_timeout_elapsed"
+    return None
+
+
+def _timestamps_expired(
+    *,
+    expires_at: datetime,
+    last_activity_at: datetime,
+    idle_timeout_seconds: int | None,
+    now: datetime,
+) -> bool:
+    if _as_utc(expires_at) <= now:
+        return True
+    return (
+        idle_timeout_seconds is not None
+        and _as_utc(last_activity_at)
+        + timedelta(seconds=idle_timeout_seconds)
+        <= now
+    )
+
+
+def _effective_authorization_deadline(lease: LeaseRow) -> datetime:
+    deadline = _as_utc(lease.expires_at)
+    if lease.idle_timeout_seconds is None:
+        return deadline
+    idle_deadline = _as_utc(lease.last_activity_at) + timedelta(
+        seconds=lease.idle_timeout_seconds
+    )
+    return min(deadline, idle_deadline)
 
 
 def _as_utc(value: datetime) -> datetime:

@@ -179,7 +179,15 @@ class LeaseRow(Base):
         UTCDateTime(), nullable=False, default=utc_now
     )
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
-    renewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    # Keep the original database column name for a minimal, safe migration;
+    # the public/API name describes its meaning explicitly.
+    last_renewed_at: Mapped[datetime] = mapped_column(
+        "renewed_at", UTCDateTime(), nullable=False, default=utc_now
+    )
+    last_activity_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    idle_timeout_seconds: Mapped[int | None] = mapped_column(Integer)
     released_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     terminal_reason: Mapped[str | None] = mapped_column(String(255))
@@ -199,6 +207,10 @@ class LeaseRow(Base):
             name="ck_leases_active_slot",
         ),
         CheckConstraint("expires_at > created_at", name="ck_leases_expiration"),
+        CheckConstraint(
+            "idle_timeout_seconds IS NULL OR idle_timeout_seconds > 0",
+            name="ck_leases_idle_timeout_positive",
+        ),
         Index("ix_leases_device_state", "device_id", "state"),
     )
 

@@ -61,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database,
         min_duration_seconds=settings.lease_min_seconds,
         max_duration_seconds=settings.lease_max_seconds,
+        default_idle_timeout_seconds=settings.lease_default_idle_timeout_seconds,
         heartbeat_timeout_seconds=settings.heartbeat_timeout_seconds,
     )
     application.include_router(auth_router)

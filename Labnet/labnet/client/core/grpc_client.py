@@ -9,24 +9,39 @@ import uuid
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol
 
 import grpc
 
 from labnet.identifiers import validate_labnet_identifier
+from labnet.lease_policy import (
+    DEFAULT_LEASE_DURATION_SECONDS,
+    DEFAULT_RENEWAL_INTERVAL_SECONDS,
+)
 
 from labnet.grpc.auth import LEASE_METADATA_KEY
 from labnet.grpc.generated import common_pb2, dummy_device_pb2
 from labnet.grpc.generated import dummy_device_pb2_grpc, transfer_pb2
 
 from .exceptions import (
+    AuthenticationError,
+    LeaseAuthorityError,
+    PermissionDeniedError,
+    ResourceConflictError,
     ResourceNotFoundError,
     ServerConnectionError,
+    ServerResponseError,
     translate_grpc_error,
 )
-from .models import EndpointDescriptor, LeaseGrant, Measurement, MeasurementQuality
+from .models import (
+    EndpointDescriptor,
+    LeaseGrant,
+    LeaseInfo,
+    Measurement,
+    MeasurementQuality,
+)
 
 
 SUPPORTED_DEVICE_API_VERSION = "labnet.devices.v1"
@@ -41,6 +56,10 @@ _MAX_LEASE_ID_LENGTH = 512
 
 class AsyncLeaseReleaser(Protocol):
     async def release_lease(self, lease_id: str) -> None: ...
+
+    async def renew_lease(
+        self, lease_id: str, duration_seconds: int
+    ) -> LeaseInfo: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -452,6 +471,9 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
         grant: LeaseGrant,
         *,
         central: AsyncLeaseReleaser | None = None,
+        lease_duration_seconds: int = DEFAULT_LEASE_DURATION_SECONDS,
+        auto_renew: bool = False,
+        renewal_interval_seconds: float = DEFAULT_RENEWAL_INTERVAL_SECONDS,
         tls: GrpcTlsConfig | None = None,
         default_timeout_seconds: float = 10.0,
         channel: grpc.aio.Channel | None = None,
@@ -463,6 +485,26 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
         self.default_timeout_seconds = _positive_finite(
             default_timeout_seconds, "default_timeout_seconds"
         )
+        if not isinstance(auto_renew, bool):
+            raise TypeError("auto_renew must be a boolean.")
+        if auto_renew and central is None:
+            raise ValueError("auto_renew requires a Central lease client.")
+        if isinstance(lease_duration_seconds, bool) or not isinstance(
+            lease_duration_seconds, int
+        ):
+            raise TypeError("lease_duration_seconds must be an integer.")
+        if lease_duration_seconds <= 0:
+            raise ValueError("lease_duration_seconds must be greater than zero.")
+        if auto_renew:
+            renewal_interval_seconds = _positive_finite(
+                renewal_interval_seconds, "renewal_interval_seconds"
+            )
+            if renewal_interval_seconds >= lease_duration_seconds:
+                raise ValueError(
+                    "renewal_interval_seconds must be less than lease_duration_seconds."
+                )
+        else:
+            renewal_interval_seconds = DEFAULT_RENEWAL_INTERVAL_SECONDS
         self._central = central
         self._owns_channel = channel is None
         self._channel = channel or create_async_grpc_channel(
@@ -473,6 +515,25 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
         self._closing = False
         self._lease_released = central is None
         self._active_stream_calls: set[object] = set()
+        self._lease_duration_seconds = lease_duration_seconds
+        self._auto_renew = auto_renew
+        self._renewal_interval_seconds = renewal_interval_seconds
+        self._renewal_task: asyncio.Task[None] | None = None
+        self._authority_error: LeaseAuthorityError | None = None
+        self._authority_cleanup_task: asyncio.Task[None] | None = None
+        self._close_lock = asyncio.Lock()
+
+    def _start_auto_renewal(self) -> None:
+        """Start the configured renewal task after the channel is connected."""
+
+        if not self._auto_renew or self._renewal_task is not None:
+            return
+        if self._closing or self._channel_closed:
+            raise RuntimeError("Cannot start renewal after the device client is closing.")
+        self._renewal_task = asyncio.create_task(
+            self._renewal_worker(),
+            name=f"labnet-lease-renew-{self.lease_id}",
+        )
 
     async def connect(self, timeout_seconds: float | None = None) -> None:
         self._ensure_open()
@@ -592,34 +653,184 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
             await stream.aclose()
 
     async def aclose(self) -> None:
+        async with self._close_lock:
+            await self._aclose_locked()
+
+    async def _aclose_locked(self) -> None:
         # The transport is always closed before authority is released, so no
         # command can race after a successful lease release.
+        self._closing = True
+        first_error: BaseException | None = None
+        try:
+            await self._cancel_auto_renewal()
+        except BaseException as exc:
+            first_error = exc
+        cleanup_task = self._authority_cleanup_task
+        if cleanup_task is not None and cleanup_task is not asyncio.current_task():
+            self._authority_cleanup_task = None
+            try:
+                await cleanup_task
+            except BaseException as exc:
+                first_error = first_error or exc
         if not self._channel_closed:
-            self._closing = True
             for call in tuple(self._active_stream_calls):
                 call.cancel()
             self._active_stream_calls.clear()
-            if self._owns_channel:
-                await self._channel.close()
-            self._channel_closed = True
+            try:
+                if self._owns_channel:
+                    await self._channel.close()
+            except BaseException as exc:
+                first_error = first_error or exc
+            finally:
+                self._channel_closed = True
         if self._lease_released:
+            if first_error is not None:
+                raise first_error
             return
         central = self._central
         if central is None:
             self._lease_released = True
+            if first_error is not None:
+                raise first_error
             return
         try:
             await central.release_lease(self.lease_id)
         except ResourceNotFoundError:
-            pass
-        self._lease_released = True
+            self._lease_released = True
+        except BaseException as exc:
+            if first_error is None:
+                first_error = exc
+            else:
+                first_error.add_note(f"Releasing the lease also failed: {exc}")
+        else:
+            self._lease_released = True
         discard = getattr(central, "_discard_device", None)
         if discard is not None:
             discard(self)
+        if first_error is not None:
+            raise first_error
 
     def _ensure_open(self) -> None:
+        if self._authority_error is not None:
+            raise self._authority_error
+        if self.grant.lease.expired:
+            error = LeaseAuthorityError(
+                f"Lease {self.lease_id!r} expired before it could be renewed."
+            )
+            self._authority_error = error
+            self._closing = True
+            for call in tuple(self._active_stream_calls):
+                call.cancel()
+            self._active_stream_calls.clear()
+            self._authority_cleanup_task = asyncio.create_task(
+                self._mark_authority_lost(error),
+                name=f"labnet-authority-close-{self.lease_id}",
+            )
+            raise error
         if self._closing or self._channel_closed:
             raise RuntimeError("The async DummyDevice gRPC client is closed.")
+
+    async def _cancel_auto_renewal(self) -> None:
+        task = self._renewal_task
+        if task is None:
+            return
+        self._renewal_task = None
+        if task is asyncio.current_task():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _renewal_worker(self) -> None:
+        wait_seconds = self._renewal_interval_seconds
+        try:
+            while True:
+                remaining = (
+                    self.grant.lease.expires_at - datetime.now(timezone.utc)
+                ).total_seconds()
+                if remaining <= 0:
+                    await self._mark_authority_lost(
+                        LeaseAuthorityError(
+                            f"Lease {self.lease_id!r} reached its authority deadline."
+                        )
+                    )
+                    return
+                await asyncio.sleep(min(wait_seconds, remaining))
+                if self.grant.lease.expired:
+                    await self._mark_authority_lost(
+                        LeaseAuthorityError(
+                            f"Lease {self.lease_id!r} expired before it could be renewed."
+                        )
+                    )
+                    return
+                central = self._central
+                if central is None:
+                    return
+                try:
+                    renewed = await central.renew_lease(
+                        self.lease_id, self._lease_duration_seconds
+                    )
+                    if renewed.state != "active" or renewed.expired:
+                        raise LeaseAuthorityError(
+                            f"Lease {renewed.lease_id!r} is no longer active."
+                        )
+                except asyncio.CancelledError:
+                    raise
+                except BaseException as exc:
+                    if self._renewal_is_terminal(exc) or self.grant.lease.expired:
+                        await self._mark_authority_lost(exc)
+                        return
+                    remaining = (
+                        self.grant.lease.expires_at - datetime.now(timezone.utc)
+                    ).total_seconds()
+                    wait_seconds = min(
+                        self._renewal_interval_seconds,
+                        max(0.001, remaining / 2),
+                    )
+                    continue
+                self.grant = LeaseGrant(lease=renewed, device=self.grant.device)
+                wait_seconds = self._renewal_interval_seconds
+        except asyncio.CancelledError:
+            return
+
+    @staticmethod
+    def _renewal_is_terminal(exc: BaseException) -> bool:
+        if isinstance(
+            exc,
+            (
+                LeaseAuthorityError,
+                AuthenticationError,
+                PermissionDeniedError,
+                ResourceConflictError,
+                ResourceNotFoundError,
+            ),
+        ):
+            return True
+        return (
+            isinstance(exc, ServerResponseError)
+            and 400 <= exc.status_code < 500
+            and exc.status_code not in {408, 429}
+        )
+
+    async def _mark_authority_lost(self, cause: BaseException) -> None:
+        self._authority_error = (
+            cause
+            if isinstance(cause, LeaseAuthorityError)
+            else LeaseAuthorityError(
+                f"Automatic renewal failed and lease {self.lease_id!r} can no "
+                f"longer be used: {cause}"
+            )
+        )
+        self._closing = True
+        for call in tuple(self._active_stream_calls):
+            call.cancel()
+        self._active_stream_calls.clear()
+        if not self._channel_closed:
+            if self._owns_channel:
+                await self._channel.close()
+            self._channel_closed = True
 
     async def __aenter__(self) -> "AsyncDummyDeviceClient":
         return self

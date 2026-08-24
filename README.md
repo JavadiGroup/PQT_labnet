@@ -109,7 +109,7 @@ async def main() -> None:
 
         async with await central.acquire_dummy(
             devices[0].device_id,
-            duration_seconds=600,
+            duration_seconds=60,
         ) as device:
             await device.write_value(384_230_000_000_000.0)
             measurement = await device.read_value()
@@ -126,7 +126,54 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`LabClient` and `RemoteDummyDevice` provide a synchronous alternative. Stable idempotency keys should be supplied when an application may retry a lease request after losing the HTTP response.
+`LabClient` and `RemoteDummyDevice` provide a synchronous alternative
+without requiring a context manager:
+
+```python
+from labnet import LabClient, RemoteDummyDevice
+
+central = LabClient("http://127.0.0.1:8008", "<researcher API key>")
+device = RemoteDummyDevice(central, device_id="dummy-device-1")
+
+try:
+    device.write_value(12.5, channel="phase")
+    print(device.read_value(channel="phase"))
+finally:
+    device.close()
+    central.close()
+```
+
+Stable idempotency keys should be supplied when an application may retry a
+lease request after losing the HTTP response.
+
+### Renewable lease lifecycle
+
+Device clients use a 60-second lease by default and renew it every 20 seconds
+while the object remains healthy. A healthy renewal therefore occurs at
+one-third of the TTL and leaves about 40 seconds for transient recovery.
+Calling `close()` still releases the lease immediately; if the process
+crashes, loses power, or cannot reach Central, renewals stop and Central
+expires the lease.
+
+Central separately expires a lease after 900 seconds without an authorized
+device command. A renewal updates client liveness but deliberately does not
+update command activity, so a forgotten client cannot hold a device forever
+merely because its renewal task is still running. Unary authorization counts
+as activity, and a live `StreamData` call refreshes activity through periodic
+lease validation.
+
+The command-idle value is a Central safety policy rather than a client option.
+This prevents a client from disabling or weakening the lab's cleanup policy.
+Central rejects renewal at either the lease deadline or idle deadline. The
+client then marks its authority lost, closes the gRPC transport, and refuses
+new device calls. A physical operation already admitted before a deadline is
+not forcibly interrupted; the per-device worker remains serialized until that
+operation finishes.
+
+Keep the Central idle timeout longer than the Lab-PC stream revalidation
+interval and the longest expected unary device operation. The defaults are
+comfortably separated: 900 seconds idle, 5 seconds between stream validations,
+and a 30-second unary-operation ceiling.
 
 ## Database model
 

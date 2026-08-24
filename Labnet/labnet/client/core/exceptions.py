@@ -12,19 +12,27 @@ class LabClientError(Exception):
     """Base exception for client-library failures."""
 
 
-class AuthenticationError(LabClientError):
+class _CentralResourceError(LabClientError):
+    def __init__(self, message: str, *, error_code: str | None = None) -> None:
+        self.message = message
+        self.error_code = error_code
+        suffix = f" [{error_code}]" if error_code else ""
+        super().__init__(f"{message}{suffix}")
+
+
+class AuthenticationError(_CentralResourceError):
     """Raised when a Central API credential is missing or invalid."""
 
 
-class PermissionDeniedError(LabClientError):
+class PermissionDeniedError(_CentralResourceError):
     """Raised when the authenticated Central user lacks permission."""
 
 
-class ResourceNotFoundError(LabClientError):
+class ResourceNotFoundError(_CentralResourceError):
     """Raised when a requested Central resource does not exist."""
 
 
-class ResourceConflictError(LabClientError):
+class ResourceConflictError(_CentralResourceError):
     """Raised when a device is busy or another Central conflict occurs."""
 
 
@@ -45,6 +53,10 @@ class ServerResponseError(LabClientError):
 
 class NoAvailableDeviceError(LabClientError):
     """Raised when no available device of the requested type exists."""
+
+
+class LeaseAuthorityError(LabClientError):
+    """Raised after automatic renewal can no longer preserve lease authority."""
 
 
 class DeviceRpcError(LabClientError):
@@ -219,6 +231,7 @@ __all__ = [
     "DeviceUnimplementedError",
     "InvalidDeviceArgumentError",
     "LabClientError",
+    "LeaseAuthorityError",
     "NoAvailableDeviceError",
     "PermissionDeniedError",
     "ResourceConflictError",

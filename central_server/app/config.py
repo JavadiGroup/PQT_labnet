@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from labnet.lease_policy import DEFAULT_IDLE_TIMEOUT_SECONDS
+
 
 def _default_data_directory() -> Path:
     if os.name == "nt":
@@ -30,6 +32,7 @@ class Settings:
     database_url: str = DEFAULT_DATABASE_URL
     lease_min_seconds: int = 5
     lease_max_seconds: int = 86_400
+    lease_default_idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT_SECONDS
     heartbeat_timeout_seconds: int = 30
     maintenance_interval_seconds: float = 5.0
     bind_host: str = "127.0.0.1"
@@ -44,6 +47,12 @@ class Settings:
             database_url=os.getenv("LABNET_DATABASE_URL", DEFAULT_DATABASE_URL),
             lease_min_seconds=int(os.getenv("LABNET_LEASE_MIN_SECONDS", "5")),
             lease_max_seconds=int(os.getenv("LABNET_LEASE_MAX_SECONDS", "86400")),
+            lease_default_idle_timeout_seconds=int(
+                os.getenv(
+                    "LABNET_LEASE_DEFAULT_IDLE_TIMEOUT_SECONDS",
+                    str(DEFAULT_IDLE_TIMEOUT_SECONDS),
+                )
+            ),
             heartbeat_timeout_seconds=int(
                 os.getenv("LABNET_HEARTBEAT_TIMEOUT_SECONDS", "30")
             ),
@@ -66,6 +75,10 @@ class Settings:
         if self.lease_max_seconds < self.lease_min_seconds:
             raise ValueError(
                 "LABNET_LEASE_MAX_SECONDS must be at least the minimum."
+            )
+        if self.lease_default_idle_timeout_seconds <= 0:
+            raise ValueError(
+                "LABNET_LEASE_DEFAULT_IDLE_TIMEOUT_SECONDS must be positive."
             )
         if self.heartbeat_timeout_seconds <= 0:
             raise ValueError("LABNET_HEARTBEAT_TIMEOUT_SECONDS must be positive.")

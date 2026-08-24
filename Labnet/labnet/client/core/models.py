@@ -148,6 +148,9 @@ class LeaseInfo:
     created_at: datetime
     expires_at: datetime
     state: str
+    last_renewed_at: datetime | None = None
+    last_activity_at: datetime | None = None
+    idle_timeout_seconds: int | None = None
 
     @property
     def status(self) -> str:
@@ -164,6 +167,15 @@ class LeaseInfo:
         state = data.get("state", data.get("status"))
         if not isinstance(state, str) or not state.strip():
             raise ValueError("lease state must be a non-empty string.")
+        last_renewed_at = data.get("last_renewed_at", data.get("renewed_at"))
+        last_activity_at = data.get("last_activity_at")
+        idle_timeout_seconds = data.get("idle_timeout_seconds")
+        if idle_timeout_seconds is not None and (
+            isinstance(idle_timeout_seconds, bool)
+            or not isinstance(idle_timeout_seconds, int)
+            or idle_timeout_seconds <= 0
+        ):
+            raise ValueError("idle_timeout_seconds must be a positive integer or null.")
         return cls(
             lease_id=_required_text(data, "lease_id"),
             device_id=_required_text(data, "device_id"),
@@ -171,6 +183,17 @@ class LeaseInfo:
             created_at=parse_datetime(data["created_at"]),
             expires_at=parse_datetime(data["expires_at"]),
             state=state.strip(),
+            last_renewed_at=(
+                parse_datetime(last_renewed_at)
+                if last_renewed_at is not None
+                else None
+            ),
+            last_activity_at=(
+                parse_datetime(last_activity_at)
+                if last_activity_at is not None
+                else None
+            ),
+            idle_timeout_seconds=idle_timeout_seconds,
         )
 
 

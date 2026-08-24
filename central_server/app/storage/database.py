@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .orm import Base
 
 
-SCHEMA_REVISION = "20260824_0001"
+SCHEMA_REVISION = "20260824_0002"
 
 
 class Database:

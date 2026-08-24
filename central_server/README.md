@@ -76,3 +76,30 @@ multiple processes or replicas.
 
 One active lease per device is enforced by a database constraint, not a Python
 lock. Released, expired, and revoked leases remain in the database for audit.
+
+## Renewable lease lifecycle
+
+Lease creation defaults to a 60-second lifetime when `duration_seconds` is
+omitted. A healthy client renews that short lifetime periodically; each renewal
+advances `expires_at` and `last_renewed_at`, but deliberately does not count as
+a device command. Normal client shutdown still sends `DELETE` for immediate
+release. If the process, computer, or network fails, renewals stop and Central
+expires the lease automatically.
+
+Central independently enforces a 900-second command-idle policy, configured by
+`LABNET_LEASE_DEFAULT_IDLE_TIMEOUT_SECONDS`. This is a server safety policy and
+is not accepted in lease-create requests, so an ordinary client cannot disable
+or lengthen it. Every successful Lab-PC validation immediately records
+`last_activity_at`. Validation returns the earlier of the renewable lifetime
+and the next command-idle deadline as its effective authorization deadline.
+
+Configure the idle timeout longer than the Lab-PC stream revalidation interval
+and the longest expected unary operation. With the shipped defaults, the
+900-second idle policy is well above the 5-second stream revalidation interval
+and 30-second unary-operation ceiling.
+
+The maintenance process rechecks due lease candidates under the database lock,
+marks them `expired`, clears their unique active slot, and writes the terminal
+reason (`lease_duration_elapsed` or `command_idle_timeout_elapsed`) to both the
+lease record and audit event. This is the crash-recovery backstop; renewal and
+validation also perform the same expiration check transactionally.

@@ -33,6 +33,7 @@ _CLIENT_EXPORTS = {
     "InvalidDeviceArgumentError",
     "LabClient",
     "LabClientError",
+    "LeaseAuthorityError",
     "LeaseGrant",
     "LeaseInfo",
     "Measurement",
