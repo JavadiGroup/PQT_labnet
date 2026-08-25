@@ -82,6 +82,7 @@ class DeviceRegistryService:
                         device_type=item.device_type,
                         runtime_state=item.runtime_state,
                         availability=item.availability,
+                        admission_state=manager.admission_state,
                         status_text=item.status_text,
                         device_metadata=item.metadata,
                         first_seen=now,
@@ -256,6 +257,8 @@ class DeviceRegistryService:
             > now - timedelta(seconds=self.heartbeat_timeout_seconds)
             and row.runtime_state == "ready"
             and row.availability == "available"
+            and row.manager.admission_state == "accepting"
+            and row.admission_state == "accepting"
             and not leased
         )
         return DevicePublic(
@@ -267,6 +270,7 @@ class DeviceRegistryService:
             availability=row.availability,  # type: ignore[arg-type]
             status_text=row.status_text,
             allocation_state="leased" if leased else "free",
+            admission_state=row.admission_state,  # type: ignore[arg-type]
             effective_available=effective,
             last_seen=row.last_seen,
             metadata=dict(row.device_metadata or {}),

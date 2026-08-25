@@ -140,13 +140,28 @@ def _get_optional_path(name: str) -> Path | None:
     return path
 
 
+def _resolve_configuration_file(env_file: str | Path | None) -> Path:
+    if env_file is not None:
+        path = Path(env_file)
+    else:
+        configured = os.getenv("LABNET_ENV_FILE")
+        path = Path(configured) if configured else _LAB_PC_DIRECTORY / ".env"
+    path = path.expanduser()
+    if not path.is_absolute():
+        path = (_LAB_PC_DIRECTORY / path).resolve()
+    return path
+
+
 @dataclass(frozen=True, slots=True)
 class LabPCSettings:
     """Validated process configuration for one Lab PC deployment."""
 
     environment: str
+    configuration_file: Path
     lab_pc_id: str
     lab_pc_host: str
+    device_factory_path: str | None
+    updater_control_token: str | None
 
     central_enabled: bool
     central_server_url: str
@@ -195,7 +210,7 @@ class LabPCSettings:
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> "LabPCSettings":
-        path = Path(env_file) if env_file is not None else _LAB_PC_DIRECTORY / ".env"
+        path = _resolve_configuration_file(env_file)
         load_dotenv(path, override=False)
 
         environment = os.getenv("LABNET_ENVIRONMENT", "development").strip().lower()
@@ -216,8 +231,15 @@ class LabPCSettings:
 
         settings = cls(
             environment=environment,
+            configuration_file=path,
             lab_pc_id=lab_pc_id,
             lab_pc_host=lab_pc_host,
+            device_factory_path=(
+                os.getenv("LABNET_DEVICE_FACTORY", "").strip() or None
+            ),
+            updater_control_token=(
+                os.getenv("LABNET_UPDATER_CONTROL_TOKEN", "").strip() or None
+            ),
             central_enabled=_get_bool("LABNET_CENTRAL_ENABLED", False),
             central_server_url=os.getenv(
                 "LABNET_SERVER_URL", "http://127.0.0.1:8008"
@@ -304,6 +326,27 @@ class LabPCSettings:
 
         if not self.lab_pc_host:
             raise ValueError("LABNET_LAB_PC_HOST cannot be empty.")
+
+        if self.device_factory_path is not None:
+            module_name, separator, attribute_name = self.device_factory_path.partition(
+                ":"
+            )
+            if (
+                separator != ":"
+                or not module_name
+                or not attribute_name
+                or any(character.isspace() for character in self.device_factory_path)
+            ):
+                raise ValueError(
+                    "LABNET_DEVICE_FACTORY must use the form module:callable."
+                )
+
+        if self.updater_control_token is not None and len(
+            self.updater_control_token
+        ) < 16:
+            raise ValueError(
+                "LABNET_UPDATER_CONTROL_TOKEN must contain at least 16 characters."
+            )
 
         _validate_central_server_url(self.central_server_url)
 

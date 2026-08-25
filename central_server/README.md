@@ -1,8 +1,9 @@
 # LabNet Central Server
 
 The Central Server is the HTTP management plane for authentication, device
-discovery, and exclusive leases. Measurement samples travel directly between
-clients and Lab PCs over gRPC; they are never written to this database.
+discovery, exclusive leases, immutable release artifacts, and per-Lab-PC
+deployment state. Measurement samples travel directly between clients and Lab
+PCs over gRPC; they are never written to this database.
 
 ## Local SQLite setup
 
@@ -32,6 +33,12 @@ you want an explicit path.
 Normal startup never creates or changes database tables. Run `db upgrade`
 after installing a version that includes a schema migration. `/health/ready`
 returns 503 until the expected Alembic revision is installed.
+
+Set `LABNET_RELEASE_ROOT` to a stable data volume outside the Central virtual
+environment. Central stores uploaded bytes under `versions/<version>/` only
+after their declared size and SHA-256 match. Version names are unique and
+artifacts are never overwritten. Back up this directory together with the SQL
+database; the database is the index and the filesystem is the byte store.
 
 The built-in Uvicorn launcher refuses non-loopback bind addresses because it
 serves plaintext HTTP. For remote access, run an HTTPS reverse proxy on the
@@ -72,10 +79,49 @@ multiple processes or replicas.
 - `DELETE /api/v1/leases/{lease_id}`
 - `POST /api/v1/leases/{lease_id}/validate`
 - `GET /api/v1/auth/me`
+- `POST /api/v1/releases` (admin)
+- `PUT /api/v1/releases/{release_id}/artifact` (admin)
+- `POST /api/v1/releases/{release_id}/promote` (admin)
+- `PUT /api/v1/deployments/{manager_id}` (admin)
+- `GET /api/v1/deployments` (admin)
+- `GET /api/v1/updates/directive` (Device Manager)
+- `GET /api/v1/updates/artifacts/{release_id}` (assigned Device Manager)
+- update phase, drain, completion, and abort routes under `/api/v1/updates`
 - `GET /health/live` and `GET /health/ready`
 
 One active lease per device is enforced by a database constraint, not a Python
 lock. Released, expired, and revoked leases remain in the database for audit.
+
+## Release deployment behavior
+
+An admin first creates a release metadata row, streams the matching ZIP, and
+promotes the candidate. Promotion never assigns it. A separate deployment PUT
+targets one registered Device Manager, which enables canary and staged fleet
+rollout. Reusing a version with different bytes is rejected. Assigning an older
+version requires `allow_downgrade=true`.
+
+When its updater begins a drain, Central locks the target devices and changes
+their separate `admission_state` in the same transactional domain as lease
+creation. A concurrent lease therefore commits before draining and is counted,
+or is rejected after draining; it cannot slip between an idle check and the
+update. Existing leases are not revoked and renewals continue. Once their
+owners release them, or normal expiry/command-idle maintenance expires them,
+Central reports that the Lab PC may apply the update.
+
+The deployment record advances through `assigned`, `downloading`, `staged`,
+`draining`, `quiescing`, `switching`, `verifying`, and `succeeded`. Failed
+startup reports `rolled_back` after the old runtime is healthy again. Audit
+events record publication, assignment, every phase, completion, failure, and
+rollback. `POST /api/v1/deployments/attempts/{attempt_id}/abort` is available
+to an administrator for a stranded host, but should be used only after checking
+the Lab PC. The request defaults to keeping admission closed; set
+`reopen_admission=true` only after a healthy runtime and safe hardware state
+have been independently verified.
+
+Central itself is not updated through these endpoints. Stop it, back up the
+database and release store, install its new wheel, run `db upgrade`, start it,
+and verify readiness. Automatic Central downgrade is deliberately unsupported
+because application rollback may not be compatible with a migrated database.
 
 ## Renewable lease lifecycle
 

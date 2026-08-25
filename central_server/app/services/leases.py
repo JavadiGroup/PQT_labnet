@@ -608,6 +608,8 @@ def _device_ready(
         > now - timedelta(seconds=heartbeat_timeout_seconds)
         and device.runtime_state == "ready"
         and device.availability == "available"
+        and device.manager.admission_state == "accepting"
+        and device.admission_state == "accepting"
     )
 
 

@@ -14,6 +14,8 @@ from typing import Any, Protocol
 import grpc
 from google.protobuf.descriptor import FieldDescriptor
 
+from labnet.device_manager.admission import AdmissionGate
+from labnet.device_manager.errors import DeviceUnavailableError
 from labnet.identifiers import LABNET_IDENTIFIER_REGEX, validate_labnet_identifier
 
 from ..auth import extract_lease_id
@@ -141,6 +143,7 @@ class PatternDeviceGrpcService:
         *,
         stream_policy: StreamPolicy | None = None,
         default_operation_timeout_seconds: float = 30.0,
+        admission_gate: AdmissionGate | None = None,
     ) -> None:
         if (
             not math.isfinite(default_operation_timeout_seconds)
@@ -156,6 +159,7 @@ class PatternDeviceGrpcService:
         self._default_operation_timeout_seconds = (
             default_operation_timeout_seconds
         )
+        self._admission_gate = admission_gate or AdmissionGate()
         self._active_streams: set[str] = set()
         self._active_streams_lock = asyncio.Lock()
         self._rpc_handlers: dict[str, Any] = {}
@@ -185,6 +189,10 @@ class PatternDeviceGrpcService:
             return self._rpc_handlers[name]
         except KeyError as exc:
             raise AttributeError(name) from exc
+
+    @property
+    def admission_gate(self) -> AdmissionGate:
+        return self._admission_gate
 
     def _unary_handler(self, spec: RpcSpec) -> Any:
         async def handler(
@@ -225,7 +233,22 @@ class PatternDeviceGrpcService:
                     operation_id=operation_id,
                 )
 
-        return handler
+        async def admitted_handler(
+            request: Any,
+            context: grpc.aio.ServicerContext,
+        ) -> Any:
+            operation_id = _safe_operation_id(getattr(request, "operation_id", ""))
+            try:
+                async with self._admission_gate.admit():
+                    return await handler(request, context)
+            except DeviceUnavailableError as exc:
+                await abort_from_exception(
+                    context,
+                    exc,
+                    operation_id=operation_id,
+                )
+
+        return admitted_handler
 
     def _stream_handler(self, spec: RpcSpec) -> Any:
         async def handler(
@@ -336,7 +359,23 @@ class PatternDeviceGrpcService:
                     operation_id=operation_id,
                 )
 
-        return handler
+        async def admitted_handler(
+            request: Any,
+            context: grpc.aio.ServicerContext,
+        ) -> AsyncIterator[Any]:
+            operation_id = _safe_operation_id(getattr(request, "operation_id", ""))
+            try:
+                async with self._admission_gate.admit():
+                    async for response in handler(request, context):
+                        yield response
+            except DeviceUnavailableError as exc:
+                await abort_from_exception(
+                    context,
+                    exc,
+                    operation_id=operation_id,
+                )
+
+        return admitted_handler
 
     async def _scalar_read(
         self,

@@ -26,7 +26,7 @@ from .errors import (
     InvalidConfigurationError,
     MethodNotAllowedError,
 )
-from .models import DeviceSnapshot, DeviceState, FailureInfo, utc_now
+from .models import DeviceSnapshot, DeviceState, FailureInfo, WorkerActivity, utc_now
 
 
 T = TypeVar("T")
@@ -80,12 +80,17 @@ class DeviceWorker:
             daemon=True,
         )
         self._state_lock = threading.RLock()
-        self._lifecycle_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
         self._started_future: concurrent.futures.Future[DeviceSnapshot] = (
             concurrent.futures.Future()
         )
         self._thread_started = False
         self._accepting = False
+        self._quiescing = False
+        self._running_count = 0
+        self._outstanding_count = 0
+        self._idle_event = threading.Event()
+        self._idle_event.set()
         self._state = DeviceState.NEW
         self._device_type = "unknown"
         self._status = "disconnected"
@@ -115,6 +120,27 @@ class DeviceWorker:
     def pending_count(self) -> int:
         return self._queue.qsize()
 
+    @property
+    def running_count(self) -> int:
+        with self._state_lock:
+            return self._running_count
+
+    @property
+    def quiescing(self) -> bool:
+        with self._lifecycle_lock:
+            return self._quiescing
+
+    def activity_snapshot(self) -> WorkerActivity:
+        with self._lifecycle_lock:
+            quiescing = self._quiescing
+            with self._state_lock:
+                running_count = self._running_count
+        return WorkerActivity(
+            queued_count=self._queue.qsize(),
+            running_count=running_count,
+            quiescing=quiescing,
+        )
+
     def snapshot(self) -> DeviceSnapshot:
         """Return only state cached by the worker thread."""
         with self._state_lock:
@@ -136,6 +162,7 @@ class DeviceWorker:
                 return
             self._thread_started = True
             self._accepting = True
+            self._quiescing = False
             self._set_state(DeviceState.STARTING)
             try:
                 self._thread.start()
@@ -152,6 +179,39 @@ class DeviceWorker:
                 )
                 self._record_failure(error, exc)
                 self._started_future.set_result(self.snapshot())
+
+    def begin_quiesce(self) -> WorkerActivity:
+        """Reject new submissions while queued/running work finishes."""
+
+        with self._lifecycle_lock:
+            self._quiescing = True
+        self._refresh_idle_event()
+        return self.activity_snapshot()
+
+    def resume(self) -> WorkerActivity:
+        """Re-open a quiesced worker when an update is cancelled safely."""
+
+        with self._lifecycle_lock:
+            self._quiescing = False
+        return self.activity_snapshot()
+
+    async def wait_until_idle(
+        self, *, timeout: float | None = None
+    ) -> WorkerActivity:
+        if timeout is not None and timeout <= 0:
+            raise ValueError("timeout must be positive when supplied.")
+        idle = await asyncio.to_thread(self._idle_event.wait, timeout)
+        if not idle:
+            activity = self.activity_snapshot()
+            raise DeviceDeadlineExceededError(
+                f"Timed out while waiting for device activity to drain: {self.device_id}",
+                details={
+                    "device_id": self.device_id,
+                    "queued_count": activity.queued_count,
+                    "running_count": activity.running_count,
+                },
+            )
+        return self.activity_snapshot()
 
     async def wait_started(self, *, timeout: float | None = None) -> DeviceSnapshot:
         if not self._thread_started:
@@ -287,6 +347,7 @@ class DeviceWorker:
             if self.state is DeviceState.STOPPED:
                 return
             self._accepting = False
+            self._quiescing = True
             future = self._shutdown_future
             if future is None:
                 self._set_state(DeviceState.STOPPING)
@@ -311,6 +372,8 @@ class DeviceWorker:
                 # for the disconnect sentinel even when the command queue was
                 # full, while a call already running is still allowed to end.
                 self._discard_pending_work()
+                self._outstanding_count += 1
+                self._idle_event.clear()
                 self._queue.put_nowait(
                     _WorkItem(
                         operation=disconnect,
@@ -367,12 +430,15 @@ class DeviceWorker:
 
         while True:
             item = self._queue.get()
+            operation_started = False
             try:
                 if not item.future.set_running_or_notify_cancel():
                     if item.is_shutdown:
                         self._set_state(DeviceState.STOPPED)
                         return
                     continue
+                self._change_running_count(1)
+                operation_started = True
                 operation_error: Exception | None = None
                 try:
                     result = item.operation()
@@ -391,7 +457,10 @@ class DeviceWorker:
                         self._set_state(DeviceState.STOPPED)
                     return
             finally:
+                if operation_started:
+                    self._change_running_count(-1)
                 self._queue.task_done()
+                self._finish_outstanding()
 
     def _submit(
         self,
@@ -405,12 +474,25 @@ class DeviceWorker:
                     f"Device worker is not accepting calls: {self.device_id}",
                     details={"device_id": self.device_id},
                 )
+            if self._quiescing:
+                raise DeviceUnavailableError(
+                    f"Device worker is draining for an update: {self.device_id}",
+                    details={
+                        "device_id": self.device_id,
+                        "admission_state": "draining",
+                    },
+                )
             future: concurrent.futures.Future[T] = concurrent.futures.Future()
+            self._outstanding_count += 1
+            self._idle_event.clear()
             try:
                 self._queue.put_nowait(
                     _WorkItem(operation=operation, future=future, name=name)
                 )
             except queue.Full as exc:
+                self._outstanding_count -= 1
+                if self._outstanding_count == 0:
+                    self._idle_event.set()
                 raise DeviceQueueFullError(
                     f"Device command queue is full: {self.device_id}",
                     details={
@@ -430,6 +512,31 @@ class DeviceWorker:
                 item.future.cancel()
             finally:
                 self._queue.task_done()
+                self._finish_outstanding()
+
+    def _change_running_count(self, delta: int) -> None:
+        with self._state_lock:
+            next_count = self._running_count + delta
+            if next_count < 0:
+                raise RuntimeError("Device worker running count became negative.")
+            self._running_count = next_count
+        if next_count > 0:
+            self._idle_event.clear()
+
+    def _refresh_idle_event(self) -> None:
+        with self._lifecycle_lock:
+            if self._outstanding_count == 0:
+                self._idle_event.set()
+            else:
+                self._idle_event.clear()
+
+    def _finish_outstanding(self) -> None:
+        with self._lifecycle_lock:
+            self._outstanding_count -= 1
+            if self._outstanding_count < 0:
+                raise RuntimeError("Device worker outstanding count became negative.")
+            if self._outstanding_count == 0:
+                self._idle_event.set()
 
     def _require_ready(self) -> None:
         snapshot = self.snapshot()

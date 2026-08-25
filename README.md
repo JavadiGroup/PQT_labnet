@@ -6,9 +6,10 @@ LabNet is a lease-controlled device network for the PQT lab. Version 1 is a clea
 
 | Surface | Default | Responsibility |
 | --- | --- | --- |
-| Central HTTP API | `127.0.0.1:8008` | API-key authentication, device registry, heartbeats, exclusive leases, and audit history |
-| Lab-PC HTTP management | `127.0.0.1:9001` | Local liveness and readiness only |
+| Central HTTP API | `127.0.0.1:8008` | Authentication, device registry, leases, immutable release metadata/artifacts, deployments, and audit history |
+| Lab-PC HTTP management | `127.0.0.1:9001` | Liveness, readiness, and token-authenticated loopback update lifecycle control |
 | Lab-PC gRPC | `127.0.0.1:50051` | Typed `ReadValue`, `WriteValue`, and streamed measurements |
+| Labupdater | separate OS service on each managed Lab PC | Versioned runtime staging, safe drain, process supervision, health verification, and rollback |
 
 The control path is:
 
@@ -19,6 +20,11 @@ The control path is:
 5. The Lab PC validates the lease with Central before control and periodically during a long stream.
 
 Central never proxies or stores measurement samples. Each physical device has a dedicated bounded worker, so its blocking driver calls remain ordered without blocking the asynchronous network servers.
+
+Managed installations add a second, independent package at the repository's
+top-level `Labupdater/` directory. It is deliberately excluded from the
+`labnet` wheel. The updater can replace a LabNet runtime because its own Python
+environment remains stable while the Lab-PC child process stops and starts.
 
 ## Installation
 
@@ -87,7 +93,12 @@ python -m lab_pc
 # Installed console equivalent: labnet-lab-pc
 ```
 
-Edit `lab_pc/device_inventory.py` to construct the physical adapters installed on that machine. Reusable device interfaces, execution, Central adapters, protobuf contracts, and gRPC services stay in the `labnet` package.
+For development, edit `lab_pc/device_inventory.py` to construct the physical
+adapters. For a managed machine, keep inventory outside the release runtime,
+set `LABNET_DEVICE_FACTORY=lab_inventory:create_devices`, and make its parent
+directory available through Labupdater's `labpc_pythonpath`. Reusable device
+interfaces, execution, Central adapters, protobuf contracts, and gRPC services
+stay in the versioned `labnet` package.
 
 ### 3. Client
 
@@ -266,6 +277,231 @@ Plaintext Central HTTP and gRPC are allowed only on loopback for development. A 
 - `LABNET_GRPC_TLS_MODE=mtls` when both Lab PCs and clients should present certificates.
 
 TLS is the policy that defines which certificates are trusted, which endpoints must be encrypted, and whether one-way server authentication or mutual authentication is required. The code supports certificate files and mTLS now; certificate issuance, renewal, naming, and revocation remain deployment/PKI responsibilities.
+
+## Managed release and fleet-update architecture
+
+The update system is split across three ownership boundaries. Keeping these
+boundaries explicit prevents the running LabNet interpreter from modifying its
+own files and prevents a heartbeat from accidentally reopening lease admission
+during an update.
+
+```text
+repository root
+|-- Labnet/labnet/                    shared device, worker, gRPC, and client code
+|   |-- device_manager/admission.py   active-RPC admission gate and drain counter
+|   |-- device_manager/worker.py      queued/running operation quiescence
+|   `-- release.py                    installed package version + contract digest
+|-- lab_pc/
+|   |-- main.py                       readiness and authenticated local update API
+|   `-- update_control.py             coordinates RPC and physical-worker drain
+|-- central_server/
+|   |-- app/api/releases.py           immutable artifact publication API
+|   |-- app/api/updates.py            assignments and updater-agent API
+|   |-- app/services/releases.py      filesystem/DB artifact validation and index
+|   |-- app/services/deployments.py   transactional lease admission and phases
+|   `-- alembic/versions/...0003...   release/deployment/admission schema
+|-- Labupdater/                        separate distribution and stable runtime
+|   `-- src/labupdater/               download, verify, install, supervise, rollback
+`-- tools/
+    |-- build_release_bundle.py        hashed offline bundle construction
+    `-- publish_release.py             authenticated streaming upload and promotion
+```
+
+### What “idle” means
+
+An update is not permitted merely because `physical.status()` says `idle` or a
+worker queue is empty. Those observations can race a currently executing call.
+The update barrier requires all of the following:
+
+- Central has durably changed every device on the target manager from
+  `accepting` to `draining`, so no new lease transaction can commit;
+- Central reports zero active leases for every device on that manager;
+- the Lab-PC gRPC admission gate has closed and its active unary/stream count is
+  zero; and
+- every physical worker has both zero queued calls and zero running calls.
+
+Central changes admission in the same database locking path used by lease
+creation. Therefore a concurrent lease either commits before the drain and is
+waited on, or observes `draining` and is rejected. Existing leases remain valid
+and renewable by default, so an experiment finishes rather than being cut off.
+
+### Release and rollback storage
+
+Central's `LABNET_RELEASE_ROOT` has this immutable layout:
+
+```text
+release-store/
+|-- .staging/<release-id>/
+`-- versions/<PEP440-version>/
+    |-- manifest.json
+    `-- labnet-<version>-bundle.zip
+```
+
+Each version is unique and is never overwritten. The database indexes release
+state (`pending_upload`, `candidate`, or `promoted`), per-manager desired and
+observed versions, update attempts, errors, and timestamps. Assigning an older
+promoted version with `allow_downgrade=true` is the rollback operation; it uses
+the exact retained wheel and dependency wheelhouse rather than resolving
+today's dependencies.
+
+Each Lab PC has its own `release_root/runtimes/<version>/venv`. `current.json`
+is an atomically replaced pointer. The previous runtime is retained after a
+successful switch, so failed startup can restore it without downloading or
+installing anything.
+
+### Build, publish, canary, and assign
+
+Every code change, including a `physical.py`-only change, needs a new normalized
+PEP 440 package version in `pyproject.toml`. Never publish different bytes under
+an existing version. A protobuf method change additionally requires generated
+bindings and must follow the additive rollout rules below.
+
+From a clean development checkout:
+
+```powershell
+python tools\generate_protos.py --check
+python -m pytest
+python -m build --wheel
+
+$wheel = Get-Item .\dist\labnet-0.3.0-py3-none-any.whl
+$commit = git rev-parse HEAD
+$contractDigest = python -c "from labnet.release import contract_digest; print(contract_digest())"
+python tools\build_release_bundle.py `
+  --wheel $wheel `
+  --output-dir .\release-output `
+  --git-commit $commit `
+  --contract-digest $contractDigest `
+  --role lab_pc `
+  --role client
+```
+
+The bundle builder resolves only binary dependencies, writes a fully hashed
+lock, and creates a sidecar manifest. It needs package-index access unless a
+complete wheelhouse is supplied with `--wheelhouse`.
+
+Upload the candidate using an admin key stored in a file, then promote it:
+
+```powershell
+python tools\publish_release.py `
+  --central-url https://central.lab.example `
+  --api-key-file C:\ProgramData\LabNet\secrets\release-admin.key `
+  --manifest .\release-output\labnet-0.3.0-manifest.json `
+  --artifact .\release-output\labnet-0.3.0-bundle.zip `
+  --promote
+```
+
+Promotion does not update a machine. Assign the promoted version to one canary
+Lab PC first:
+
+```powershell
+$headers = @{ Authorization = "Bearer $((Get-Content C:\ProgramData\LabNet\secrets\release-admin.key -Raw).Trim())" }
+$body = @{ version = "0.3.0"; allow_downgrade = $false } | ConvertTo-Json
+Invoke-RestMethod `
+  -Method Put `
+  -Uri https://central.lab.example/api/v1/deployments/lab-pc-01 `
+  -Headers $headers `
+  -ContentType application/json `
+  -Body $body
+```
+
+Observe `GET /api/v1/deployments`, the canary Lab-PC readiness response, and an
+actual device smoke test before assigning the remaining Lab PCs. Publication
+and assignment are intentionally separate, so a bad candidate never rolls out
+merely because it was uploaded.
+
+### Update state machine and recovery
+
+The normal state sequence is:
+
+```text
+assigned -> downloading -> staged -> draining -> quiescing
+         -> switching -> verifying -> succeeded
+```
+
+Failures before process replacement leave the current runtime untouched and
+resume local admission. Failures after replacement attempt to restart the
+previous version and end as `rolled_back`. Central keeps device admission
+closed during switching and verification. If an updater host is permanently
+lost, an administrator can inspect the machine and call
+`POST /api/v1/deployments/attempts/{attempt_id}/abort`; this is a recovery tool,
+not a way to bypass checking that hardware activity has actually stopped. Its
+request must set `reopen_admission=true` only after a healthy runtime and safe
+hardware state have been verified; the safer default records failure while
+leaving admission closed.
+
+### Deployment responsibilities
+
+Central is not self-updated by Labupdater. Updating Central can include a
+database migration, so use this controlled order: stop Central, back up the
+database and `LABNET_RELEASE_ROOT`, install the new `labnet[central]` wheel,
+run `labnet-central-admin db upgrade`, start Central, and verify
+`/health/ready`. Deploy the Central schema/API from this release before
+enabling Labupdater agents.
+
+For example, while the Central service is stopped:
+
+```powershell
+C:\ProgramData\LabNet\central-venv\Scripts\python.exe -m pip install `
+  "labnet[central] @ file:///C:/Staging/labnet-0.3.0-py3-none-any.whl"
+C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe db upgrade
+```
+
+On each managed Lab PC, install `Labupdater` into its own stable virtual
+environment, put its TOML, secrets, CA, Lab-PC environment file, and inventory
+outside all versioned runtimes, bootstrap one known-good bundle, and run only
+the `labupdater ... run` command as the OS service. Detailed commands and the
+filesystem layout are in `Labupdater/README.md`.
+
+Client workstations do not run the Lab-PC supervisor: arbitrary user Python
+processes have no reliable global “idle” signal. Deploy client wheels into
+side-by-side versioned environments with the same hashed bundle, then change
+the lab's client launcher/default environment for new experiments. Already
+running Python processes continue with their loaded old code. For additive
+protobuf changes, update all Lab PCs before activating the new client runtime;
+older clients remain compatible during the rollout. Central itself is updated
+last only when a later application release specifically requires new Central
+code; for this update system's initial introduction, Central is deployed first.
+
+A client bundle can be installed without contacting a package index:
+
+```powershell
+Expand-Archive `
+  -LiteralPath C:\Staging\labnet-0.3.0-bundle.zip `
+  -DestinationPath C:\Staging\labnet-0.3.0
+py -3.11 -m venv C:\ProgramData\LabNet\client-runtimes\0.3.0
+C:\ProgramData\LabNet\client-runtimes\0.3.0\Scripts\python.exe -m pip install `
+  --no-index `
+  --require-hashes `
+  --find-links C:\Staging\labnet-0.3.0\wheelhouse `
+  -r C:\Staging\labnet-0.3.0\requirements.lock
+```
+
+Point the client launcher used for new experiments at that environment only
+after the Lab-PC canary and fleet rollout are healthy. Retain the previous
+client environment for rollback.
+
+### Update API map
+
+Administrator endpoints:
+
+- `POST /api/v1/releases`, `PUT /api/v1/releases/{id}/artifact`, and
+  `POST /api/v1/releases/{id}/promote` publish immutable releases;
+- `GET /api/v1/releases` lists retained artifacts;
+- `PUT /api/v1/deployments/{manager_id}` assigns or rolls back a Lab PC;
+- `GET /api/v1/deployments` reports fleet state; and
+- `POST /api/v1/deployments/attempts/{attempt_id}/abort` clears a verified
+  stuck attempt (admission reopening is an explicit request field).
+
+Device-Manager-authenticated updater endpoints:
+
+- `GET /api/v1/updates/directive` returns only that manager's assignment;
+- `GET /api/v1/updates/artifacts/{release_id}` streams its assigned bundle;
+- phase, begin-drain, drain-status, complete, and abort endpoints journal the
+  attempt and operate the Central admission barrier.
+
+Token-authenticated loopback Lab-PC endpoints under `/internal/v1/update/`
+expose status, drain, resume, and graceful stop. They are disabled unless
+`LABNET_UPDATER_CONTROL_TOKEN` is configured and must remain loopback-only.
 
 ## Development
 

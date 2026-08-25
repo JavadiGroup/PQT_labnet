@@ -9,15 +9,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from labnet.release import installed_version
 
 from .api.auth import router as auth_router
 from .api.device_managers import router as manager_router
 from .api.devices import router as devices_router
 from .api.leases import router as leases_router
+from .api.releases import router as releases_router
+from .api.updates import agent_router as updates_router
+from .api.updates import deployment_router
 from .config import Settings
 from .models.common import ErrorCode, ErrorDetail, ErrorResponse, HealthResponse, ServiceError
 from .services.auth import UserService
+from .services.deployments import DeploymentService
 from .services.leases import LeaseService
+from .services.releases import ReleaseService
 from .services.registry import DeviceRegistryService
 from .storage.database import Database
 
@@ -47,12 +53,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(
         title="LabNet Central Server",
-        version="1.0.0",
+        version=installed_version(),
         lifespan=lifespan,
     )
     application.state.settings = settings
     application.state.database = database
     application.state.user_service = UserService(database)
+    application.state.release_service = ReleaseService(
+        database,
+        settings.release_root,
+        maximum_upload_bytes=settings.release_max_upload_bytes,
+    )
+    application.state.deployment_service = DeploymentService(
+        database,
+        application.state.release_service,
+    )
     application.state.registry_service = DeviceRegistryService(
         database,
         heartbeat_timeout_seconds=settings.heartbeat_timeout_seconds,
@@ -68,6 +83,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(manager_router)
     application.include_router(devices_router)
     application.include_router(leases_router)
+    application.include_router(releases_router)
+    application.include_router(deployment_router)
+    application.include_router(updates_router)
 
     @application.exception_handler(ServiceError)
     async def service_error_handler(_request: Request, exc: ServiceError):
