@@ -534,6 +534,7 @@ def _grant(lease: LeaseRow) -> LeaseGrantResponse:
         device=LeaseDeviceConnection(
             device_id=lease.device_id,
             manager_id=lease.device.manager_id,
+            device_type=lease.device.device_type,
             endpoint=EndpointDescriptor(
                 transport=manager.transport,
                 target=manager.target,

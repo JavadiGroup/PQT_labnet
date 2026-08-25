@@ -1,4 +1,4 @@
-"""Device interfaces with lazy legacy-client exports."""
+"""Local-or-remote device facades and physical implementations."""
 
 from __future__ import annotations
 
@@ -8,9 +8,7 @@ from typing import Any
 
 __all__ = [
     "DummyDevice",
-    "DummyDeviceInterface",
     "PhysicalDummyDevice",
-    "RemoteDummyDevice",
 ]
 
 

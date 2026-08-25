@@ -20,20 +20,25 @@ _SERVER_EXPORTS = {
     "TLSConfig",
     "TLSMode",
 }
-_SERVICE_EXPORTS = {"DummyDeviceGrpcService", "StreamPolicy"}
+_SERVICE_EXPORTS = {
+    "PatternDeviceGrpcService",
+    "StreamPolicy",
+    "UnsupportedRpcPatternError",
+}
 
 __all__ = [
-    "DummyDeviceGrpcService",
     "ERROR_CODE_METADATA_KEY",
     "GrpcServerConfig",
     "LEASE_METADATA_KEY",
     "LabnetGrpcServer",
     "OPERATION_ID_METADATA_KEY",
     "OPERATION_MAY_HAVE_COMPLETED_METADATA_KEY",
+    "PatternDeviceGrpcService",
     "RETRYABLE_METADATA_KEY",
     "StreamPolicy",
     "TLSConfig",
     "TLSMode",
+    "UnsupportedRpcPatternError",
 ]
 
 

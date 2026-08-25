@@ -140,24 +140,74 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`LabClient` and `RemoteDummyDevice` provide the same explicit cleanup pattern
-for synchronous programs:
+Synchronous programs use the public `DummyDevice` class for both local and
+remote hardware. Omitting `client` selects the physical implementation in the
+current process; passing a `LabClient` selects the leased gRPC implementation.
+The experiment-facing method calls stay the same:
 
 ```python
-from labnet import LabClient, RemoteDummyDevice
+from labnet import DummyDevice, LabClient
+
+
+def set_and_read(device: DummyDevice) -> float:
+    device.write_value(12.5, channel="phase")
+    return device.read_value(channel="phase")
+
+
+local_device = DummyDevice(device_id="bench-dummy-1")
+try:
+    print(set_and_read(local_device))
+finally:
+    local_device.close()
 
 central = LabClient("http://127.0.0.1:8008", "<researcher API key>")
 
 try:
-    device = RemoteDummyDevice(central, device_id="dummy-device-1")
+    device = DummyDevice(
+        device_id="dummy-device-1",
+        client=central,
+    )
     try:
-        device.write_value(12.5, channel="phase")
-        print(device.read_value(channel="phase"))
+        print(set_and_read(device))
     finally:
         device.close()
 finally:
     central.close()
 ```
+
+Create one `LabClient` per user process and pass it to every remote device
+handle. For example, `DummyDevice(device_id="dummy-a", client=central)` and
+`DummyDevice(device_id="dummy-b", client=central)` can share the same Central
+authentication and HTTP client; each handle still owns and releases its own
+exclusive device lease. Close every device in `finally` before closing the
+shared client.
+
+#### Choosing `LabClient` or `AsyncLabClient`
+
+Both clients use the same Central HTTP API, lease rules, and direct gRPC device
+services. The difference is how the calling program waits for network work:
+
+| Client workflow | Waiting model | Device client | Lease renewal | Best use case |
+| --- | --- | --- | --- | --- |
+| `LabClient` | Synchronous and blocking | `DummyDevice(client=central)` | Background thread | Sequential experiment, calibration, and one-off instrument scripts |
+| `AsyncLabClient` | `asyncio` and non-blocking | Shared `AsyncContractDeviceClient` returned by `await acquire_dummy(...)` or `await acquire_device(...)` | Background asyncio task | Concurrent devices, continuous streams, automation services, and responsive monitoring applications |
+
+Choose `LabClient` when an experiment naturally performs one operation after
+another: acquire an instrument, configure it, collect a result, analyze it, and
+release it. Its blocking calls keep this common laboratory workflow easy to
+read and debug, while lease renewal still runs automatically in the background.
+
+Choose `AsyncLabClient` when the program must make progress elsewhere while a
+network operation is waiting. It can monitor several independent instruments,
+consume a stream while controlling another device, or integrate into an
+existing asyncio application without blocking its event loop. Independent
+operations can be coordinated with tools such as `asyncio.gather()`.
+
+Async operation does not make a single physical instrument execute multiple
+commands simultaneously. LabNet deliberately serializes each device's hardware
+operations to protect VISA, serial, and other stateful driver connections. For
+most experiment scripts, start with `LabClient`; move to `AsyncLabClient` when
+the application has a concrete concurrency or streaming requirement.
 
 Stable idempotency keys should be supplied when an application may retry a
 lease request after losing the HTTP response.
@@ -225,11 +275,177 @@ Run the complete test suite:
 python -m pytest
 ```
 
-After editing a `.proto` file, regenerate and verify the committed bindings:
+### Proto-driven device contracts
+
+For every device family, the `.proto` file is the public API and
+`physical.py` is the local hardware behavior. Generated contract metadata is
+the runtime authority for the server mapping, client request construction,
+physical-method signature, default unit, and remotely allowed method list.
+This creates two deliberately different workflows.
+
+If an operation's name, arguments, result shape, and unit are unchanged, edit
+only that family's `physical.py`. For example, replacing a simulated
+`read_frequency()` body with a vendor SDK call does not require protobuf
+generation or a client change:
+
+```python
+def read_frequency(self, channel: str | None = None) -> float:
+    return float(self._vendor_sdk.read_frequency(channel))
+```
+
+If an operation is added or removed, or if its arguments change within one of
+the supported canonical pattern shapes, use this order:
+
+1. Edit the family `.proto` file under
+   `Labnet/protos/labnet/devices/v1/`.
+2. Explicitly set `pattern`, `physical_method`, and `default_unit` on every
+   RPC. Use the UCUM/SI symbol `"1"` for a dimensionless operation.
+3. Run `python tools/generate_protos.py`.
+4. Add or update the matching method in the family's `physical.py`.
+5. Run `python tools/generate_protos.py --check` and `python -m pytest`.
+
+Before the first deployment, this undeployed v1 contract may still be changed
+freely. After clients are deployed, protobuf evolution must be additive:
+
+- keep every existing field number and field type;
+- add new optional fields with new numbers;
+- never reuse a removed field number or name; mark both `reserved`;
+- keep existing RPC semantics while older clients may still call them; and
+- introduce a `v2` package/service for a breaking removal, rename, cardinality
+  change, or incompatible argument/result change.
+
+For an additive rollout, deploy Lab PCs that accept both old and new requests
+before deploying clients that send the new fields or call the new RPC. Retire
+the old surface only after all clients have migrated.
+
+An RPC mapping looks like this:
+
+```protobuf
+rpc ReadFrequency(ReadFrequencyRequest) returns (ReadFrequencyResponse) {
+  option (labnet.devices.v1.rpc) = {
+    pattern: RPC_PATTERN_SCALAR_READ
+    physical_method: "read_frequency"
+    default_unit: "Hz"
+  };
+}
+```
+
+There are no inferred defaults for these three options. Generation fails when
+an option is absent, empty, incompatible with the RPC streaming cardinality,
+or uses a message shape the selected pattern cannot safely dispatch. The
+declared `default_unit` is authoritative for local and remote calls; scalar
+writes reject a different requested unit because implicit unit conversion is
+not performed.
+
+This release implements only these reusable runtime patterns:
+
+| Pattern | RPC shape | Physical behavior |
+| --- | --- | --- |
+| `RPC_PATTERN_SCALAR_READ` | Unary | Calls one physical read and returns a `ScalarMeasurement` |
+| `RPC_PATTERN_SCALAR_WRITE` | Unary | Passes an absolute `double value` to one physical write and returns a `ScalarMeasurement` |
+| `RPC_PATTERN_POLLED_SCALAR_STREAM` | Server streaming | Repeatedly calls one physical read using LabNet's rate scheduling, cancellation, lease revalidation, and backpressure rules |
+
+Other pattern names are reserved in `rpc_options.proto` for future shared
+handlers. The generator rejects them in this release; declaring a reserved
+pattern does not create a partially implemented RPC. A genuinely new result
+kind, such as a camera frame or chunked ndarray, is a framework-level pattern
+addition: implement and test its shared server/client handler first, then use
+that pattern from individual device protos.
+
+All supported pattern requests contain non-optional `string device_id` and
+`string operation_id`, and responses contain `string operation_id`. Scalar
+responses contain the canonical `ScalarMeasurement`. A scalar write also uses
+non-optional `double value`, optional `string unit`, and optionally an
+`optional string channel`. A polled scalar stream uses `optional string
+channel`, non-optional `double sample_rate_hz`, optional `uint64 sample_count`,
+and `google.protobuf.Duration duration`.
+
+The generator writes protobuf bindings and `device_contracts.py` under
+`Labnet/labnet/grpc/generated/`. Never edit those files by hand; the next
+generation overwrites them. Commit the regenerated files with the proto
+change. CI or a local check can detect stale output without modifying it:
 
 ```powershell
 python tools/generate_protos.py
+python tools/generate_protos.py --check
 ```
+
+At Lab-PC startup, each physical object's `device_type` selects its generated
+contract. Startup validates that every mapped physical method exists, accepts
+the protobuf-forwarded arguments, does not add unmapped required arguments,
+and gives protobuf-optional arguments Python defaults. The worker derives its
+remote allowlist from that same contract, so a method cannot become remotely
+callable merely because it exists on the driver.
+
+The gRPC server registers every generated contract and routes it through the
+shared pattern service. The client builds typed requests from the same
+generated `RpcSpec` metadata. Consequently, a device family does not need a
+handwritten `labnet/grpc/services/<device>.py`; family-specific code belongs
+with the physical adapter, while lease, authorization, error translation,
+stream scheduling, and transport dispatch remain shared framework behavior.
+
+### Adding a device family or instrument
+
+For the first implementation of a new family, use `DummyDevice` as the
+reference layout:
+
+1. Add a package under `Labnet/labnet/devices/<Family>/` with `physical.py`, a
+   small `device.py` façade, and `__init__.py` exports. Package discovery
+   includes new family directories automatically.
+2. Add the family's annotated proto contract under
+   `Labnet/protos/labnet/devices/v1/`. Name the service consistently; for
+   example, `WavemeterService` derives the unique device type `wavemeter`.
+3. Run the generator so the physical protocol, client metadata, service
+   registration, and allowlist are created from that contract.
+4. Implement the generated physical method signatures and the common physical
+   lifecycle (`device_id`, `device_type`, `connect`, `disconnect`, `status`,
+   `availability`, and JSON-compatible `metadata`).
+5. Add each attached instrument instance to `lab_pc/device_inventory.py` with
+   a stable, globally unique `device_id`.
+6. Run generation in check mode and run the tests before starting the Lab PC.
+
+The one-time public façade for a family is intentionally small; generated
+contract methods are resolved by `ContractDeviceFacade` for both backends:
+
+```python
+from labnet.devices.core.facade import ContractDeviceFacade
+from labnet.grpc.generated.device_contracts import WAVEMETER_CONTRACT
+
+from .physical import PhysicalWavemeter
+
+
+class Wavemeter(ContractDeviceFacade):
+    contract = WAVEMETER_CONTRACT
+    physical_type = PhysicalWavemeter
+```
+
+After that family exists, adding or changing supported methods does not require
+editing the façade. Regeneration changes its method surface through the
+contract, and the shared remote lease backend dispatches the typed RPC.
+Do not create a family-specific `remote.py` or `grpc/services/<family>.py`;
+those lease, client-dispatch, and service-dispatch responsibilities are shared
+framework code.
+
+Async callers use the same generated contract with the one shared
+`AsyncLabClient`; they do not add a family-specific async client class.
+`acquire_dummy()` is only a convenience for the reference family. The generic
+form for a new family is:
+
+```python
+device = await central.acquire_device(
+    WAVEMETER_CONTRACT,
+    device_id="wavemeter-1",
+)
+try:
+    measurement = await device.read_frequency(channel="main")
+finally:
+    await device.aclose()
+```
+
+Adding another instrument instance of an existing family requires no proto or
+generated-code change: construct another physical adapter in
+`lab_pc/device_inventory.py`. Similarly, changing only how an existing driver
+method talks to hardware requires only a `physical.py` edit.
 
 The schema/API details and administration commands are documented in `central_server/README.md`.
 

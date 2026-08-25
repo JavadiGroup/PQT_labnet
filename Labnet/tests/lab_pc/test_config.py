@@ -37,7 +37,6 @@ def test_local_development_defaults_are_safe(missing_env_file: Path) -> None:
     assert settings.http_bind_host == "127.0.0.1"
     assert settings.http_port == 9001
     assert settings.stream_max_rate_hz == 1000.0
-    assert settings.default_measurement_unit == "Hz"
     assert settings.device_start_timeout_seconds == 10.0
 
 

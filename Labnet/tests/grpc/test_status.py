@@ -7,6 +7,7 @@ from labnet.device_manager.errors import (
     DeviceDeadlineExceededError,
     DeviceNotFoundError,
     DeviceQueueFullError,
+    DeviceTypeMismatchError,
     DeviceUnavailableError,
     InvalidDeviceArgumentError,
     LeaseInvalidError,
@@ -32,6 +33,10 @@ from labnet.grpc.status import (
         (
             DeviceQueueFullError("full"),
             grpc.StatusCode.RESOURCE_EXHAUSTED,
+        ),
+        (
+            DeviceTypeMismatchError("wrong service family"),
+            grpc.StatusCode.FAILED_PRECONDITION,
         ),
         (
             DeviceDeadlineExceededError("late"),

@@ -45,7 +45,12 @@ class DeviceManager:
         heartbeat_interval_seconds: float = 5.0,
         worker_start_timeout: float | None = None,
         shutdown_timeout: float | None = 10.0,
+        require_generated_contracts: bool = False,
     ) -> None:
+        if not isinstance(require_generated_contracts, bool):
+            raise InvalidConfigurationError(
+                "require_generated_contracts must be a boolean."
+            )
         if (
             not math.isfinite(heartbeat_interval_seconds)
             or heartbeat_interval_seconds <= 0
@@ -72,6 +77,7 @@ class DeviceManager:
                 device_id,
                 device,
                 queue_capacity=queue_capacity,
+                require_generated_contract=require_generated_contracts,
             )
             for device_id, device in self.catalog.items()
         }

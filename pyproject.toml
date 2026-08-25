@@ -47,27 +47,11 @@ labnet-lab-pc = "lab_pc.main:main"
 labnet-central = "central_server.app.main:main"
 labnet-central-admin = "central_server.manage:main"
 
-[tool.setuptools]
-packages = [
-    "labnet",
-    "labnet.client",
-    "labnet.client.core",
-    "labnet.device_manager",
-    "labnet.devices",
-    "labnet.devices.core",
-    "labnet.devices.DummyDevice",
-    "labnet.grpc",
-    "labnet.grpc.generated",
-    "labnet.grpc.services",
-    "lab_pc",
-    "central_server",
-    "central_server.app",
-    "central_server.app.api",
-    "central_server.app.models",
-    "central_server.app.services",
-    "central_server.app.storage",
-]
-package-dir = { labnet = "Labnet/labnet", lab_pc = "lab_pc", central_server = "central_server" }
+[tool.setuptools.packages.find]
+where = ["Labnet", "."]
+include = ["labnet*", "lab_pc*", "central_server*"]
+exclude = ["Labnet.tests*", "central_server.tests*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 labnet = ["py.typed"]

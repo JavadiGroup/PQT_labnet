@@ -7,7 +7,7 @@ from typing import Any
 
 
 _CLIENT_EXPORTS = {
-    "AsyncDummyDeviceClient",
+    "AsyncContractDeviceClient",
     "AsyncLabClient",
     "AuthenticatedUser",
     "AuthenticationError",
@@ -27,7 +27,6 @@ _CLIENT_EXPORTS = {
     "DeviceRpcError",
     "DeviceUnavailableError",
     "DeviceUnimplementedError",
-    "DummyDeviceGrpcClient",
     "EndpointDescriptor",
     "GrpcTlsConfig",
     "InvalidDeviceArgumentError",
@@ -47,9 +46,7 @@ _CLIENT_EXPORTS = {
 }
 _DEVICE_EXPORTS = {
     "DummyDevice": ".devices.DummyDevice.device",
-    "DummyDeviceInterface": ".devices.DummyDevice.interface",
     "PhysicalDummyDevice": ".devices.DummyDevice.physical",
-    "RemoteDummyDevice": ".devices.DummyDevice.remote",
 }
 __all__ = sorted(_CLIENT_EXPORTS | set(_DEVICE_EXPORTS))
 

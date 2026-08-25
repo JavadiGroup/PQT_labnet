@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import grpc
 
@@ -22,8 +22,12 @@ from labnet.lease_policy import (
 )
 
 from labnet.grpc.auth import LEASE_METADATA_KEY
-from labnet.grpc.generated import common_pb2, dummy_device_pb2
-from labnet.grpc.generated import dummy_device_pb2_grpc, transfer_pb2
+from labnet.grpc.generated import common_pb2
+from labnet.grpc.generated.device_contracts import (
+    DUMMY_DEVICE_CONTRACT,
+    DeviceContract,
+    RpcSpec,
+)
 
 from .exceptions import (
     AuthenticationError,
@@ -52,6 +56,9 @@ _QUALITY_BY_PROTO = {
     common_pb2.MEASUREMENT_QUALITY_BAD: MeasurementQuality.BAD,
 }
 _MAX_LEASE_ID_LENGTH = 512
+_SCALAR_READ = "RPC_PATTERN_SCALAR_READ"
+_SCALAR_WRITE = "RPC_PATTERN_SCALAR_WRITE"
+_POLLED_SCALAR_STREAM = "RPC_PATTERN_POLLED_SCALAR_STREAM"
 
 
 class AsyncLeaseReleaser(Protocol):
@@ -247,14 +254,6 @@ def _optional_timeout(value: float | None, default: float | None) -> float | Non
     return None if selected is None else _positive_finite(selected, "timeout_seconds")
 
 
-def _request_channel(message: object, channel: str | None) -> None:
-    if channel is not None:
-        cleaned = channel.strip()
-        if not cleaned:
-            raise ValueError("channel cannot be empty when supplied.")
-        setattr(message, "channel", cleaned)
-
-
 def _measurement(response: object) -> Measurement:
     proto = response.measurement
     return Measurement(
@@ -269,79 +268,203 @@ def _measurement(response: object) -> Measurement:
     )
 
 
-def _stream_request(
+def _contract_method(contract: DeviceContract, python_name: str) -> RpcSpec | None:
+    return next(
+        (method for method in contract.methods if method.python_name == python_name),
+        None,
+    )
+
+
+def _contract_dispatch_kind(spec: RpcSpec) -> str:
+    """Return the generated transport shape, rejecting stale/malformed specs."""
+
+    if spec.pattern in {_SCALAR_READ, _SCALAR_WRITE}:
+        if spec.client_streaming or spec.server_streaming:
+            raise RuntimeError(
+                f"Generated RPC {spec.rpc_full_name} uses {spec.pattern} but "
+                f"declares {spec.cardinality} cardinality. Regenerate the "
+                "device contracts."
+            )
+        return "unary"
+    if spec.pattern == _POLLED_SCALAR_STREAM:
+        if spec.client_streaming or not spec.server_streaming:
+            raise RuntimeError(
+                f"Generated RPC {spec.rpc_full_name} uses {spec.pattern} but "
+                f"declares {spec.cardinality} cardinality. Regenerate the "
+                "device contracts."
+            )
+        return "stream"
+    raise RuntimeError(
+        f"Generated RPC {spec.rpc_full_name} uses unsupported client pattern "
+        f"{spec.pattern}."
+    )
+
+
+def _require_contract_pattern(
+    contract: DeviceContract,
+    python_name: str,
+    expected_pattern: str,
+) -> RpcSpec:
+    """Resolve a convenience method without overriding its generated meaning."""
+
+    spec = _contract_method(contract, python_name)
+    if spec is None:
+        raise AttributeError(
+            f"Contract {contract.device_type!r} does not define RPC method "
+            f"{python_name!r}."
+        )
+    if spec.pattern != expected_pattern:
+        raise RuntimeError(
+            f"Contract RPC {spec.rpc_full_name} now uses {spec.pattern}; the "
+            f"{python_name!r} convenience API requires {expected_pattern}."
+        )
+    _contract_dispatch_kind(spec)
+    return spec
+
+
+def _validate_grant_contract(
+    grant: LeaseGrant,
+    contract: DeviceContract,
+) -> None:
+    actual = grant.device.device_type
+    if actual != contract.device_type:
+        raise ValueError(
+            f"LeaseGrant device_type {actual!r} does not match requested "
+            f"contract device_type {contract.device_type!r}."
+        )
+
+
+def _bind_contract_arguments(
+    spec: RpcSpec,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind the physical arguments declared by the generated RpcSpec."""
+
+    if len(args) > len(spec.forwarded_fields):
+        raise TypeError(
+            f"{spec.python_name}() accepts at most {len(spec.forwarded_fields)} "
+            f"positional argument(s); received {len(args)}."
+        )
+    values = dict(zip(spec.forwarded_fields, args, strict=False))
+    for field in spec.forwarded_field_specs:
+        if field.name in kwargs:
+            if field.name in values:
+                raise TypeError(
+                    f"{spec.python_name}() got multiple values for {field.name!r}."
+                )
+            values[field.name] = kwargs.pop(field.name)
+        if not field.optional and field.name not in values:
+            raise TypeError(
+                f"{spec.python_name}() is missing required argument {field.name!r}."
+            )
+    return values
+
+
+def _set_proto_field(message: object, name: str, value: Any) -> None:
+    if value is None:
+        return
+    field = message.DESCRIPTOR.fields_by_name[name]
+    target = getattr(message, name)
+    if field.is_repeated:
+        if field.message_type is not None and field.message_type.GetOptions().map_entry:
+            target.update(value)
+        else:
+            target.extend(value)
+    elif field.message_type is not None:
+        target.CopyFrom(value)
+    else:
+        setattr(message, name, value)
+
+
+def _build_contract_request(
+    spec: RpcSpec,
     *,
     device_id: str,
-    operation_id: str,
-    sample_rate_hz: float,
-    sample_count: int | None,
-    duration_seconds: float | None,
-    channel: str | None,
-) -> transfer_pb2.StreamDataRequest:
-    request = transfer_pb2.StreamDataRequest(
-        device_id=device_id,
-        operation_id=operation_id,
-        sample_rate_hz=_positive_finite(sample_rate_hz, "sample_rate_hz"),
-    )
-    _request_channel(request, channel)
-    if sample_count is not None:
-        if (
-            isinstance(sample_count, bool)
-            or not isinstance(sample_count, int)
-            or not 1 <= sample_count <= (2**64 - 1)
-        ):
-            raise ValueError("sample_count must be a positive uint64 integer.")
-        request.sample_count = sample_count
-    if duration_seconds is not None:
-        seconds = _positive_finite(duration_seconds, "duration_seconds")
-        request.duration.FromTimedelta(timedelta(seconds=seconds))
-    return request
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> tuple[object, float | None]:
+    """Build a protobuf request using only generated contract metadata."""
+
+    options = dict(kwargs)
+    operation_id = _validate_operation_id(options.pop("operation_id", None))
+    timeout_seconds = options.pop("timeout_seconds", None)
+    forwarded = _bind_contract_arguments(spec, args, options)
+    request = spec.request_type(device_id=device_id, operation_id=operation_id)
+
+    for name, value in forwarded.items():
+        if name == "channel" and value is not None:
+            cleaned = str(value).strip()
+            if not cleaned:
+                raise ValueError("channel cannot be empty when supplied.")
+            value = cleaned
+        if name == "value":
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError("value must be finite.")
+        _set_proto_field(request, name, value)
+
+    if spec.pattern == "RPC_PATTERN_SCALAR_WRITE":
+        unit = options.pop("unit", None)
+        if unit is not None:
+            unit = str(unit).strip()
+            if not unit:
+                raise ValueError("unit cannot be empty when supplied.")
+            request.unit = unit
+    elif spec.pattern == "RPC_PATTERN_POLLED_SCALAR_STREAM":
+        if "sample_rate_hz" not in options:
+            raise TypeError(
+                f"{spec.python_name}() is missing required argument "
+                "'sample_rate_hz'."
+            )
+        request.sample_rate_hz = _positive_finite(
+            options.pop("sample_rate_hz"), "sample_rate_hz"
+        )
+        sample_count = options.pop("sample_count", None)
+        if sample_count is not None:
+            if (
+                isinstance(sample_count, bool)
+                or not isinstance(sample_count, int)
+                or not 1 <= sample_count <= (2**64 - 1)
+            ):
+                raise ValueError("sample_count must be a positive uint64 integer.")
+            request.sample_count = sample_count
+        duration_seconds = options.pop("duration_seconds", None)
+        if duration_seconds is not None:
+            request.duration.FromTimedelta(
+                timedelta(
+                    seconds=_positive_finite(
+                        duration_seconds, "duration_seconds"
+                    )
+                )
+            )
+
+    if options:
+        unexpected = next(iter(options))
+        raise TypeError(
+            f"{spec.python_name}() got an unexpected keyword argument "
+            f"{unexpected!r}."
+        )
+    return request, _optional_timeout(timeout_seconds, None)
 
 
-class _DummyDeviceRequests:
+class _ContractDeviceRequests:
     device_id: str
     lease_id: str
     default_timeout_seconds: float
+    _contract: DeviceContract
 
     def _metadata(self) -> tuple[tuple[str, str], ...]:
         return ((LEASE_METADATA_KEY, self.lease_id),)
 
-    def _read_request(
-        self, channel: str | None, operation_id: str | None
-    ) -> dummy_device_pb2.ReadValueRequest:
-        request = dummy_device_pb2.ReadValueRequest(
-            device_id=self.device_id,
-            operation_id=_validate_operation_id(operation_id),
-        )
-        _request_channel(request, channel)
-        return request
 
-    def _write_request(
-        self,
-        value: float,
-        unit: str | None,
-        channel: str | None,
-        operation_id: str | None,
-    ) -> dummy_device_pb2.WriteValueRequest:
-        numeric_value = float(value)
-        if not math.isfinite(numeric_value):
-            raise ValueError("value must be finite.")
-        request = dummy_device_pb2.WriteValueRequest(
-            device_id=self.device_id,
-            operation_id=_validate_operation_id(operation_id),
-            value=numeric_value,
-        )
-        _request_channel(request, channel)
-        if unit is not None:
-            cleaned = unit.strip()
-            if not cleaned:
-                raise ValueError("unit cannot be empty when supplied.")
-            request.unit = cleaned
-        return request
+class ContractDeviceGrpcClient(_ContractDeviceRequests):
+    """Synchronous contract-driven client over one reusable gRPC channel.
 
-
-class DummyDeviceGrpcClient(_DummyDeviceRequests):
-    """Synchronous typed client over one reusable regular gRPC channel."""
+    ``contract`` is private framework plumbing. Public users obtain this
+    transport through a local-or-remote device facade, not by constructing a
+    device-specific gRPC object.
+    """
 
     def __init__(
         self,
@@ -350,18 +473,105 @@ class DummyDeviceGrpcClient(_DummyDeviceRequests):
         tls: GrpcTlsConfig | None = None,
         default_timeout_seconds: float = 10.0,
         channel: grpc.Channel | None = None,
+        _contract: DeviceContract = DUMMY_DEVICE_CONTRACT,
     ) -> None:
         validate_endpoint(grant.device.endpoint)
+        _validate_grant_contract(grant, _contract)
         self.grant = grant
         self.device_id = _validate_device_id(grant.device.device_id)
         self.lease_id = _validate_lease_id(grant.lease.lease_id)
         self.default_timeout_seconds = _positive_finite(
             default_timeout_seconds, "default_timeout_seconds"
         )
+        self._contract = _contract
         self._owns_channel = channel is None
         self._channel = channel or create_grpc_channel(grant.device.endpoint, tls=tls)
-        self._stub = dummy_device_pb2_grpc.DummyDeviceServiceStub(self._channel)
+        self._stub = self._contract.stub_type(self._channel)
         self._closed = False
+
+    @property
+    def contract(self) -> DeviceContract:
+        return self._contract
+
+    def __getattr__(self, name: str) -> Any:
+        """Create methods for newly generated RPCs from their pattern specs."""
+
+        contract = self.__dict__.get("_contract")
+        if contract is None:
+            raise AttributeError(name)
+        spec = _contract_method(contract, name)
+        if spec is None:
+            raise AttributeError(name)
+
+        if _contract_dispatch_kind(spec) == "stream":
+            def stream(*args: Any, **kwargs: Any) -> Iterator[Measurement]:
+                return self._invoke_generated_stream(spec, args, kwargs)
+
+            return stream
+
+        def unary(*args: Any, **kwargs: Any) -> Measurement:
+            return self._invoke_generated_unary(spec, args, kwargs)
+
+        return unary
+
+    def _invoke_generated_unary(
+        self,
+        spec: RpcSpec,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> Measurement:
+        if _contract_dispatch_kind(spec) != "unary":
+            raise RuntimeError(
+                f"RPC {spec.rpc_full_name} is not a unary operation."
+            )
+        self._ensure_open()
+        request, timeout = _build_contract_request(
+            spec,
+            device_id=self.device_id,
+            args=args,
+            kwargs=kwargs,
+        )
+        try:
+            response = getattr(self._stub, spec.rpc_name)(
+                request,
+                metadata=self._metadata(),
+                timeout=(
+                    self.default_timeout_seconds if timeout is None else timeout
+                ),
+            )
+        except grpc.RpcError as exc:
+            raise translate_grpc_error(exc) from exc
+        return _measurement(response)
+
+    def _invoke_generated_stream(
+        self,
+        spec: RpcSpec,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> Iterator[Measurement]:
+        if _contract_dispatch_kind(spec) != "stream":
+            raise RuntimeError(
+                f"RPC {spec.rpc_full_name} is not a streaming operation."
+            )
+        self._ensure_open()
+        request, timeout = _build_contract_request(
+            spec,
+            device_id=self.device_id,
+            args=args,
+            kwargs=kwargs,
+        )
+        call = getattr(self._stub, spec.rpc_name)(
+            request,
+            metadata=self._metadata(),
+            timeout=timeout,
+        )
+        try:
+            for response in call:
+                yield _measurement(response)
+        except grpc.RpcError as exc:
+            raise translate_grpc_error(exc) from exc
+        finally:
+            call.cancel()
 
     def connect(self, timeout_seconds: float | None = None) -> None:
         self._ensure_open()
@@ -373,78 +583,6 @@ class DummyDeviceGrpcClient(_DummyDeviceRequests):
                 f"Timed out connecting to Lab PC at {self.grant.device.endpoint.target}."
             ) from exc
 
-    def read_value(
-        self,
-        channel: str | None = None,
-        *,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Measurement:
-        self._ensure_open()
-        request = self._read_request(channel, operation_id)
-        try:
-            response = self._stub.ReadValue(
-                request,
-                metadata=self._metadata(),
-                timeout=_optional_timeout(timeout_seconds, self.default_timeout_seconds),
-            )
-        except grpc.RpcError as exc:
-            raise translate_grpc_error(exc) from exc
-        return _measurement(response)
-
-    def write_value(
-        self,
-        value: float,
-        channel: str | None = None,
-        *,
-        unit: str | None = None,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Measurement:
-        self._ensure_open()
-        request = self._write_request(value, unit, channel, operation_id)
-        try:
-            response = self._stub.WriteValue(
-                request,
-                metadata=self._metadata(),
-                timeout=_optional_timeout(timeout_seconds, self.default_timeout_seconds),
-            )
-        except grpc.RpcError as exc:
-            raise translate_grpc_error(exc) from exc
-        return _measurement(response)
-
-    def stream_data(
-        self,
-        *,
-        sample_rate_hz: float,
-        sample_count: int | None = None,
-        duration_seconds: float | None = None,
-        channel: str | None = None,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Iterator[Measurement]:
-        self._ensure_open()
-        request = _stream_request(
-            device_id=self.device_id,
-            operation_id=_validate_operation_id(operation_id),
-            sample_rate_hz=sample_rate_hz,
-            sample_count=sample_count,
-            duration_seconds=duration_seconds,
-            channel=channel,
-        )
-        call = self._stub.StreamData(
-            request,
-            metadata=self._metadata(),
-            timeout=_optional_timeout(timeout_seconds, None),
-        )
-        try:
-            for response in call:
-                yield _measurement(response)
-        except grpc.RpcError as exc:
-            raise translate_grpc_error(exc) from exc
-        finally:
-            call.cancel()
-
     def close(self) -> None:
         if self._closed:
             return
@@ -454,17 +592,17 @@ class DummyDeviceGrpcClient(_DummyDeviceRequests):
 
     def _ensure_open(self) -> None:
         if self._closed:
-            raise RuntimeError("The DummyDevice gRPC client is closed.")
+            raise RuntimeError("The contract device gRPC client is closed.")
 
-    def __enter__(self) -> "DummyDeviceGrpcClient":
+    def __enter__(self) -> "ContractDeviceGrpcClient":
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         self.close()
 
 
-class AsyncDummyDeviceClient(_DummyDeviceRequests):
-    """Async typed client that owns a channel and, optionally, its lease."""
+class AsyncContractDeviceClient(_ContractDeviceRequests):
+    """Async contract-driven client that owns a channel and optional lease."""
 
     def __init__(
         self,
@@ -477,14 +615,17 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
         tls: GrpcTlsConfig | None = None,
         default_timeout_seconds: float = 10.0,
         channel: grpc.aio.Channel | None = None,
+        _contract: DeviceContract = DUMMY_DEVICE_CONTRACT,
     ) -> None:
         validate_endpoint(grant.device.endpoint)
+        _validate_grant_contract(grant, _contract)
         self.grant = grant
         self.device_id = _validate_device_id(grant.device.device_id)
         self.lease_id = _validate_lease_id(grant.lease.lease_id)
         self.default_timeout_seconds = _positive_finite(
             default_timeout_seconds, "default_timeout_seconds"
         )
+        self._contract = _contract
         if not isinstance(auto_renew, bool):
             raise TypeError("auto_renew must be a boolean.")
         if auto_renew and central is None:
@@ -510,7 +651,7 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
         self._channel = channel or create_async_grpc_channel(
             grant.device.endpoint, tls=tls
         )
-        self._stub = dummy_device_pb2_grpc.DummyDeviceServiceStub(self._channel)
+        self._stub = self._contract.stub_type(self._channel)
         self._channel_closed = False
         self._closing = False
         self._lease_released = central is None
@@ -522,6 +663,92 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
         self._authority_error: LeaseAuthorityError | None = None
         self._authority_cleanup_task: asyncio.Task[None] | None = None
         self._close_lock = asyncio.Lock()
+
+    @property
+    def contract(self) -> DeviceContract:
+        return self._contract
+
+    def __getattr__(self, name: str) -> Any:
+        """Create async methods for newly generated RPCs from their specs."""
+
+        contract = self.__dict__.get("_contract")
+        if contract is None:
+            raise AttributeError(name)
+        spec = _contract_method(contract, name)
+        if spec is None:
+            raise AttributeError(name)
+
+        if _contract_dispatch_kind(spec) == "stream":
+            def stream(*args: Any, **kwargs: Any) -> AsyncIterator[Measurement]:
+                return self._invoke_generated_stream(spec, args, kwargs)
+
+            return stream
+
+        async def unary(*args: Any, **kwargs: Any) -> Measurement:
+            return await self._invoke_generated_unary(spec, args, kwargs)
+
+        return unary
+
+    async def _invoke_generated_unary(
+        self,
+        spec: RpcSpec,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> Measurement:
+        if _contract_dispatch_kind(spec) != "unary":
+            raise RuntimeError(
+                f"RPC {spec.rpc_full_name} is not a unary operation."
+            )
+        self._ensure_open()
+        request, timeout = _build_contract_request(
+            spec,
+            device_id=self.device_id,
+            args=args,
+            kwargs=kwargs,
+        )
+        try:
+            response = await getattr(self._stub, spec.rpc_name)(
+                request,
+                metadata=self._metadata(),
+                timeout=(
+                    self.default_timeout_seconds if timeout is None else timeout
+                ),
+            )
+        except grpc.aio.AioRpcError as exc:
+            raise translate_grpc_error(exc) from exc
+        return _measurement(response)
+
+    async def _invoke_generated_stream(
+        self,
+        spec: RpcSpec,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> AsyncIterator[Measurement]:
+        if _contract_dispatch_kind(spec) != "stream":
+            raise RuntimeError(
+                f"RPC {spec.rpc_full_name} is not a streaming operation."
+            )
+        self._ensure_open()
+        request, timeout = _build_contract_request(
+            spec,
+            device_id=self.device_id,
+            args=args,
+            kwargs=kwargs,
+        )
+        call = getattr(self._stub, spec.rpc_name)(
+            request,
+            metadata=self._metadata(),
+            timeout=timeout,
+        )
+        self._active_stream_calls.add(call)
+        try:
+            async for response in call:
+                yield _measurement(response)
+        except grpc.aio.AioRpcError as exc:
+            raise translate_grpc_error(exc) from exc
+        finally:
+            call.cancel()
+            self._active_stream_calls.discard(call)
 
     def _start_auto_renewal(self) -> None:
         """Start the configured renewal task after the channel is connected."""
@@ -545,87 +772,6 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
                 f"Timed out connecting to Lab PC at {self.grant.device.endpoint.target}."
             ) from exc
 
-    async def read_value(
-        self,
-        channel: str | None = None,
-        *,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Measurement:
-        self._ensure_open()
-        request = self._read_request(channel, operation_id)
-        try:
-            response = await self._stub.ReadValue(
-                request,
-                metadata=self._metadata(),
-                timeout=_optional_timeout(timeout_seconds, self.default_timeout_seconds),
-            )
-        except grpc.aio.AioRpcError as exc:
-            raise translate_grpc_error(exc) from exc
-        return _measurement(response)
-
-    async def write_value(
-        self,
-        value: float,
-        channel: str | None = None,
-        *,
-        unit: str | None = None,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Measurement:
-        self._ensure_open()
-        request = self._write_request(value, unit, channel, operation_id)
-        try:
-            response = await self._stub.WriteValue(
-                request,
-                metadata=self._metadata(),
-                timeout=_optional_timeout(timeout_seconds, self.default_timeout_seconds),
-            )
-        except grpc.aio.AioRpcError as exc:
-            raise translate_grpc_error(exc) from exc
-        return _measurement(response)
-
-    async def stream_data(
-        self,
-        *,
-        sample_rate_hz: float,
-        sample_count: int | None = None,
-        duration_seconds: float | None = None,
-        channel: str | None = None,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> AsyncIterator[Measurement]:
-        """Stream measurements until exhausted, cancelled, or the client closes.
-
-        If a consumer intentionally stops before exhaustion, prefer
-        :meth:`open_stream`, which closes the iterator immediately on context
-        exit instead of waiting for async-generator finalization.
-        """
-
-        self._ensure_open()
-        request = _stream_request(
-            device_id=self.device_id,
-            operation_id=_validate_operation_id(operation_id),
-            sample_rate_hz=sample_rate_hz,
-            sample_count=sample_count,
-            duration_seconds=duration_seconds,
-            channel=channel,
-        )
-        call = self._stub.StreamData(
-            request,
-            metadata=self._metadata(),
-            timeout=_optional_timeout(timeout_seconds, None),
-        )
-        self._active_stream_calls.add(call)
-        try:
-            async for response in call:
-                yield _measurement(response)
-        except grpc.aio.AioRpcError as exc:
-            raise translate_grpc_error(exc) from exc
-        finally:
-            call.cancel()
-            self._active_stream_calls.discard(call)
-
     @asynccontextmanager
     async def open_stream(
         self,
@@ -639,13 +785,22 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
     ) -> AsyncIterator[AsyncIterator[Measurement]]:
         """Provide an explicitly closed stream for early-exit consumers."""
 
-        stream = self.stream_data(
-            sample_rate_hz=sample_rate_hz,
-            sample_count=sample_count,
-            duration_seconds=duration_seconds,
-            channel=channel,
-            operation_id=operation_id,
-            timeout_seconds=timeout_seconds,
+        spec = _require_contract_pattern(
+            self._contract,
+            "stream_data",
+            _POLLED_SCALAR_STREAM,
+        )
+        stream = self._invoke_generated_stream(
+            spec,
+            (),
+            {
+                "sample_rate_hz": sample_rate_hz,
+                "sample_count": sample_count,
+                "duration_seconds": duration_seconds,
+                "channel": channel,
+                "operation_id": operation_id,
+                "timeout_seconds": timeout_seconds,
+            },
         )
         try:
             yield stream
@@ -704,9 +859,10 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
                 first_error.add_note(f"Releasing the lease also failed: {exc}")
         else:
             self._lease_released = True
-        discard = getattr(central, "_discard_device", None)
-        if discard is not None:
-            discard(self)
+        if self._lease_released:
+            discard = getattr(central, "_discard_device", None)
+            if discard is not None:
+                discard(self)
         if first_error is not None:
             raise first_error
 
@@ -728,7 +884,7 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
             )
             raise error
         if self._closing or self._channel_closed:
-            raise RuntimeError("The async DummyDevice gRPC client is closed.")
+            raise RuntimeError("The async contract device gRPC client is closed.")
 
     async def _cancel_auto_renewal(self) -> None:
         task = self._renewal_task
@@ -832,7 +988,7 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
                 await self._channel.close()
             self._channel_closed = True
 
-    async def __aenter__(self) -> "AsyncDummyDeviceClient":
+    async def __aenter__(self) -> "AsyncContractDeviceClient":
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
@@ -844,8 +1000,8 @@ class AsyncDummyDeviceClient(_DummyDeviceRequests):
 
 
 __all__ = [
-    "AsyncDummyDeviceClient",
-    "DummyDeviceGrpcClient",
+    "AsyncContractDeviceClient",
+    "ContractDeviceGrpcClient",
     "GrpcTlsConfig",
     "SUPPORTED_DEVICE_API_VERSION",
     "create_async_grpc_channel",

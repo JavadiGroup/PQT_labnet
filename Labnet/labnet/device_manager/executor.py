@@ -8,6 +8,7 @@ from typing import Any
 from .errors import (
     DeviceDeadlineExceededError,
     DeviceNotFoundError,
+    DeviceTypeMismatchError,
     DeviceUnavailableError,
     LeaseError,
     LeaseInvalidError,
@@ -33,11 +34,13 @@ class AuthorizedDeviceSession:
         worker: DeviceWorker,
         grant: LeaseGrant,
         operation_id: str | None,
+        expected_device_type: str | None,
     ) -> None:
         self._executor = executor
         self._worker = worker
         self._grant = grant
         self.operation_id = operation_id
+        self._expected_device_type = expected_device_type
 
     @property
     def lease_id(self) -> str:
@@ -51,11 +54,18 @@ class AuthorizedDeviceSession:
     def grant(self) -> LeaseGrant:
         return self._grant
 
+    @property
+    def expected_device_type(self) -> str | None:
+        """Return the service family this authorization is bound to."""
+
+        return self._expected_device_type
+
     async def revalidate(self, *, deadline: float | None = None) -> LeaseGrant:
         self._grant = await self._executor.validate_lease(
             self.lease_id,
             self.device_id,
             deadline=deadline,
+            expected_device_type=self._expected_device_type,
         )
         return self._grant
 
@@ -74,6 +84,14 @@ class AuthorizedDeviceSession:
                     "device_id": self.device_id,
                 },
             )
+        # A long-lived session remains bound to the service family that
+        # originally authorized it. Re-check cached device metadata before
+        # every physical call so a faulty runtime type change cannot cross a
+        # service boundary between periodic Central revalidations.
+        self._executor._require_available(
+            self.device_id,
+            expected_device_type=self._expected_device_type,
+        )
         return await self._worker.invoke(
             method,
             args=args,
@@ -112,6 +130,7 @@ class DeviceExecutor:
         device_id: str,
         *,
         deadline: float | None = None,
+        expected_device_type: str | None = None,
     ) -> LeaseGrant:
         async def validate() -> LeaseGrant:
             try:
@@ -143,8 +162,12 @@ class DeviceExecutor:
             deadline=deadline,
             device_id=device_id,
         )
-        # Authorize before disclosing whether a device exists or is healthy.
-        self._require_available(device_id)
+        # Authorize before disclosing whether a device exists, is healthy, or
+        # belongs to the service family handling this request.
+        self._require_available(
+            device_id,
+            expected_device_type=expected_device_type,
+        )
         return grant
 
     async def authorize(
@@ -154,19 +177,25 @@ class DeviceExecutor:
         operation_id: str | None = None,
         *,
         deadline: float | None = None,
+        expected_device_type: str | None = None,
     ) -> AuthorizedDeviceSession:
         grant = await self.validate_lease(
             lease_id,
             device_id,
             deadline=deadline,
+            expected_device_type=expected_device_type,
         )
         # Re-check after the network validation to avoid racing a shutdown.
-        worker = self._require_available(device_id)
+        worker = self._require_available(
+            device_id,
+            expected_device_type=expected_device_type,
+        )
         return AuthorizedDeviceSession(
             executor=self,
             worker=worker,
             grant=grant,
             operation_id=operation_id,
+            expected_device_type=expected_device_type,
         )
 
     async def execute(
@@ -178,6 +207,7 @@ class DeviceExecutor:
         kwargs: Mapping[str, Any] | None = None,
         deadline: float | None = None,
         operation_id: str | None = None,
+        expected_device_type: str | None = None,
     ) -> Any:
         """Validate a lease and invoke one allow-listed physical operation.
 
@@ -192,6 +222,7 @@ class DeviceExecutor:
             device_id,
             operation_id,
             deadline=deadline,
+            expected_device_type=expected_device_type,
         )
         remaining = _remaining(deadline, started_at)
         return await session.execute(
@@ -201,7 +232,12 @@ class DeviceExecutor:
             deadline=remaining,
         )
 
-    def _require_available(self, device_id: str) -> DeviceWorker:
+    def _require_available(
+        self,
+        device_id: str,
+        *,
+        expected_device_type: str | None = None,
+    ) -> DeviceWorker:
         worker = self.get_worker(device_id)
         snapshot = worker.snapshot()
         if not snapshot.available:
@@ -211,6 +247,19 @@ class DeviceExecutor:
                     "device_id": device_id,
                     "state": snapshot.state.value,
                     "status": snapshot.status,
+                },
+            )
+        if (
+            expected_device_type is not None
+            and snapshot.device_type != expected_device_type
+        ):
+            raise DeviceTypeMismatchError(
+                "The leased device is not compatible with the requested "
+                "gRPC service.",
+                details={
+                    "device_id": device_id,
+                    "expected_device_type": expected_device_type,
+                    "actual_device_type": snapshot.device_type,
                 },
             )
         return worker

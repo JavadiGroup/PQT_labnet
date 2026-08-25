@@ -9,7 +9,8 @@ import httpx
 import pytest
 
 from labnet.client import (
-    AsyncDummyDeviceClient,
+    AsyncContractDeviceClient,
+    AsyncLabClient,
     EndpointDescriptor,
     LeaseAuthorityError,
     LeaseGrant,
@@ -17,8 +18,8 @@ from labnet.client import (
     ResourceNotFoundError,
 )
 from labnet.client.core.models import DeviceInfo
-from labnet.devices.DummyDevice import remote as remote_module
-from labnet.devices.DummyDevice.remote import RemoteDummyDevice
+from labnet.devices.core import remote as remote_module
+from labnet.devices.core.remote import RemoteDeviceBinding
 
 
 def _lease(*, expires_in: float = 2.0, marker: int = 0) -> LeaseInfo:
@@ -36,7 +37,11 @@ def _lease(*, expires_in: float = 2.0, marker: int = 0) -> LeaseInfo:
     )
 
 
-def _grant(*, expires_in: float = 2.0) -> LeaseGrant:
+def _grant(
+    *,
+    expires_in: float = 2.0,
+    device_type: str = "dummy_device",
+) -> LeaseGrant:
     endpoint = EndpointDescriptor(
         transport="grpc",
         target="127.0.0.1:50051",
@@ -47,6 +52,7 @@ def _grant(*, expires_in: float = 2.0) -> LeaseGrant:
         device_id="dummy-1",
         manager_id="lab-pc-1",
         endpoint=endpoint,
+        device_type=device_type,
     )
     return LeaseGrant(lease=_lease(expires_in=expires_in), device=device)
 
@@ -91,9 +97,9 @@ class _SyncCentral:
 
 
 def test_sync_remote_renews_and_updates_lease(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(remote_module, "DummyDeviceGrpcClient", _FakeSyncGrpc)
+    monkeypatch.setattr(remote_module, "ContractDeviceGrpcClient", _FakeSyncGrpc)
     central = _SyncCentral()
-    remote = RemoteDummyDevice(
+    remote = RemoteDeviceBinding(
         central,  # type: ignore[arg-type]
         device_id="dummy-1",
         lease_duration=1,
@@ -112,9 +118,9 @@ def test_sync_remote_renews_and_updates_lease(monkeypatch: pytest.MonkeyPatch) -
 def test_sync_terminal_renewal_closes_transport_and_blocks_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(remote_module, "DummyDeviceGrpcClient", _FakeSyncGrpc)
+    monkeypatch.setattr(remote_module, "ContractDeviceGrpcClient", _FakeSyncGrpc)
     central = _SyncCentral(terminal=True)
-    remote = RemoteDummyDevice(
+    remote = RemoteDeviceBinding(
         central,  # type: ignore[arg-type]
         device_id="dummy-1",
         lease_duration=1,
@@ -160,7 +166,7 @@ class _AsyncCentral:
 async def test_async_terminal_renewal_closes_transport_and_blocks_calls() -> None:
     central = _AsyncCentral()
     channel = _FakeAsyncChannel()
-    device = AsyncDummyDeviceClient(
+    device = AsyncContractDeviceClient(
         _grant(),
         central=central,
         channel=channel,  # type: ignore[arg-type]
@@ -194,7 +200,7 @@ async def test_async_successful_renewal_updates_grant() -> None:
             raise ResourceNotFoundError("released", error_code="LEASE_RELEASED")
 
     central = RenewThenStop()
-    device = AsyncDummyDeviceClient(
+    device = AsyncContractDeviceClient(
         _grant(),
         central=central,
         channel=_FakeAsyncChannel(),  # type: ignore[arg-type]
@@ -262,16 +268,16 @@ def test_request_lease_uses_renewable_defaults_without_client_idle_override() ->
 def test_renewal_interval_validation_only_applies_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(remote_module, "DummyDeviceGrpcClient", _FakeSyncGrpc)
+    monkeypatch.setattr(remote_module, "ContractDeviceGrpcClient", _FakeSyncGrpc)
     central = _SyncCentral()
     with pytest.raises(ValueError, match="less than"):
-        RemoteDummyDevice(
+        RemoteDeviceBinding(
             central,  # type: ignore[arg-type]
             device_id="dummy-1",
             lease_duration=1,
             renewal_interval_seconds=1,
         )
-    fixed = RemoteDummyDevice(
+    fixed = RemoteDeviceBinding(
         central,  # type: ignore[arg-type]
         device_id="dummy-1",
         lease_duration=1,
@@ -284,10 +290,10 @@ def test_renewal_interval_validation_only_applies_when_enabled(
 def test_sync_close_never_releases_while_renewal_thread_is_alive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(remote_module, "DummyDeviceGrpcClient", _FakeSyncGrpc)
+    monkeypatch.setattr(remote_module, "ContractDeviceGrpcClient", _FakeSyncGrpc)
     central = _SyncCentral()
     central._request_timeout_seconds = -0.99
-    remote = RemoteDummyDevice(
+    remote = RemoteDeviceBinding(
         central,  # type: ignore[arg-type]
         device_id="dummy-1",
         lease_duration=1,
@@ -309,6 +315,41 @@ def test_sync_close_never_releases_while_renewal_thread_is_alive(
     assert central.released == 1
 
 
+def test_sync_close_retries_transient_lease_release_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(remote_module, "ContractDeviceGrpcClient", _FakeSyncGrpc)
+
+    class FlakyReleaseCentral(_SyncCentral):
+        def __init__(self) -> None:
+            super().__init__()
+            self.release_attempts = 0
+
+        def release_lease(self, lease_id: str) -> None:
+            self.release_attempts += 1
+            if self.release_attempts == 1:
+                raise RuntimeError("temporary Central outage")
+            super().release_lease(lease_id)
+
+    central = FlakyReleaseCentral()
+    remote = RemoteDeviceBinding(
+        central,  # type: ignore[arg-type]
+        device_id="dummy-1",
+        auto_renew=False,
+    )
+
+    with pytest.raises(RuntimeError, match="temporary Central outage"):
+        remote.close()
+    assert remote.grpc.closed.is_set()
+    assert remote._lease_released is False
+    assert remote.closed is False
+
+    remote.close()
+    assert central.release_attempts == 2
+    assert central.released == 1
+    assert remote.closed is True
+
+
 @pytest.mark.asyncio
 async def test_async_concurrent_close_releases_exactly_once() -> None:
     class BlockingCentral(_AsyncCentral):
@@ -323,7 +364,7 @@ async def test_async_concurrent_close_releases_exactly_once() -> None:
             await self.allow_release.wait()
 
     central = BlockingCentral()
-    device = AsyncDummyDeviceClient(
+    device = AsyncContractDeviceClient(
         _grant(),
         central=central,
         channel=_FakeAsyncChannel(),  # type: ignore[arg-type]
@@ -336,6 +377,37 @@ async def test_async_concurrent_close_releases_exactly_once() -> None:
     central.allow_release.set()
     await asyncio.gather(first, second)
     assert central.released == 1
+
+
+@pytest.mark.asyncio
+async def test_async_close_retries_transient_lease_release_failure() -> None:
+    class FlakyReleaseCentral(_AsyncCentral):
+        def __init__(self) -> None:
+            super().__init__()
+            self.release_attempts = 0
+
+        async def release_lease(self, lease_id: str) -> None:
+            self.release_attempts += 1
+            if self.release_attempts == 1:
+                raise RuntimeError("temporary Central outage")
+            await super().release_lease(lease_id)
+
+    central = FlakyReleaseCentral()
+    device = AsyncContractDeviceClient(
+        _grant(),
+        central=central,
+        channel=_FakeAsyncChannel(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(RuntimeError, match="temporary Central outage"):
+        await device.aclose()
+    assert device._channel_closed is True
+    assert device._lease_released is False
+
+    await device.aclose()
+    assert central.release_attempts == 2
+    assert central.released == 1
+    assert device._lease_released is True
 
 
 def test_stale_activity_does_not_shorten_client_liveness_deadline() -> None:
@@ -422,6 +494,7 @@ async def test_async_lab_client_close_drains_in_flight_acquire(
                     "device": {
                         "device_id": grant.device.device_id,
                         "manager_id": grant.device.manager_id,
+                        "device_type": grant.device.device_type,
                         "endpoint": {
                             "transport": "grpc",
                             "target": "127.0.0.1:50051",
@@ -436,7 +509,7 @@ async def test_async_lab_client_close_drains_in_flight_acquire(
             return httpx.Response(200, json={"state": "released"})
         return httpx.Response(404)
 
-    monkeypatch.setattr(grpc_module, "AsyncDummyDeviceClient", BlockingDevice)
+    monkeypatch.setattr(grpc_module, "AsyncContractDeviceClient", BlockingDevice)
     client = AsyncLabClient(
         "https://central.example",
         "secret",
@@ -459,6 +532,80 @@ async def test_async_lab_client_close_drains_in_flight_acquire(
     assert delete_count == 1
     with pytest.raises(RuntimeError, match="closing or closed"):
         await client.acquire_dummy("dummy-1")
+
+
+@pytest.mark.asyncio
+async def test_async_acquire_releases_a_wrong_family_grant_before_client_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from labnet.client.core import grpc_client as grpc_module
+
+    client_was_constructed = False
+    released_lease_ids: list[str] = []
+
+    class MustNotConstruct:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            nonlocal client_was_constructed
+            client_was_constructed = True
+            raise AssertionError("gRPC client must not be constructed")
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/api/v1/leases":
+            grant = _grant(expires_in=60, device_type="wavemeter")
+            return httpx.Response(
+                201,
+                json={
+                    "lease": {
+                        "lease_id": grant.lease.lease_id,
+                        "device_id": grant.lease.device_id,
+                        "user": grant.lease.user,
+                        "created_at": grant.lease.created_at.isoformat(),
+                        "expires_at": grant.lease.expires_at.isoformat(),
+                        "state": "active",
+                    },
+                    "device": {
+                        "device_id": grant.device.device_id,
+                        "manager_id": grant.device.manager_id,
+                        "device_type": grant.device.device_type,
+                        "endpoint": {
+                            "transport": "grpc",
+                            "target": "127.0.0.1:50051",
+                            "api_version": "labnet.devices.v1",
+                            "secure": False,
+                        },
+                    },
+                },
+            )
+        if request.method == "DELETE":
+            released_lease_ids.append(request.url.path.rsplit("/", 1)[-1])
+            return httpx.Response(200, json={"state": "released"})
+        return httpx.Response(404)
+
+    monkeypatch.setattr(
+        grpc_module,
+        "AsyncContractDeviceClient",
+        MustNotConstruct,
+    )
+    client = AsyncLabClient(
+        "https://central.example",
+        "secret",
+        authenticate_on_start=False,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with pytest.raises(ValueError, match="LeaseGrant device_type") as caught:
+            await client.acquire_dummy(
+                "dummy-1",
+                auto_renew=False,
+            )
+    finally:
+        await client.aclose()
+
+    assert "requested contract device_type 'dummy_device'" in str(caught.value)
+    assert client_was_constructed is False
+    assert released_lease_ids == ["lease-1"]
+    assert client._devices == set()
+    assert client._active_acquires == 0
 
 
 @pytest.mark.asyncio

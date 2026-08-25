@@ -16,6 +16,7 @@ from labnet.device_manager.errors import (
     DeviceNotFoundError,
     DeviceOperationError,
     DeviceQueueFullError,
+    DeviceTypeMismatchError,
     DeviceUnavailableError,
     InvalidConfigurationError,
     InvalidDeviceArgumentError,
@@ -79,6 +80,8 @@ def map_exception(exc: BaseException) -> MappedStatus:
         return _manager_status(grpc.StatusCode.NOT_FOUND, exc)
     if isinstance(exc, DeviceQueueFullError):
         return _manager_status(grpc.StatusCode.RESOURCE_EXHAUSTED, exc)
+    if isinstance(exc, DeviceTypeMismatchError):
+        return _manager_status(grpc.StatusCode.FAILED_PRECONDITION, exc)
     if isinstance(exc, DeviceDeadlineExceededError):
         return _manager_status(grpc.StatusCode.DEADLINE_EXCEEDED, exc)
     if isinstance(exc, InvalidDeviceArgumentError):

@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
-from .generated import dummy_device_pb2_grpc
-from .services import DeviceExecutorProtocol, DummyDeviceGrpcService, StreamPolicy
+from .generated.device_contracts import DEVICE_CONTRACTS, DeviceContract
+from .services import DeviceExecutorProtocol, PatternDeviceGrpcService, StreamPolicy
 
 
 class TLSMode(str, Enum):
@@ -98,16 +100,42 @@ class LabnetGrpcServer:
         *,
         config: GrpcServerConfig | None = None,
         stream_policy: StreamPolicy | None = None,
-        default_unit: str = "arb",
         default_operation_timeout_seconds: float = 30.0,
+        contracts: Sequence[DeviceContract] | None = None,
     ) -> None:
         self.config = config or GrpcServerConfig()
-        self.device_service = DummyDeviceGrpcService(
-            executor,
-            stream_policy=stream_policy,
-            default_unit=default_unit,
-            default_operation_timeout_seconds=default_operation_timeout_seconds,
+        selected_contracts = tuple(
+            DEVICE_CONTRACTS if contracts is None else contracts
         )
+        if not selected_contracts:
+            raise ValueError("At least one generated device contract is required.")
+        services: dict[str, PatternDeviceGrpcService] = {}
+        service_names: set[str] = set()
+        registrations: list[tuple[DeviceContract, PatternDeviceGrpcService]] = []
+        for contract in selected_contracts:
+            if contract.device_type in services:
+                raise ValueError(
+                    f"Duplicate generated device type: {contract.device_type}."
+                )
+            if contract.service_full_name in service_names:
+                raise ValueError(
+                    "Duplicate generated gRPC service name: "
+                    f"{contract.service_full_name}."
+                )
+            service = PatternDeviceGrpcService(
+                executor,
+                contract,
+                stream_policy=stream_policy,
+                default_operation_timeout_seconds=(
+                    default_operation_timeout_seconds
+                ),
+            )
+            services[contract.device_type] = service
+            service_names.add(contract.service_full_name)
+            registrations.append((contract, service))
+
+        # Validate all generated mappings before allocating a native gRPC
+        # server so an unsupported contract cannot leak an unclosed listener.
         self._health = health.aio.HealthServicer()
         self._server = grpc.aio.server(
             options=(
@@ -122,9 +150,16 @@ class LabnetGrpcServer:
             ),
             maximum_concurrent_rpcs=self.config.maximum_concurrent_rpcs,
         )
-        dummy_device_pb2_grpc.add_DummyDeviceServiceServicer_to_server(
-            self.device_service,
-            self._server,
+        for contract, service in registrations:
+            contract.add_servicer_to_server(service, self._server)
+
+        self._device_services = MappingProxyType(services)
+        self._service_names = tuple(sorted(service_names))
+        # Compatibility for the original one-family tests and applications.
+        # New code should use ``device_services`` keyed by generated device type.
+        self.device_service = services.get(
+            "dummy_device",
+            next(iter(services.values())),
         )
         health_pb2_grpc.add_HealthServicer_to_server(
             self._health,
@@ -151,6 +186,18 @@ class LabnetGrpcServer:
     def serving(self) -> bool:
         return self._serving
 
+    @property
+    def device_services(self) -> Mapping[str, PatternDeviceGrpcService]:
+        """Return registered generated services keyed by device type."""
+
+        return self._device_services
+
+    @property
+    def service_names(self) -> tuple[str, ...]:
+        """Return the fully qualified gRPC services advertised by health."""
+
+        return self._service_names
+
     async def start(self) -> None:
         if self._stopped:
             raise RuntimeError("A stopped gRPC server cannot be restarted.")
@@ -161,7 +208,7 @@ class LabnetGrpcServer:
         await self.set_serving(True)
 
     async def set_serving(self, serving: bool) -> None:
-        """Update overall and DummyDevice standard gRPC health together."""
+        """Update overall and every generated device service health entry."""
 
         if self._stopped and serving:
             raise RuntimeError("A stopped gRPC server cannot become serving.")
@@ -171,7 +218,8 @@ class LabnetGrpcServer:
             else health_pb2.HealthCheckResponse.NOT_SERVING
         )
         await self._health.set("", status)
-        await self._health.set(DummyDeviceGrpcService.SERVICE_NAME, status)
+        for service_name in self._service_names:
+            await self._health.set(service_name, status)
         self._serving = serving
 
     async def stop(self, grace: float | None = None) -> None:

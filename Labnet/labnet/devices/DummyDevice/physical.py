@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core import DeviceAvailability
-from .interface import DummyDeviceInterface
+from ..core import BaseDeviceInterface, DeviceAvailability
+from ...grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
 
 
-class PhysicalDummyDevice(DummyDeviceInterface):
+class PhysicalDummyDevice(BaseDeviceInterface):
     """
     Dummy physical device running on the lab PC.
 
     This simulates a real hardware wrapper.
     """
+
+    device_type = DUMMY_DEVICE_CONTRACT.device_type
 
     def __init__(self, device_id: str = "dummy_device_1"):
         self._device_id = device_id
@@ -50,12 +52,6 @@ class PhysicalDummyDevice(DummyDeviceInterface):
             "channel_addressable": True,
             "capabilities": self.allowed_methods(),
         }
-
-    def allowed_methods(self) -> list[str]:
-        return [
-            "read_value",
-            "write_value",
-        ]
 
     def read_value(self, channel: str | None = None) -> float:
         return self._values.get(channel or "", 0.0)

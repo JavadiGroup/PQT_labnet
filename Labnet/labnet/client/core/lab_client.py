@@ -29,7 +29,7 @@ from .exceptions import (
 from .models import AuthenticatedUser, DeviceInfo, LeaseGrant, LeaseInfo
 
 if TYPE_CHECKING:
-    from .grpc_client import AsyncDummyDeviceClient, GrpcTlsConfig
+    from .grpc_client import AsyncContractDeviceClient, GrpcTlsConfig
 
 
 API_PREFIX = "/api/v1"
@@ -180,6 +180,20 @@ def _parse_grant(data: Any) -> LeaseGrant:
         return LeaseGrant.from_dict(_mapping(data, "lease response"))
     except (KeyError, TypeError, ValueError) as exc:
         raise ServerResponseError(200, f"Central returned an invalid lease grant: {exc}") from exc
+
+
+def _validate_granted_device_type(
+    device: DeviceInfo,
+    expected_device_type: str,
+) -> None:
+    """Reject a lease grant that does not match its generated device contract."""
+
+    if device.device_type == expected_device_type:
+        return
+    raise ValueError(
+        f"LeaseGrant device_type {device.device_type!r} does not match "
+        f"requested contract device_type {expected_device_type!r}."
+    )
 
 
 def _parse_lease(data: Any) -> LeaseInfo:
@@ -503,10 +517,43 @@ class AsyncLabClient:
         tls: GrpcTlsConfig | None = None,
         connection_timeout_seconds: float = 10.0,
         default_rpc_timeout_seconds: float = 10.0,
-    ) -> AsyncDummyDeviceClient:
+    ) -> AsyncContractDeviceClient:
         """Lease and connect a typed async DummyDevice in one safe operation."""
 
-        from .grpc_client import AsyncDummyDeviceClient
+        from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+
+        return await self.acquire_device(
+            DUMMY_DEVICE_CONTRACT,
+            device_id,
+            duration_seconds=duration_seconds,
+            auto_renew=auto_renew,
+            renewal_interval_seconds=renewal_interval_seconds,
+            idempotency_key=idempotency_key,
+            tls=tls,
+            connection_timeout_seconds=connection_timeout_seconds,
+            default_rpc_timeout_seconds=default_rpc_timeout_seconds,
+        )
+
+    async def acquire_device(
+        self,
+        contract: Any,
+        device_id: str | None = None,
+        *,
+        duration_seconds: int = DEFAULT_LEASE_DURATION_SECONDS,
+        auto_renew: bool = True,
+        renewal_interval_seconds: float = DEFAULT_RENEWAL_INTERVAL_SECONDS,
+        idempotency_key: str | None = None,
+        tls: GrpcTlsConfig | None = None,
+        connection_timeout_seconds: float = 10.0,
+        default_rpc_timeout_seconds: float = 10.0,
+    ) -> AsyncContractDeviceClient:
+        """Lease any generated device contract using shared async plumbing."""
+
+        from labnet.grpc.generated.device_contracts import DeviceContract
+        from .grpc_client import AsyncContractDeviceClient
+
+        if not isinstance(contract, DeviceContract):
+            raise TypeError("contract must be a generated DeviceContract.")
 
         acquire_started = False
         try:
@@ -522,9 +569,11 @@ class AsyncLabClient:
                 duration_seconds = _validate_duration(duration_seconds)
 
             if device_id is None:
-                available = await self.list_available_devices("dummy_device")
+                available = await self.list_available_devices(contract.device_type)
                 if not available:
-                    raise NoAvailableDeviceError("No available dummy_device was found.")
+                    raise NoAvailableDeviceError(
+                        f"No available {contract.device_type} was found."
+                    )
                 device_id = available[0].device_id
             grant = await self.request_lease(
                 device_id,
@@ -532,7 +581,11 @@ class AsyncLabClient:
                 idempotency_key=idempotency_key,
             )
             try:
-                device = AsyncDummyDeviceClient(
+                _validate_granted_device_type(
+                    grant.device,
+                    contract.device_type,
+                )
+                device = AsyncContractDeviceClient(
                     grant,
                     central=self,
                     lease_duration_seconds=duration_seconds,
@@ -540,6 +593,7 @@ class AsyncLabClient:
                     renewal_interval_seconds=renewal_interval_seconds,
                     tls=tls,
                     default_timeout_seconds=default_rpc_timeout_seconds,
+                    _contract=contract,
                 )
             except BaseException as exc:
                 try:
@@ -596,13 +650,12 @@ class AsyncLabClient:
                     await device.aclose()
                 except BaseException as exc:
                     first_error = first_error or exc
-            try:
-                await self._http.aclose()
-            except BaseException as exc:
-                first_error = first_error or exc
-            self._closed = True
             if first_error is not None:
+                # Keep the Central HTTP transport open so a later aclose()
+                # can retry any lease release that failed transiently.
                 raise first_error
+            await self._http.aclose()
+            self._closed = True
 
     async def __aenter__(self) -> "AsyncLabClient":
         if self._authenticate_on_start and self.current_user is None:

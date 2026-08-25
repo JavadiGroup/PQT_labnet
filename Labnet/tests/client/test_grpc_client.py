@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent import futures
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import grpc
@@ -9,7 +10,8 @@ import httpx
 import pytest
 
 from labnet.client import (
-    AsyncDummyDeviceClient,
+    AsyncContractDeviceClient,
+    ContractDeviceGrpcClient,
     DeviceDeadlineExceededError,
     DeviceInfo,
     EndpointDescriptor,
@@ -17,10 +19,11 @@ from labnet.client import (
     LeaseInfo,
     MeasurementQuality,
 )
-from labnet.devices.DummyDevice.remote import RemoteDummyDevice
+from labnet.devices.core.remote import RemoteDeviceBinding
 from labnet.client.core.lab_client import LabClient
 from labnet.grpc.generated import common_pb2, dummy_device_pb2
 from labnet.grpc.generated import dummy_device_pb2_grpc, transfer_pb2
+from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
 
 
 def grant_for(port: int) -> LeaseGrant:
@@ -60,6 +63,81 @@ def scalar(value: float, sequence: int = 0) -> common_pb2.ScalarMeasurement:
         quality=common_pb2.MEASUREMENT_QUALITY_GOOD,
         status="OK",
     )
+
+
+def _contract_without(python_name: str):
+    return replace(
+        DUMMY_DEVICE_CONTRACT,
+        methods=tuple(
+            spec
+            for spec in DUMMY_DEVICE_CONTRACT.methods
+            if spec.python_name != python_name
+        ),
+    )
+
+
+def test_removed_rpc_disappears_from_sync_async_and_remote_clients() -> None:
+    contract = _contract_without("read_value")
+
+    sync_client = object.__new__(ContractDeviceGrpcClient)
+    sync_client._contract = contract
+    async_client = object.__new__(AsyncContractDeviceClient)
+    async_client._contract = contract
+    remote = object.__new__(RemoteDeviceBinding)
+    remote._contract = contract
+    remote.grpc = object()
+
+    with pytest.raises(AttributeError):
+        _ = sync_client.read_value
+    with pytest.raises(AttributeError):
+        _ = async_client.read_value
+    with pytest.raises(AttributeError):
+        _ = remote.read_value
+    with pytest.raises(AttributeError, match="does not define RPC method"):
+        remote.read_measurement()
+
+
+def test_repatterned_rpc_cannot_use_a_stale_client_convenience_method() -> None:
+    read_spec = next(
+        spec
+        for spec in DUMMY_DEVICE_CONTRACT.methods
+        if spec.python_name == "read_value"
+    )
+    repatterned = replace(
+        read_spec,
+        pattern="RPC_PATTERN_UNARY_COMMAND",
+        pattern_value=3,
+    )
+    contract = replace(
+        DUMMY_DEVICE_CONTRACT,
+        methods=tuple(
+            repatterned if spec is read_spec else spec
+            for spec in DUMMY_DEVICE_CONTRACT.methods
+        ),
+    )
+
+    sync_client = object.__new__(ContractDeviceGrpcClient)
+    sync_client._contract = contract
+    remote = object.__new__(RemoteDeviceBinding)
+    remote._contract = contract
+    remote.grpc = object()
+
+    with pytest.raises(RuntimeError, match="unsupported client pattern"):
+        _ = sync_client.read_value
+    with pytest.raises(RuntimeError, match="unsupported remote pattern"):
+        _ = remote.read_value
+    with pytest.raises(RuntimeError, match="convenience API requires"):
+        remote.read_measurement()
+
+
+@pytest.mark.asyncio
+async def test_open_stream_is_guarded_by_the_generated_stream_contract() -> None:
+    async_client = object.__new__(AsyncContractDeviceClient)
+    async_client._contract = _contract_without("stream_data")
+
+    with pytest.raises(AttributeError, match="does not define RPC method"):
+        async with async_client.open_stream(sample_rate_hz=1.0):
+            pass
 
 
 class AsyncService(dummy_device_pb2_grpc.DummyDeviceServiceServicer):
@@ -136,7 +214,7 @@ async def test_async_read_write_stream_error_metadata_and_cleanup() -> None:
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     central = FakeCentral()
-    client = AsyncDummyDeviceClient(grant_for(port), central=central)
+    client = AsyncContractDeviceClient(grant_for(port), central=central)
     try:
         await client.connect()
         read = await client.read_value(operation_id="read-op")
@@ -185,7 +263,7 @@ async def test_async_close_cancels_stream_on_externally_owned_channel() -> None:
     await server.start()
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
     central = FakeCentral()
-    client = AsyncDummyDeviceClient(
+    client = AsyncContractDeviceClient(
         grant_for(port), central=central, channel=channel
     )
 
@@ -258,6 +336,7 @@ def test_remote_dummy_device_sync_context_closes_channel_then_releases() -> None
                     "device": {
                         "device_id": grant.device.device_id,
                         "manager_id": grant.device.manager_id,
+                        "device_type": grant.device.device_type,
                         "endpoint": {
                             "transport": "grpc",
                             "target": grant.device.endpoint.target,
@@ -278,7 +357,7 @@ def test_remote_dummy_device_sync_context_closes_channel_then_releases() -> None
         transport=httpx.MockTransport(handler),
     )
     try:
-        with RemoteDummyDevice(client, device_id="dummy-1") as remote:
+        with RemoteDeviceBinding(client, device_id="dummy-1") as remote:
             assert remote.read_value() == 3.0
             remote.write_value(8.0)
             assert [item.value for item in remote.stream_data(sample_rate_hz=10, sample_count=2)] == [0.0, 1.0]

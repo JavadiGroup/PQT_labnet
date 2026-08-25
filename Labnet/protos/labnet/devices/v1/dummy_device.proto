@@ -3,6 +3,7 @@ syntax = "proto3";
 package labnet.devices.v1;
 
 import "common.proto";
+import "rpc_options.proto";
 import "transfer.proto";
 
 message ReadValueRequest {
@@ -36,7 +37,27 @@ message WriteValueResponse {
 
 // Typed control and scalar acquisition surface for the Labnet dummy device.
 service DummyDeviceService {
-  rpc ReadValue(ReadValueRequest) returns (ReadValueResponse);
-  rpc WriteValue(WriteValueRequest) returns (WriteValueResponse);
-  rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse);
+  rpc ReadValue(ReadValueRequest) returns (ReadValueResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_value"
+      default_unit: "Hz"
+    };
+  }
+
+  rpc WriteValue(WriteValueRequest) returns (WriteValueResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "write_value"
+      default_unit: "Hz"
+    };
+  }
+
+  rpc StreamData(StreamDataRequest) returns (stream StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_value"
+      default_unit: "Hz"
+    };
+  }
 }

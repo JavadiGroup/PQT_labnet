@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package labnet.devices.v1;
+
+import "google/protobuf/descriptor.proto";
+
+// Reusable LabNet execution patterns. The gRPC request/response cardinality is
+// still declared by the rpc itself; this value describes how LabNet maps the
+// typed RPC to the local physical-device method.
+enum RpcPattern {
+  RPC_PATTERN_UNSPECIFIED = 0;
+  RPC_PATTERN_SCALAR_READ = 1;
+  RPC_PATTERN_SCALAR_WRITE = 2;
+  RPC_PATTERN_UNARY_COMMAND = 3;
+  RPC_PATTERN_QUERY_METADATA = 4;
+  RPC_PATTERN_ACQUIRE_SINGLE = 5;
+  RPC_PATTERN_POLLED_SCALAR_STREAM = 6;
+  RPC_PATTERN_NATIVE_STREAM = 7;
+  RPC_PATTERN_CHUNKED_BINARY_STREAM = 8;
+  RPC_PATTERN_EVENT_STREAM = 9;
+  RPC_PATTERN_CHUNKED_BINARY_UPLOAD = 10;
+  RPC_PATTERN_SEQUENCE_UPLOAD = 11;
+  RPC_PATTERN_BIDIRECTIONAL_SESSION = 12;
+}
+
+// Every device RPC must explicitly set every field. This makes the proto the
+// authoritative mapping from the public wire API to physical.py. Use the
+// UCUM/SI symbol "1" when an operation is dimensionless.
+message RpcOptions {
+  optional RpcPattern pattern = 1;
+  optional string physical_method = 2;
+  optional string default_unit = 3;
+}
+
+extend google.protobuf.MethodOptions {
+  RpcOptions rpc = 50001;
+}

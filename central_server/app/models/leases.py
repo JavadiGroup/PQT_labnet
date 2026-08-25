@@ -64,6 +64,7 @@ class LeaseDeviceConnection(BaseModel):
 
     device_id: LabNetIdentifier
     manager_id: LabNetIdentifier
+    device_type: str
     endpoint: EndpointDescriptor
 
 

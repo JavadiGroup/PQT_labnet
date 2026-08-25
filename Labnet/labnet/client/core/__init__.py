@@ -30,8 +30,8 @@ from .exceptions import (
     ServerResponseError,
 )
 from .grpc_client import (
-    AsyncDummyDeviceClient,
-    DummyDeviceGrpcClient,
+    AsyncContractDeviceClient,
+    ContractDeviceGrpcClient,
     GrpcTlsConfig,
 )
 from .lab_client import AsyncLabClient, LabClient
@@ -47,7 +47,7 @@ from .models import (
 
 
 __all__ = [
-    "AsyncDummyDeviceClient",
+    "AsyncContractDeviceClient",
     "AsyncLabClient",
     "AuthenticatedUser",
     "AuthenticationError",
@@ -67,7 +67,7 @@ __all__ = [
     "DeviceRpcError",
     "DeviceUnavailableError",
     "DeviceUnimplementedError",
-    "DummyDeviceGrpcClient",
+    "ContractDeviceGrpcClient",
     "EndpointDescriptor",
     "GrpcTlsConfig",
     "InvalidDeviceArgumentError",

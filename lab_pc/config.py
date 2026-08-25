@@ -171,7 +171,6 @@ class LabPCSettings:
     stream_max_duration_seconds: float
     stream_lease_revalidation_seconds: float
     stream_sample_timeout_seconds: float
-    default_measurement_unit: str
 
     http_bind_host: str
     http_port: int
@@ -265,9 +264,6 @@ class LabPCSettings:
             stream_sample_timeout_seconds=_get_float(
                 "LABNET_STREAM_SAMPLE_TIMEOUT_SECONDS", 5.0
             ),
-            default_measurement_unit=os.getenv(
-                "LABNET_DEFAULT_MEASUREMENT_UNIT", "Hz"
-            ).strip(),
             http_bind_host=os.getenv(
                 "LABNET_HTTP_BIND_HOST", "127.0.0.1"
             ).strip(),
@@ -327,15 +323,6 @@ class LabPCSettings:
             raise ValueError("LABNET_GRPC_ADVERTISED_TARGET cannot be empty.")
         if not self.http_bind_host:
             raise ValueError("LABNET_HTTP_BIND_HOST cannot be empty.")
-        if (
-            not self.default_measurement_unit
-            or len(self.default_measurement_unit) > 32
-            or any(ord(character) < 0x20 for character in self.default_measurement_unit)
-        ):
-            raise ValueError(
-                "LABNET_DEFAULT_MEASUREMENT_UNIT must be 1-32 printable characters."
-            )
-
         advertised_host, _advertised_port = _parse_grpc_target(
             self.grpc_advertised_target
         )

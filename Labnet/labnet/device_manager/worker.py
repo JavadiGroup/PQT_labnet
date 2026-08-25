@@ -60,12 +60,14 @@ class DeviceWorker:
         *,
         queue_capacity: int = 32,
         thread_name_prefix: str = "labnet-device",
+        require_generated_contract: bool = False,
     ) -> None:
         if queue_capacity < 1:
             raise InvalidConfigurationError("queue_capacity must be at least 1.")
         self.device_id = device_id
         self._device = device
         self._queue_capacity = queue_capacity
+        self._require_generated_contract = require_generated_contract
         self._queue: queue.Queue[_WorkItem[Any]] = queue.Queue(
             maxsize=queue_capacity
         )
@@ -468,9 +470,36 @@ class DeviceWorker:
             raise InvalidConfigurationError("status() must return a non-empty string.")
         availability = _read_device_availability(self._device, status)
         metadata = self._device.metadata()
-        methods = self._device.allowed_methods()
         if not isinstance(metadata, Mapping):
             raise InvalidConfigurationError("metadata() must return a mapping.")
+
+        # A generated proto contract is authoritative whenever one exists.
+        # This both removes the duplicate handwritten allow-list from drivers
+        # and makes an API/physical signature mismatch fail during startup,
+        # before the device is advertised to Central.
+        from labnet.grpc.generated.device_contracts import (
+            DEVICE_CONTRACT_BY_TYPE,
+            validate_implementation,
+        )
+
+        contract = DEVICE_CONTRACT_BY_TYPE.get(device_type.strip())
+        if contract is None:
+            if self._require_generated_contract:
+                raise InvalidConfigurationError(
+                    f"No generated gRPC contract exists for device_type "
+                    f"{device_type.strip()!r}. Add its annotated proto and run "
+                    "tools/generate_protos.py before starting the Lab PC."
+                )
+            # Keep the transport-neutral manager usable for legacy/test-only
+            # physical devices that have no network service contract.
+            methods = self._device.allowed_methods()
+        else:
+            validate_implementation(self._device, contract)
+            methods = contract.allowed_physical_methods
+            metadata = dict(metadata)
+            metadata["capabilities"] = [
+                method.python_name for method in contract.methods
+            ]
         allowed = _normalize_allowed_methods(methods)
         with self._state_lock:
             self._device_type = device_type.strip()

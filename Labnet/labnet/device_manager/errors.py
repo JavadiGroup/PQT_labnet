@@ -33,6 +33,12 @@ class DeviceNotFoundError(DeviceManagerError):
     code = "DEVICE_NOT_FOUND"
 
 
+class DeviceTypeMismatchError(DeviceManagerError):
+    """The leased device does not implement the requested service family."""
+
+    code = "DEVICE_TYPE_MISMATCH"
+
+
 class DeviceUnavailableError(DeviceManagerError):
     code = "DEVICE_UNAVAILABLE"
     retryable = True
@@ -99,6 +105,7 @@ __all__ = [
     "DeviceQueueFullError",
     "DeviceShutdownError",
     "DeviceStartupError",
+    "DeviceTypeMismatchError",
     "DeviceUnavailableError",
     "DuplicateDeviceIdError",
     "InvalidConfigurationError",

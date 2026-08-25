@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from labnet.client import AsyncLabClient, AuthenticationError, LabClient
-from labnet.devices.DummyDevice.remote import RemoteDummyDevice
+from labnet.devices.core.remote import RemoteDeviceBinding
 
 
 NOW = datetime.now(timezone.utc)
@@ -201,6 +201,7 @@ def grant_with_invalid_endpoint() -> dict[str, object]:
         "device": {
             "device_id": "dummy-1",
             "manager_id": "lab-pc-1",
+            "device_type": "dummy_device",
             "endpoint": invalid_endpoint(),
         },
     }
@@ -254,7 +255,7 @@ def test_sync_remote_rolls_back_lease_when_grpc_construction_fails() -> None:
     )
     try:
         with pytest.raises(ValueError, match="loopback"):
-            RemoteDummyDevice(client, device_id="dummy-1")
+            RemoteDeviceBinding(client, device_id="dummy-1")
         assert [(request.method, request.url.path) for request in requests] == [
             ("POST", "/api/v1/leases"),
             ("DELETE", "/api/v1/leases/lease-1"),

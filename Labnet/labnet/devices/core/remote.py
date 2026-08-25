@@ -1,4 +1,4 @@
-"""Synchronous Central-lease + gRPC convenience proxy for DummyDevice."""
+"""Shared synchronous Central-lease + gRPC remote device binding."""
 
 from __future__ import annotations
 
@@ -16,20 +16,80 @@ from ...client.core.exceptions import (
     ResourceNotFoundError,
     ServerResponseError,
 )
-from ...client.core.grpc_client import DummyDeviceGrpcClient, GrpcTlsConfig
-from ...client.core.lab_client import LabClient, _validate_renewal_policy
+from ...client.core.grpc_client import ContractDeviceGrpcClient, GrpcTlsConfig
+from ...client.core.lab_client import (
+    LabClient,
+    _validate_granted_device_type,
+    _validate_renewal_policy,
+)
 from ...client.core.models import Measurement
+from ...grpc.generated.device_contracts import (
+    DUMMY_DEVICE_CONTRACT,
+    DeviceContract,
+    RpcSpec,
+)
 from ...lease_policy import (
     DEFAULT_LEASE_DURATION_SECONDS,
     DEFAULT_RENEWAL_INTERVAL_SECONDS,
 )
-from .interface import DummyDeviceInterface
 
 
-class RemoteDummyDevice(DummyDeviceInterface):
-    """Own one Central lease and one reusable, typed synchronous gRPC channel."""
+_SCALAR_READ = "RPC_PATTERN_SCALAR_READ"
+_SCALAR_WRITE = "RPC_PATTERN_SCALAR_WRITE"
+_POLLED_SCALAR_STREAM = "RPC_PATTERN_POLLED_SCALAR_STREAM"
 
-    device_type = "dummy_device"
+
+def _contract_method(contract: DeviceContract, name: str) -> RpcSpec | None:
+    return next(
+        (method for method in contract.methods if method.python_name == name),
+        None,
+    )
+
+
+def _require_pattern(
+    contract: DeviceContract,
+    name: str,
+    expected_pattern: str,
+) -> RpcSpec:
+    spec = _contract_method(contract, name)
+    if spec is None:
+        raise AttributeError(
+            f"Contract {contract.device_type!r} does not define RPC method "
+            f"{name!r}."
+        )
+    if spec.pattern != expected_pattern:
+        raise RuntimeError(
+            f"Contract RPC {spec.rpc_full_name} now uses {spec.pattern}; the "
+            f"{name!r} convenience API requires {expected_pattern}."
+        )
+    return spec
+
+
+def _dispatch_kind(spec: RpcSpec) -> str:
+    if spec.pattern in {_SCALAR_READ, _SCALAR_WRITE}:
+        if spec.client_streaming or spec.server_streaming:
+            raise RuntimeError(
+                f"Generated RPC {spec.rpc_full_name} has incompatible "
+                f"{spec.cardinality} cardinality for {spec.pattern}."
+            )
+        return "unary"
+    if spec.pattern == _POLLED_SCALAR_STREAM:
+        if spec.client_streaming or not spec.server_streaming:
+            raise RuntimeError(
+                f"Generated RPC {spec.rpc_full_name} has incompatible "
+                f"{spec.cardinality} cardinality for {spec.pattern}."
+            )
+        return "stream"
+    raise RuntimeError(
+        f"Generated RPC {spec.rpc_full_name} uses unsupported remote pattern "
+        f"{spec.pattern}."
+    )
+
+
+class RemoteDeviceBinding:
+    """Own one Central lease and one contract-driven synchronous gRPC channel."""
+
+    device_type = "unknown"
 
     def __init__(
         self,
@@ -43,7 +103,10 @@ class RemoteDummyDevice(DummyDeviceInterface):
         connection_timeout_seconds: float = 10.0,
         default_rpc_timeout_seconds: float = 10.0,
         idempotency_key: str | None = None,
+        _contract: DeviceContract = DUMMY_DEVICE_CONTRACT,
     ) -> None:
+        self._contract = _contract
+        self.device_type = _contract.device_type
         self.client = client
         self._channel_closed = False
         self._lease_released = False
@@ -64,7 +127,7 @@ class RemoteDummyDevice(DummyDeviceInterface):
             available = client.list_available_devices(device_type=self.device_type)
             if not available:
                 raise NoAvailableDeviceError(
-                    "No available dummy_device is available."
+                    f"No available {self.device_type} is available."
                 )
             device_id = available[0].device_id
 
@@ -73,13 +136,27 @@ class RemoteDummyDevice(DummyDeviceInterface):
             duration_seconds=lease_duration,
             idempotency_key=idempotency_key,
         )
+        try:
+            _validate_granted_device_type(grant.device, self.device_type)
+        except BaseException as exc:
+            # This binding performed the acquisition, so it also owns rollback
+            # when Central returns a device from the wrong contract family.
+            try:
+                client.release_lease(grant.lease.lease_id)
+            except BaseException as cleanup_exc:
+                exc.add_note(
+                    "Releasing the mismatched device lease also failed: "
+                    f"{cleanup_exc}"
+                )
+            raise
         self.lease = grant.lease
         self.device = grant.device
         try:
-            self.grpc = DummyDeviceGrpcClient(
+            self.grpc = ContractDeviceGrpcClient(
                 grant,
                 tls=tls,
                 default_timeout_seconds=default_rpc_timeout_seconds,
+                _contract=_contract,
             )
             self.grpc.connect(connection_timeout_seconds)
         except BaseException as exc:
@@ -136,63 +213,15 @@ class RemoteDummyDevice(DummyDeviceInterface):
     def metadata(self) -> dict[str, Any]:
         return dict(self.device.metadata)
 
-    def read_measurement(
-        self,
-        channel: str | None = None,
-        *,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Measurement:
+    def read_measurement(self, *args: Any, **kwargs: Any) -> Measurement:
+        spec = _require_pattern(self._contract, "read_value", _SCALAR_READ)
         self._ensure_authority()
-        return self.grpc.read_value(
-            channel,
-            operation_id=operation_id,
-            timeout_seconds=timeout_seconds,
-        )
+        return getattr(self.grpc, spec.python_name)(*args, **kwargs)
 
-    def read_value(self, channel: str | None = None) -> float:
-        return self.read_measurement(channel).value
-
-    def write_measurement(
-        self,
-        value: float,
-        channel: str | None = None,
-        *,
-        unit: str | None = None,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Measurement:
+    def write_measurement(self, *args: Any, **kwargs: Any) -> Measurement:
+        spec = _require_pattern(self._contract, "write_value", _SCALAR_WRITE)
         self._ensure_authority()
-        return self.grpc.write_value(
-            value,
-            channel,
-            unit=unit,
-            operation_id=operation_id,
-            timeout_seconds=timeout_seconds,
-        )
-
-    def write_value(self, value: float, channel: str | None = None) -> None:
-        self.write_measurement(value, channel)
-
-    def stream_data(
-        self,
-        *,
-        sample_rate_hz: float,
-        sample_count: int | None = None,
-        duration_seconds: float | None = None,
-        channel: str | None = None,
-        operation_id: str | None = None,
-        timeout_seconds: float | None = None,
-    ) -> Iterator[Measurement]:
-        self._ensure_authority()
-        return self.grpc.stream_data(
-            sample_rate_hz=sample_rate_hz,
-            sample_count=sample_count,
-            duration_seconds=duration_seconds,
-            channel=channel,
-            operation_id=operation_id,
-            timeout_seconds=timeout_seconds,
-        )
+        return getattr(self.grpc, spec.python_name)(*args, **kwargs)
 
     def close(self) -> None:
         with self._close_lock:
@@ -332,7 +361,7 @@ class RemoteDummyDevice(DummyDeviceInterface):
         if self._authority_error is not None:
             raise self._authority_error
         if self._closing or self._channel_closed:
-            raise RuntimeError("The remote DummyDevice client is closing or closed.")
+            raise RuntimeError("The remote device binding is closing or closed.")
         if self.lease_expired:
             error = LeaseAuthorityError(
                 f"Lease {self.lease.lease_id!r} expired before it could be renewed."
@@ -340,7 +369,38 @@ class RemoteDummyDevice(DummyDeviceInterface):
             self._mark_authority_lost(error)
             raise error
 
-    def __enter__(self) -> "RemoteDummyDevice":
+    def __getattr__(self, name: str) -> Any:
+        """Expose newly generated RPCs without a handwritten remote method."""
+
+        grpc_client = self.__dict__.get("grpc")
+        contract = self.__dict__.get("_contract")
+        if grpc_client is None or contract is None:
+            raise AttributeError(name)
+        spec = _contract_method(contract, name)
+        if spec is None:
+            raise AttributeError(name)
+        dispatch_kind = _dispatch_kind(spec)
+        if spec.pattern == _SCALAR_READ:
+            def scalar_read(*args: Any, **kwargs: Any) -> float:
+                self._ensure_authority()
+                return getattr(grpc_client, name)(*args, **kwargs).value
+
+            return scalar_read
+        if spec.pattern == _SCALAR_WRITE:
+            def scalar_write(*args: Any, **kwargs: Any) -> None:
+                self._ensure_authority()
+                getattr(grpc_client, name)(*args, **kwargs)
+
+            return scalar_write
+        if dispatch_kind == "stream":
+            def scalar_stream(*args: Any, **kwargs: Any) -> Iterator[Measurement]:
+                self._ensure_authority()
+                return getattr(grpc_client, name)(*args, **kwargs)
+
+            return scalar_stream
+        raise AttributeError(name)
+
+    def __enter__(self) -> "RemoteDeviceBinding":
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
@@ -351,4 +411,4 @@ class RemoteDummyDevice(DummyDeviceInterface):
                 raise
 
 
-__all__ = ["RemoteDummyDevice"]
+__all__ = ["RemoteDeviceBinding"]

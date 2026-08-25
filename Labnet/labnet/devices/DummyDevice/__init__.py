@@ -8,9 +8,7 @@ from typing import Any
 
 _EXPORT_MODULES = {
     "DummyDevice": ".device",
-    "DummyDeviceInterface": ".interface",
     "PhysicalDummyDevice": ".physical",
-    "RemoteDummyDevice": ".remote",
 }
 __all__ = list(_EXPORT_MODULES)
 

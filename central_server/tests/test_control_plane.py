@@ -125,6 +125,7 @@ def test_full_registration_lease_validation_release_flow(tmp_path: Path) -> None
         body = grant.json()
         lease_id = body["lease"]["lease_id"]
         assert body["lease"]["state"] == "active"
+        assert body["device"]["device_type"] == "dummy_device"
         assert body["device"]["endpoint"]["transport"] == "grpc"
         assert datetime.fromisoformat(body["lease"]["expires_at"]).tzinfo is not None
 

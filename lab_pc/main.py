@@ -231,6 +231,7 @@ def _create_device_manager(
         heartbeat_interval_seconds=settings.heartbeat_interval_seconds,
         worker_start_timeout=settings.device_start_timeout_seconds,
         shutdown_timeout=settings.grpc_shutdown_grace_seconds,
+        require_generated_contracts=True,
     )
 
 
@@ -264,7 +265,6 @@ def _create_grpc_server(
         manager.executor,
         config=config,
         stream_policy=stream_policy,
-        default_unit=settings.default_measurement_unit,
         default_operation_timeout_seconds=(
             settings.default_operation_timeout_seconds
         ),

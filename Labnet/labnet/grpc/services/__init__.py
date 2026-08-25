@@ -1,15 +1,17 @@
-"""Concrete Labnet gRPC service implementations."""
+"""Generated-contract gRPC service implementations."""
 
-from .dummy_device import (
+from .patterns import (
     AuthorizedDeviceSessionProtocol,
     DeviceExecutorProtocol,
-    DummyDeviceGrpcService,
+    PatternDeviceGrpcService,
     StreamPolicy,
+    UnsupportedRpcPatternError,
 )
 
 __all__ = [
     "AuthorizedDeviceSessionProtocol",
     "DeviceExecutorProtocol",
-    "DummyDeviceGrpcService",
+    "PatternDeviceGrpcService",
     "StreamPolicy",
+    "UnsupportedRpcPatternError",
 ]

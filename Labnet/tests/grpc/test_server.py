@@ -54,7 +54,7 @@ class _FakeExecutor:
     async def execute(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
         if kwargs["method"] == "write_value":
-            self.value = float(kwargs["args"][0])
+            self.value = float(kwargs["kwargs"]["value"])
             return None
         return self.value
 
@@ -78,7 +78,6 @@ async def running_server(executor: _FakeExecutor):
             # the coarse event-loop clock resolution seen on some Windows hosts.
             lease_revalidation_interval_seconds=0.005,
         ),
-        default_unit="Hz",
     )
     await server.start()
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{server.bound_port}")
@@ -95,6 +94,10 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     stub = dummy_device_pb2_grpc.DummyDeviceServiceStub(channel)
     assert server.started is True
     assert server.serving is True
+    assert tuple(server.device_services) == ("dummy_device",)
+    assert server.service_names == (
+        "labnet.devices.v1.DummyDeviceService",
+    )
 
     read = await stub.ReadValue(
         dummy_device_pb2.ReadValueRequest(
@@ -110,6 +113,7 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     assert read.measurement.channel == "frequency"
     assert executor.calls[-1]["kwargs"] == {"channel": "frequency"}
     assert executor.calls[-1]["deadline"] == 30.0
+    assert executor.calls[-1]["expected_device_type"] == "dummy_device"
 
     write = await stub.WriteValue(
         dummy_device_pb2.WriteValueRequest(
@@ -136,7 +140,12 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
         )
     ]
     assert [item.measurement.sequence for item in responses] == [0, 1, 2]
+    assert [item[0] for item in executor.session_calls] == ["read_value"] * 3
     assert executor.revalidations
+    stream_authorization = next(
+        item["authorize"] for item in executor.calls if "authorize" in item
+    )
+    assert stream_authorization["expected_device_type"] == "dummy_device"
 
     health_stub = health_pb2_grpc.HealthStub(channel)
     health_response = await health_stub.Check(
