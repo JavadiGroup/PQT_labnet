@@ -25,7 +25,6 @@ from .models import (
     EndpointDescriptor,
     ManagerState,
     StartupReport,
-    WorkerActivity,
     utc_now,
 )
 from .worker import DeviceWorker
@@ -156,66 +155,6 @@ class DeviceManager:
 
     def snapshots(self) -> tuple[DeviceSnapshot, ...]:
         return tuple(worker.snapshot() for worker in self._workers.values())
-
-    def activity_snapshots(self) -> dict[str, WorkerActivity]:
-        return {
-            device_id: worker.activity_snapshot()
-            for device_id, worker in self._workers.items()
-        }
-
-    def begin_quiesce(self) -> dict[str, WorkerActivity]:
-        """Stop new worker submissions without cancelling admitted work."""
-
-        if self._state is not ManagerState.RUNNING:
-            raise ManagerClosedError("Only a running DeviceManager can quiesce.")
-        return {
-            device_id: worker.begin_quiesce()
-            for device_id, worker in self._workers.items()
-        }
-
-    def resume(self) -> dict[str, WorkerActivity]:
-        """Resume submissions after a safely cancelled update attempt."""
-
-        if self._state is not ManagerState.RUNNING:
-            raise ManagerClosedError("Only a running DeviceManager can resume.")
-        return {
-            device_id: worker.resume()
-            for device_id, worker in self._workers.items()
-        }
-
-    async def wait_quiescent(
-        self, *, timeout: float | None = None
-    ) -> dict[str, WorkerActivity]:
-        """Wait until no queued or running physical operation remains."""
-
-        async def wait() -> None:
-            await asyncio.gather(
-                *(worker.wait_until_idle() for worker in self._workers.values())
-            )
-
-        try:
-            if timeout is None:
-                await wait()
-            else:
-                if not math.isfinite(timeout) or timeout <= 0:
-                    raise ValueError(
-                        "timeout must be finite and positive when supplied."
-                    )
-                async with asyncio.timeout(timeout):
-                    await wait()
-        except TimeoutError as exc:
-            activity = self.activity_snapshots()
-            raise DeviceDeadlineExceededError(
-                "Timed out while waiting for all device workers to become idle.",
-                details={
-                    device_id: {
-                        "queued_count": item.queued_count,
-                        "running_count": item.running_count,
-                    }
-                    for device_id, item in activity.items()
-                },
-            ) from exc
-        return self.activity_snapshots()
 
     async def refresh_snapshots(
         self,

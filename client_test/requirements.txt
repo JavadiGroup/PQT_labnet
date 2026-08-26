@@ -1,0 +1,3 @@
+# Install from the repository root. The base distribution contains the
+# Central HTTP and direct gRPC clients; no WebSocket runtime is required.
+-e .

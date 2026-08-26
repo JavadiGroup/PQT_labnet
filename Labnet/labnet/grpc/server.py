@@ -14,11 +14,6 @@ from typing import Any
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
-from labnet.device_manager.admission import (
-    AdmissionGate,
-    AdmissionSnapshot,
-)
-
 from .generated.device_contracts import DEVICE_CONTRACTS, DeviceContract
 from .services import DeviceExecutorProtocol, PatternDeviceGrpcService, StreamPolicy
 
@@ -107,10 +102,8 @@ class LabnetGrpcServer:
         stream_policy: StreamPolicy | None = None,
         default_operation_timeout_seconds: float = 30.0,
         contracts: Sequence[DeviceContract] | None = None,
-        admission_gate: AdmissionGate | None = None,
     ) -> None:
         self.config = config or GrpcServerConfig()
-        self._admission_gate = admission_gate or AdmissionGate()
         selected_contracts = tuple(
             DEVICE_CONTRACTS if contracts is None else contracts
         )
@@ -136,7 +129,6 @@ class LabnetGrpcServer:
                 default_operation_timeout_seconds=(
                     default_operation_timeout_seconds
                 ),
-                admission_gate=self._admission_gate,
             )
             services[contract.device_type] = service
             service_names.add(contract.service_full_name)
@@ -206,13 +198,6 @@ class LabnetGrpcServer:
 
         return self._service_names
 
-    @property
-    def admission_gate(self) -> AdmissionGate:
-        return self._admission_gate
-
-    def activity_snapshot(self) -> AdmissionSnapshot:
-        return self._admission_gate.snapshot()
-
     async def start(self) -> None:
         if self._stopped:
             raise RuntimeError("A stopped gRPC server cannot be restarted.")
@@ -220,21 +205,7 @@ class LabnetGrpcServer:
             return
         await self._server.start()
         self._started = True
-        await self.set_serving(self._admission_gate.accepting)
-
-    async def begin_drain(self) -> AdmissionSnapshot:
-        snapshot = await self._admission_gate.begin_drain()
-        if self._started:
-            await self.set_serving(False)
-        return snapshot
-
-    async def wait_quiescent(
-        self, *, timeout: float | None = None
-    ) -> AdmissionSnapshot:
-        return await self._admission_gate.wait_idle(timeout=timeout)
-
-    async def resume_admission(self) -> AdmissionSnapshot:
-        return await self._admission_gate.resume()
+        await self.set_serving(True)
 
     async def set_serving(self, serving: bool) -> None:
         """Update overall and every generated device service health entry."""

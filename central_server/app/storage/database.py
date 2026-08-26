@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .orm import Base
 
 
-SCHEMA_REVISION = "20260825_0003"
+SCHEMA_REVISION = "20260824_0002"
 
 
 class Database:
@@ -75,9 +75,6 @@ class Database:
                 "devices",
                 "leases",
                 "lease_requests",
-                "release_artifacts",
-                "deployment_assignments",
-                "update_attempts",
                 "audit_events",
             }
             if not required.issubset(set(inspector.get_table_names())):

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -109,9 +108,6 @@ class DeviceManagerRow(Base):
     endpoint_attributes: Mapped[dict[str, str]] = mapped_column(
         JSON, nullable=False, default=dict
     )
-    admission_state: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="accepting"
-    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")
     registered_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, default=utc_now
@@ -126,10 +122,6 @@ class DeviceManagerRow(Base):
         CheckConstraint("transport = 'grpc'", name="ck_managers_grpc_transport"),
         CheckConstraint(
             "status IN ('online','offline')", name="ck_managers_status"
-        ),
-        CheckConstraint(
-            "admission_state IN ('accepting','draining','updating')",
-            name="ck_managers_admission_state",
         ),
     )
 
@@ -146,9 +138,6 @@ class DeviceRow(Base):
     device_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     runtime_state: Mapped[str] = mapped_column(String(32), nullable=False)
     availability: Mapped[str] = mapped_column(String(32), nullable=False)
-    admission_state: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="accepting"
-    )
     status_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     device_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSON, nullable=False, default=dict
@@ -167,10 +156,6 @@ class DeviceRow(Base):
         CheckConstraint(
             "availability IN ('available','unavailable','unknown')",
             name="ck_devices_availability",
-        ),
-        CheckConstraint(
-            "admission_state IN ('accepting','draining','updating')",
-            name="ck_devices_admission_state",
         ),
     )
 
@@ -249,108 +234,6 @@ class LeaseRequestRow(Base):
     __table_args__ = (
         UniqueConstraint(
             "user_id", "idempotency_key", name="uq_lease_request_user_key"
-        ),
-    )
-
-
-class ReleaseArtifactRow(Base):
-    __tablename__ = "release_artifacts"
-
-    release_id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    version: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    artifact_filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
-    artifact_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    state: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pending_upload"
-    )
-    created_by_user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=utc_now
-    )
-    uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    promoted_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-
-    __table_args__ = (
-        CheckConstraint(
-            "state IN ('pending_upload','candidate','promoted','withdrawn')",
-            name="ck_release_artifacts_state",
-        ),
-        CheckConstraint("artifact_size > 0", name="ck_release_artifact_size"),
-    )
-
-
-class DeploymentAssignmentRow(Base):
-    __tablename__ = "deployment_assignments"
-
-    manager_id: Mapped[str] = mapped_column(
-        ForeignKey("device_managers.manager_id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    desired_release_id: Mapped[str] = mapped_column(
-        ForeignKey("release_artifacts.release_id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    observed_version: Mapped[str | None] = mapped_column(String(64))
-    previous_version: Mapped[str | None] = mapped_column(String(64))
-    state: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="assigned"
-    )
-    active_attempt_id: Mapped[str | None] = mapped_column(String(80))
-    assigned_by_user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False
-    )
-    assigned_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=utc_now
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=utc_now, onupdate=utc_now
-    )
-    last_error: Mapped[str | None] = mapped_column(Text)
-
-    __table_args__ = (
-        CheckConstraint(
-            "state IN ('assigned','downloading','staged','draining','quiescing',"
-            "'switching','verifying','succeeded','failed','rolled_back')",
-            name="ck_deployment_assignments_state",
-        ),
-    )
-
-
-class UpdateAttemptRow(Base):
-    __tablename__ = "update_attempts"
-
-    attempt_id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    manager_id: Mapped[str] = mapped_column(
-        ForeignKey("device_managers.manager_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    release_id: Mapped[str] = mapped_column(
-        ForeignKey("release_artifacts.release_id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-    from_version: Mapped[str | None] = mapped_column(String(64))
-    state: Mapped[str] = mapped_column(String(32), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=utc_now
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=utc_now, onupdate=utc_now
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    error: Mapped[str | None] = mapped_column(Text)
-    details: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-
-    __table_args__ = (
-        CheckConstraint(
-            "state IN ('assigned','downloading','staged','draining','quiescing',"
-            "'switching','verifying','succeeded','failed','rolled_back')",
-            name="ck_update_attempts_state",
         ),
     )
 

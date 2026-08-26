@@ -21,7 +21,6 @@ RuntimeState = Literal[
 ]
 Availability = Literal["available", "unavailable", "unknown"]
 AllocationState = Literal["free", "leased"]
-AdmissionState = Literal["accepting", "draining", "updating"]
 
 
 class EndpointDescriptor(BaseModel):
@@ -137,7 +136,6 @@ class DevicePublic(BaseModel):
     availability: Availability
     status_text: str
     allocation_state: AllocationState
-    admission_state: AdmissionState
     effective_available: bool
     last_seen: datetime
     metadata: dict[str, Any]

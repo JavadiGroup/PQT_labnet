@@ -14,7 +14,6 @@ from labnet.device_manager import (
     DeviceQueueFullError,
     DeviceShutdownError,
     DeviceState,
-    DeviceUnavailableError,
     DuplicateDeviceIdError,
     InvalidConfigurationError,
     LeaseInvalidError,
@@ -389,41 +388,3 @@ async def test_started_hung_health_check_marks_device_unresponsive() -> None:
         await asyncio.sleep(0.01)
     assert manager.get_snapshot("hung-health").available is True
     await manager.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_quiesce_counts_running_work_and_rejects_new_submissions() -> None:
-    device = RecordingDevice("drain-device")
-    manager = DeviceManager(
-        [device],
-        StaticLeaseValidator({"lease": "drain-device"}),
-    )
-    await manager.start()
-    try:
-        running = asyncio.create_task(
-            manager.executor.execute("lease", "drain-device", "slow")
-        )
-        await asyncio.to_thread(device.entered_slow.wait, 1)
-
-        activity = manager.begin_quiesce()["drain-device"]
-        assert activity.running_count == 1
-        assert activity.idle is False
-        with pytest.raises(DeviceUnavailableError, match="draining"):
-            await manager.executor.execute("lease", "drain-device", "read")
-
-        waiting = asyncio.create_task(manager.wait_quiescent())
-        await asyncio.sleep(0)
-        assert waiting.done() is False
-        device.release_slow.set()
-        assert await running == "done"
-        drained = await waiting
-        assert drained["drain-device"].idle is True
-
-        manager.resume()
-        assert (
-            await manager.executor.execute("lease", "drain-device", "read")
-            == 1.25
-        )
-    finally:
-        device.release_slow.set()
-        await manager.shutdown()

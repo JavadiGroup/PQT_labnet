@@ -35,8 +35,6 @@ class Settings:
     lease_default_idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT_SECONDS
     heartbeat_timeout_seconds: int = 30
     maintenance_interval_seconds: float = 5.0
-    release_root: Path = _default_data_directory() / "release-store"
-    release_max_upload_bytes: int = 2 * 1024 * 1024 * 1024
     bind_host: str = "127.0.0.1"
     bind_port: int = 8008
     # Development/tests may opt in. Normal deployments use `python -m
@@ -61,23 +59,12 @@ class Settings:
             maintenance_interval_seconds=float(
                 os.getenv("LABNET_MAINTENANCE_INTERVAL_SECONDS", "5")
             ),
-            release_root=Path(
-                os.getenv(
-                    "LABNET_RELEASE_ROOT",
-                    str(_default_data_directory() / "release-store"),
-                )
-            ).expanduser().resolve(),
-            release_max_upload_bytes=int(
-                os.getenv(
-                    "LABNET_RELEASE_MAX_UPLOAD_BYTES",
-                    str(2 * 1024 * 1024 * 1024),
-                )
-            ),
             bind_host=os.getenv("LABNET_CENTRAL_BIND_HOST", "127.0.0.1"),
             bind_port=int(os.getenv("LABNET_CENTRAL_BIND_PORT", "8008")),
-            create_schema_on_startup=_environment_bool(
-                "LABNET_CREATE_SCHEMA_ON_STARTUP", False
-            ),
+            create_schema_on_startup=os.getenv(
+                "LABNET_CREATE_SCHEMA_ON_STARTUP", "false"
+            ).strip().lower()
+            in {"1", "true", "yes", "on"},
         ).validated()
 
     def validated(self) -> "Settings":
@@ -111,18 +98,6 @@ class Settings:
             )
         if not 1 <= self.bind_port <= 65535:
             raise ValueError("LABNET_CENTRAL_BIND_PORT must be between 1 and 65535.")
-        if self.release_max_upload_bytes <= 0:
-            raise ValueError("LABNET_RELEASE_MAX_UPLOAD_BYTES must be positive.")
-        if not str(self.release_root):
-            raise ValueError("LABNET_RELEASE_ROOT must not be empty.")
-        resolved_release_root = self.release_root.expanduser().resolve()
-        if resolved_release_root in {
-            Path(resolved_release_root.anchor),
-            Path.home().resolve(),
-        }:
-            raise ValueError(
-                "LABNET_RELEASE_ROOT must be a dedicated data directory."
-            )
         return self
 
 
@@ -134,15 +109,3 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(value).is_loopback
     except ValueError:
         return False
-
-
-def _environment_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    normalized = raw.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"{name} must be a boolean value.")

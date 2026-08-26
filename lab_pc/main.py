@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import logging
-import secrets
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from labnet.device_manager import (
@@ -30,11 +28,9 @@ from labnet.grpc import (
     StreamPolicy,
     TLSConfig,
 )
-from labnet.release import contract_digest, installed_version
 
 from .config import LabPCSettings
 from .device_inventory import create_devices
-from .update_control import StopCallback, UpdateRuntimeCoordinator
 
 
 LOGGER = logging.getLogger(__name__)
@@ -48,21 +44,15 @@ class LabPCRuntime:
     settings: LabPCSettings
     manager: DeviceManager
     grpc_server: LabnetGrpcServer
-    update_coordinator: UpdateRuntimeCoordinator
-    package_version: str
-    contract_digest: str
 
     @property
     def components_ready(self) -> bool:
         snapshots = self.manager.snapshots()
-        return (
-            self.update_coordinator.accepting
-            and _components_ready(
-                settings=self.settings,
-                manager_state=self.manager.state,
-                central_registered=self.manager.registered,
-                snapshots=snapshots,
-            )
+        return _components_ready(
+            settings=self.settings,
+            manager_state=self.manager.state,
+            central_registered=self.manager.registered,
+            snapshots=snapshots,
         )
 
     @property
@@ -77,8 +67,7 @@ class LabPCRuntime:
 def create_app(
     *,
     settings: LabPCSettings | None = None,
-    device_factory: DeviceFactory | None = None,
-    stop_callback: StopCallback | None = None,
+    device_factory: DeviceFactory = create_devices,
 ) -> FastAPI:
     """Create the HTTP management app and its gRPC/device lifespan."""
 
@@ -89,33 +78,14 @@ def create_app(
         grpc_server: LabnetGrpcServer | None = None
         health_sync_task: asyncio.Task[None] | None = None
         device_refresh_task: asyncio.Task[None] | None = None
-        update_coordinator: UpdateRuntimeCoordinator | None = None
         try:
-            resolved_factory = device_factory or _load_device_factory(
-                resolved_settings.device_factory_path
-            )
-            devices = tuple(resolved_factory())
-            package_release = installed_version()
-            contracts_hash = contract_digest()
-            manager = _create_device_manager(
-                resolved_settings,
-                devices,
-                package_version=package_release,
-                contracts_hash=contracts_hash,
-            )
+            devices = tuple(device_factory())
+            manager = _create_device_manager(resolved_settings, devices)
             grpc_server = _create_grpc_server(resolved_settings, manager)
-            update_coordinator = UpdateRuntimeCoordinator(
-                manager,
-                grpc_server,
-                stop_callback=stop_callback,
-            )
             runtime = LabPCRuntime(
                 settings=resolved_settings,
                 manager=manager,
                 grpc_server=grpc_server,
-                update_coordinator=update_coordinator,
-                package_version=package_release,
-                contract_digest=contracts_hash,
             )
             app.state.runtime = runtime
 
@@ -153,8 +123,6 @@ def create_app(
                     await health_sync_task
                 except asyncio.CancelledError:
                     pass
-            if update_coordinator is not None:
-                await update_coordinator.close()
             if grpc_server is not None:
                 try:
                     if grpc_server.started:
@@ -170,7 +138,7 @@ def create_app(
 
     app = FastAPI(
         title="Labnet Lab-PC Management Plane",
-        version=installed_version(),
+        version="0.2.0",
         lifespan=lifespan,
     )
 
@@ -198,7 +166,6 @@ def create_app(
                 central_registered=central_registered,
                 snapshots=snapshots,
             )
-            and runtime.update_coordinator.accepting
             and grpc_started
             and grpc_serving
         )
@@ -215,62 +182,12 @@ def create_app(
             status_code=200 if ready else 503,
         )
 
-    @app.get("/internal/v1/update/status")
-    async def update_status(request: Request) -> dict[str, object]:
-        runtime: LabPCRuntime = app.state.runtime
-        _require_updater(request, runtime.settings)
-        return {
-            "package_version": runtime.package_version,
-            "contract_digest": runtime.contract_digest,
-            **runtime.update_coordinator.snapshot().to_dict(),
-        }
-
-    @app.post("/internal/v1/update/drain")
-    async def update_drain(request: Request) -> JSONResponse:
-        runtime: LabPCRuntime = app.state.runtime
-        _require_updater(request, runtime.settings)
-        snapshot = await runtime.update_coordinator.request_drain()
-        return JSONResponse(
-            {
-                "package_version": runtime.package_version,
-                **snapshot.to_dict(),
-            },
-            status_code=200 if snapshot.quiescent else 202,
-        )
-
-    @app.post("/internal/v1/update/resume")
-    async def update_resume(request: Request) -> dict[str, object]:
-        runtime: LabPCRuntime = app.state.runtime
-        _require_updater(request, runtime.settings)
-        snapshot = await runtime.update_coordinator.resume()
-        await runtime.grpc_server.set_serving(runtime.components_ready)
-        return {
-            "package_version": runtime.package_version,
-            **snapshot.to_dict(),
-        }
-
-    @app.post("/internal/v1/update/stop")
-    async def update_stop(request: Request) -> JSONResponse:
-        runtime: LabPCRuntime = app.state.runtime
-        _require_updater(request, runtime.settings)
-        snapshot = await runtime.update_coordinator.request_stop()
-        return JSONResponse(
-            {
-                "package_version": runtime.package_version,
-                **snapshot.to_dict(),
-            },
-            status_code=202,
-        )
-
     return app
 
 
 def _create_device_manager(
     settings: LabPCSettings,
     devices: Sequence[PhysicalDevice],
-    *,
-    package_version: str,
-    contracts_hash: str,
 ) -> DeviceManager:
     # Reject duplicate or malformed IDs before constructing HTTP clients.
     DeviceCatalog(devices)
@@ -303,10 +220,6 @@ def _create_device_manager(
             if settings.grpc_tls_mode != "disabled"
             else None
         ),
-        attributes={
-            "package_version": package_version,
-            "contract_digest": contracts_hash,
-        },
     )
     return DeviceManager(
         devices,
@@ -374,12 +287,9 @@ async def _health_sync_loop(runtime: LabPCRuntime) -> None:
 async def _device_refresh_loop(runtime: LabPCRuntime) -> None:
     while True:
         try:
-            if runtime.update_coordinator.accepting:
-                await runtime.manager.refresh_snapshots(
-                    deadline_per_device=(
-                        runtime.settings.device_health_timeout_seconds
-                    )
-                )
+            await runtime.manager.refresh_snapshots(
+                deadline_per_device=runtime.settings.device_health_timeout_seconds
+            )
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -416,11 +326,7 @@ def _readiness_payload(
 ) -> dict[str, Any]:
     return {
         "status": "ready" if ready else "not_ready",
-        "ready": ready,
         "service": "labnet-lab-pc",
-        "package_version": runtime.package_version,
-        "contract_digest": runtime.contract_digest,
-        "update": runtime.update_coordinator.snapshot().to_dict(),
         "grpc": {
             "serving": grpc_serving,
             "bind": runtime.settings.grpc_bind_target,
@@ -461,52 +367,12 @@ app = create_app()
 
 def main() -> None:
     settings = LabPCSettings.from_env()
-    server_holder: dict[str, uvicorn.Server] = {}
-
-    def request_stop() -> None:
-        server = server_holder.get("server")
-        if server is None:
-            raise RuntimeError("The Lab-PC HTTP server has not started.")
-        server.should_exit = True
-
-    application = create_app(
-        settings=settings,
-        stop_callback=request_stop,
-    )
-    config = uvicorn.Config(
-        application,
+    uvicorn.run(
+        create_app(settings=settings),
         host=settings.http_bind_host,
         port=settings.http_port,
         reload=False,
     )
-    server = uvicorn.Server(config)
-    server_holder["server"] = server
-    server.run()
-
-
-def _load_device_factory(import_path: str | None) -> DeviceFactory:
-    if import_path is None:
-        return create_devices
-    module_name, _, attribute_name = import_path.partition(":")
-    module = importlib.import_module(module_name)
-    factory = getattr(module, attribute_name, None)
-    if factory is None or not callable(factory):
-        raise ValueError(
-            f"LABNET_DEVICE_FACTORY does not identify a callable: {import_path}"
-        )
-    return factory
-
-
-def _require_updater(request: Request, settings: LabPCSettings) -> None:
-    expected = settings.updater_control_token
-    if expected is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Updater-controlled lifecycle endpoints are disabled.",
-        )
-    supplied = request.headers.get("x-labnet-updater-token", "")
-    if not supplied or not secrets.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="Updater authentication failed.")
 
 
 if __name__ == "__main__":

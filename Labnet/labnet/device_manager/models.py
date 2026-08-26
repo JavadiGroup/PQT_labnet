@@ -31,19 +31,6 @@ class ManagerState(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class WorkerActivity:
-    """Atomic activity snapshot used by the update drain barrier."""
-
-    queued_count: int
-    running_count: int
-    quiescing: bool
-
-    @property
-    def idle(self) -> bool:
-        return self.queued_count == 0 and self.running_count == 0
-
-
-@dataclass(frozen=True, slots=True)
 class FailureInfo:
     code: str
     message: str
@@ -171,5 +158,4 @@ __all__ = [
     "FailureInfo",
     "ManagerState",
     "StartupReport",
-    "WorkerActivity",
 ]

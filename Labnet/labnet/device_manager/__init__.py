@@ -1,6 +1,5 @@
 """Reusable Lab PC device lifecycle and transport-neutral execution core."""
 
-from .admission import AdmissionGate, AdmissionSnapshot, AdmissionState
 from .catalog import DeviceCatalog
 from .central import CentralRegistryClient, HttpCentralRegistryClient
 from .errors import (
@@ -40,15 +39,11 @@ from .models import (
     FailureInfo,
     ManagerState,
     StartupReport,
-    WorkerActivity,
 )
 from .security import validate_central_server_url
 from .worker import DeviceWorker
 
 __all__ = [
-    "AdmissionGate",
-    "AdmissionSnapshot",
-    "AdmissionState",
     "AuthorizedDeviceSession",
     "CentralCommunicationError",
     "CentralRegistryClient",
@@ -87,5 +82,4 @@ __all__ = [
     "StartupReport",
     "StaticLeaseValidator",
     "validate_central_server_url",
-    "WorkerActivity",
 ]
