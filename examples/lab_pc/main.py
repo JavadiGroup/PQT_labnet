@@ -243,7 +243,6 @@ def _create_grpc_server(
         mode=settings.grpc_tls_mode,
         certificate_chain_file=settings.grpc_cert_file,
         private_key_file=settings.grpc_key_file,
-        client_ca_file=settings.grpc_ca_file,
     )
     config = GrpcServerConfig(
         bind=settings.grpc_bind_target,

@@ -17,7 +17,7 @@ time.
 - Exclusive, renewable leases with automatic expiry and command-idle limits.
 - Synchronous and asyncio clients.
 - A common facade for local and remote instruments.
-- TLS and optional mutual TLS for multi-computer deployments.
+- A minimal TLS model with one private CA and server certificates only.
 - SQLite for a single Central process and PostgreSQL support for larger setups.
 - Explicit pre-deployment contract generation with no runtime code replacement.
 
@@ -185,10 +185,10 @@ instrument data out of commits.
 
 The local quick start uses plaintext loopback connections only. LabNet rejects
 plaintext Central or gRPC endpoints on non-loopback interfaces. Use HTTPS for
-Central and TLS or mTLS for every LAN-facing Lab-PC gRPC service.
+Central and TLS for every LAN-facing Lab-PC gRPC service.
 
-Never commit API keys, private keys, certificates containing private material,
-or runtime databases. Rotate any credential that may have been exposed.
+Never commit API keys, private keys, site-specific certificate files, or
+runtime databases. Rotate any credential that may have been exposed.
 
 ## License
 

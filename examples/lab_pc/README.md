@@ -159,19 +159,11 @@ The Lab-PC process reads `lab-pc.crt` and `lab-pc.key` to prove its identity to
 gRPC clients. It uses the CA certificate separately when connecting to Central
 over HTTPS. Never copy the CA private key to the Lab PC.
 
-For mutual TLS, use:
-
-```dotenv
-LABNET_GRPC_TLS_MODE=mtls
-LABNET_GRPC_CA_FILE=C:/ProgramData/LabNet/certs/labnet-ca.pem
-```
-
-The CA file must contain the issuer trusted for client certificates. It can be
-the same CA used for server certificates in a small laboratory, as shown here,
-or a separate client CA. The Lab PC receives the public CA certificate but
-never a client's private key. See the main
-[certificate guide](../../Labnet/README.md#certificates-and-trust) for the full
-creation, signing, distribution, and renewal workflow.
+Clients do not receive private keys or certificates. They use the public
+`labnet-ca.pem` to verify this Lab-PC certificate, then use their LabNet API key
+and lease for authorization. See the main
+[certificate guide](../../Labnet/README.md#certificates-and-trust) for the
+one-CA setup and file-copy instructions.
 
 ## Deployment guidance
 
@@ -193,7 +185,7 @@ does not modify the running device objects.
 | --- | --- |
 | Manager authentication fails | Match `LABNET_LAB_PC_ID`, Central username, and API key |
 | Non-loopback Central URL is rejected | Use an `https://` URL and trusted certificate |
-| Non-loopback gRPC bind is rejected | Configure `LABNET_GRPC_TLS_MODE=tls` or `mtls` |
+| Non-loopback gRPC bind is rejected | Configure `LABNET_GRPC_TLS_MODE=tls` |
 | Development lease mode is rejected | Use `central` in production and on LAN binds |
 | Advertised target is rejected | Use a client-reachable host or IP, never `0.0.0.0` or loopback for a LAN service |
 | Physical contract validation fails | Regenerate contracts and match every physical method signature |

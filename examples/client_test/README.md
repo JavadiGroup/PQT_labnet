@@ -8,7 +8,7 @@ and connect directly to the selected Lab PC over gRPC.
 | --- | --- | --- |
 | `client.py` | Synchronous | Discovery, lease acquisition, write, read, and cleanup |
 | `async_client.py` | Asyncio | Discovery, lease acquisition, write, read, streaming, and async cleanup |
-| `.env.example` | Environment reference | Central URL, API key, TLS, and mTLS file paths |
+| `.env.example` | Environment reference | Central URL, API key, and public CA path |
 
 ## Prerequisites
 
@@ -85,17 +85,8 @@ direct instrument connection. They refer to the same file here but configure
 two different networking libraries. The gRPC server certificate must contain
 the exact hostname or IP advertised by Central for the Lab PC.
 
-For mutual TLS, also set:
-
-```powershell
-$env:LABNET_GRPC_CLIENT_KEY_FILE = "C:\ProgramData\LabNet\certs\researcher-laptop.key"
-$env:LABNET_GRPC_CLIENT_CERT_FILE = "C:\ProgramData\LabNet\certs\researcher-laptop.crt"
-```
-
-The examples pass these files to `GrpcTlsConfig.from_files()`. The client
-private key is needed only for mTLS and must remain readable only by this
-client's user or service account. The CA/private-key mental model and complete
-OpenSSL setup are in the main
+The client needs no certificate or private key. The CA/private-key mental model
+and complete one-CA setup are in the main
 [certificate guide](../../Labnet/README.md#certificates-and-trust).
 
 ## Synchronous lifecycle

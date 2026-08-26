@@ -21,17 +21,15 @@ from .services import DeviceExecutorProtocol, PatternDeviceGrpcService, StreamPo
 class TLSMode(str, Enum):
     DISABLED = "disabled"
     TLS = "tls"
-    MTLS = "mtls"
 
 
 @dataclass(frozen=True, slots=True)
 class TLSConfig:
-    """Certificate paths and peer-authentication policy for the gRPC listener."""
+    """Server certificate paths for the gRPC listener."""
 
     mode: TLSMode | str = TLSMode.DISABLED
     certificate_chain_file: Path | str | None = None
     private_key_file: Path | str | None = None
-    client_ca_file: Path | str | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -44,7 +42,6 @@ class TLSConfig:
         for field_name in (
             "certificate_chain_file",
             "private_key_file",
-            "client_ca_file",
         ):
             value = getattr(self, field_name)
             if value is not None:
@@ -53,11 +50,7 @@ class TLSConfig:
         if mode is TLSMode.DISABLED:
             return
         if self.certificate_chain_file is None or self.private_key_file is None:
-            raise ValueError(
-                "TLS and mTLS modes require a certificate chain and private key."
-            )
-        if mode is TLSMode.MTLS and self.client_ca_file is None:
-            raise ValueError("mTLS mode requires a client CA certificate bundle.")
+            raise ValueError("TLS mode requires a certificate chain and private key.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +80,7 @@ class GrpcServerConfig:
         if self.tls.mode is TLSMode.DISABLED and not is_loopback_bind(bind):
             raise ValueError(
                 "Plaintext gRPC is permitted only on a loopback bind. Configure "
-                "TLS or mTLS before exposing a Lab PC on the network."
+                "TLS before exposing a Lab PC on the network."
             )
 
 
@@ -323,16 +316,7 @@ def _server_credentials(config: TLSConfig) -> grpc.ServerCredentials:
         "certificate chain",
     )
     private_key = _read_required_file(config.private_key_file, "private key")
-    client_ca = (
-        _read_required_file(config.client_ca_file, "client CA bundle")
-        if config.client_ca_file is not None
-        else None
-    )
-    return grpc.ssl_server_credentials(
-        ((private_key, certificate_chain),),
-        root_certificates=client_ca,
-        require_client_auth=config.mode is TLSMode.MTLS,
-    )
+    return grpc.ssl_server_credentials(((private_key, certificate_chain),))
 
 
 def _read_required_file(path: Path, description: str) -> bytes:

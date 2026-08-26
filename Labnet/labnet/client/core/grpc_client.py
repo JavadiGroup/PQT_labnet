@@ -71,30 +71,18 @@ class AsyncLeaseReleaser(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class GrpcTlsConfig:
-    """Trust roots and optional client identity used for TLS or mTLS."""
+    """Trust roots used to verify a Lab-PC gRPC server."""
 
     root_certificates: bytes | None = None
-    private_key: bytes | None = None
-    certificate_chain: bytes | None = None
-
-    def __post_init__(self) -> None:
-        if (self.private_key is None) != (self.certificate_chain is None):
-            raise ValueError(
-                "private_key and certificate_chain must be supplied together for mTLS."
-            )
 
     @classmethod
     def from_files(
         cls,
         *,
         root_certificates: str | Path | None = None,
-        private_key: str | Path | None = None,
-        certificate_chain: str | Path | None = None,
     ) -> "GrpcTlsConfig":
         return cls(
             root_certificates=_read_optional_file(root_certificates),
-            private_key=_read_optional_file(private_key),
-            certificate_chain=_read_optional_file(certificate_chain),
         )
 
 
@@ -187,8 +175,6 @@ def create_grpc_channel(
     tls = tls or GrpcTlsConfig()
     credentials = grpc.ssl_channel_credentials(
         root_certificates=tls.root_certificates,
-        private_key=tls.private_key,
-        certificate_chain=tls.certificate_chain,
     )
     return grpc.secure_channel(
         endpoint.target,
@@ -212,8 +198,6 @@ def create_async_grpc_channel(
     tls = tls or GrpcTlsConfig()
     credentials = grpc.ssl_channel_credentials(
         root_certificates=tls.root_certificates,
-        private_key=tls.private_key,
-        certificate_chain=tls.certificate_chain,
     )
     return grpc.aio.secure_channel(
         endpoint.target,

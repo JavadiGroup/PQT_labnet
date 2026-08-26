@@ -161,7 +161,6 @@ class LabPCSettings:
     grpc_tls_mode: str
     grpc_cert_file: Path | None
     grpc_key_file: Path | None
-    grpc_ca_file: Path | None
     grpc_max_receive_bytes: int
     grpc_max_send_bytes: int
     grpc_shutdown_grace_seconds: float
@@ -243,7 +242,6 @@ class LabPCSettings:
             ).strip().lower(),
             grpc_cert_file=_get_optional_path("LABNET_GRPC_CERT_FILE"),
             grpc_key_file=_get_optional_path("LABNET_GRPC_KEY_FILE"),
-            grpc_ca_file=_get_optional_path("LABNET_GRPC_CA_FILE"),
             grpc_max_receive_bytes=_get_int(
                 "LABNET_GRPC_MAX_RECEIVE_BYTES", 4 * 1024 * 1024
             ),
@@ -312,10 +310,8 @@ class LabPCSettings:
         if not 1 <= self.http_port <= 65535:
             raise ValueError("LABNET_HTTP_PORT must be between 1 and 65535.")
 
-        if self.grpc_tls_mode not in {"disabled", "tls", "mtls"}:
-            raise ValueError(
-                "LABNET_GRPC_TLS_MODE must be disabled, tls, or mtls."
-            )
+        if self.grpc_tls_mode not in {"disabled", "tls"}:
+            raise ValueError("LABNET_GRPC_TLS_MODE must be disabled or tls.")
 
         if not self.grpc_bind_host:
             raise ValueError("LABNET_GRPC_BIND_HOST cannot be empty.")
@@ -350,16 +346,12 @@ class LabPCSettings:
                 "Plaintext gRPC is permitted only on a loopback bind address."
             )
 
-        if self.grpc_tls_mode in {"tls", "mtls"}:
+        if self.grpc_tls_mode == "tls":
             if self.grpc_cert_file is None or self.grpc_key_file is None:
                 raise ValueError("TLS mode requires certificate and key files.")
             for path in (self.grpc_cert_file, self.grpc_key_file):
                 if not path.is_file():
                     raise ValueError(f"TLS file does not exist: {path}")
-
-        if self.grpc_tls_mode == "mtls":
-            if self.grpc_ca_file is None or not self.grpc_ca_file.is_file():
-                raise ValueError("mTLS mode requires an existing CA certificate file.")
 
         if not _is_loopback_host(self.http_bind_host):
             raise ValueError(

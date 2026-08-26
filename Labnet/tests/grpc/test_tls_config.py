@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from labnet.client import GrpcTlsConfig
 from labnet.grpc import GrpcServerConfig, TLSConfig, TLSMode
 from labnet.grpc.server import is_loopback_bind
 
@@ -30,10 +33,15 @@ def test_tls_requires_server_identity_files() -> None:
         TLSConfig(mode=TLSMode.TLS)
 
 
-def test_mtls_requires_client_ca() -> None:
-    with pytest.raises(ValueError, match="client CA"):
-        TLSConfig(
-            mode=TLSMode.MTLS,
-            certificate_chain_file="server.crt",
-            private_key_file="server.key",
-        )
+def test_unknown_tls_mode_is_rejected() -> None:
+    with pytest.raises(ValueError, match="disabled, tls"):
+        TLSConfig(mode="invalid")
+
+
+def test_client_tls_config_loads_public_ca_only(tmp_path: Path) -> None:
+    ca_file = tmp_path / "labnet-ca.pem"
+    ca_file.write_bytes(b"public-ca-certificate")
+
+    config = GrpcTlsConfig.from_files(root_certificates=ca_file)
+
+    assert config.root_certificates == b"public-ca-certificate"

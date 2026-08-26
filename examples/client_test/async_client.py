@@ -10,15 +10,9 @@ from labnet import AsyncLabClient, GrpcTlsConfig
 
 def _tls_config() -> GrpcTlsConfig | None:
     ca_file = os.getenv("LABNET_GRPC_CA_FILE")
-    client_key = os.getenv("LABNET_GRPC_CLIENT_KEY_FILE")
-    client_cert = os.getenv("LABNET_GRPC_CLIENT_CERT_FILE")
-    if not any((ca_file, client_key, client_cert)):
+    if not ca_file:
         return None
-    return GrpcTlsConfig.from_files(
-        root_certificates=ca_file,
-        private_key=client_key,
-        certificate_chain=client_cert,
-    )
+    return GrpcTlsConfig.from_files(root_certificates=ca_file)
 
 
 async def run() -> None:
