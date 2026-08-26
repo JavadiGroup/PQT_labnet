@@ -1,2 +1,0 @@
-"""LabNet Central Server package."""
-

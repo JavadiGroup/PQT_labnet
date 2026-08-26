@@ -1,2 +1,0 @@
-# Run: python -m pip install -r lab_pc/requirements.txt from the repository root.
--e .[lab-pc]

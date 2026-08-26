@@ -8,10 +8,10 @@ from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
 
-from central_server.app.storage.database import Database
-from central_server.app.storage.orm import AuditEventRow, LeaseRow
-from central_server.app.main import create_app
-from central_server.manage import _alembic_config
+from labnet.central.storage.database import Database
+from labnet.central.storage.orm import AuditEventRow, LeaseRow
+from labnet.central.main import create_app
+from labnet.central.manage import _alembic_config
 
 from .test_control_plane import _auth, _registration, _settings, _setup
 

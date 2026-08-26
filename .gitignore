@@ -1,7 +1,7 @@
 # Local credentials and environment overrides
 .env
 **/.env
-lab_pc/tls/
+examples/lab_pc/tls/
 *.key
 *.p12
 *.pfx
@@ -25,8 +25,5 @@ dist/
 # Runtime logs
 *.log
 
-# Central Server local database files
-central_server/data/*.db
-central_server/data/*.db-journal
-central_server/data/*.db-shm
-central_server/data/*.db-wal
+# Central Server example database files
+examples/central_server/data/

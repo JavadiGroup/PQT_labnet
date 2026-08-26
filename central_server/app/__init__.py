@@ -1,2 +1,0 @@
-"""Central Server application package."""
-

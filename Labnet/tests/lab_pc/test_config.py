@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lab_pc.config import LabPCSettings
+from examples.lab_pc.config import LabPCSettings
 
 
 @pytest.fixture(autouse=True)

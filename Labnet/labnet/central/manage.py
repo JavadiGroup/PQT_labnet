@@ -6,10 +6,10 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-from .app.config import Settings
-from .app.services.auth import UserService
-from .app.storage.database import Database, ensure_database_parent
-from .app.storage.json_import import import_legacy_users
+from .config import Settings
+from .services.auth import UserService
+from .storage.database import Database, ensure_database_parent
+from .storage.json_import import import_legacy_users
 
 
 _ROOT = Path(__file__).resolve().parent
@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> None:
     import_parser = subparsers.add_parser(
         "import-json-users", help="Import hashed users from the legacy JSON store."
     )
-    import_parser.add_argument("--data-dir", type=Path, default=_ROOT / "data")
+    import_parser.add_argument("--data-dir", type=Path, required=True)
 
     args = parser.parse_args(argv)
     settings = Settings.from_env()
@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> None:
     database = Database(settings.database_url)
     if not database.ready():
         parser.error(
-            "Database schema is not ready; run `python -m central_server.manage db upgrade`."
+            "Database schema is not ready; run `labnet-central-admin db upgrade`."
         )
     try:
         if args.command == "user":

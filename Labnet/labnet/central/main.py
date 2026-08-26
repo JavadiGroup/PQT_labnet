@@ -165,16 +165,13 @@ def _error(code: ErrorCode, message: str, metadata: dict) -> dict:
     ).model_dump(mode="json")
 
 
-app = create_app()
-
-
 def main() -> None:
     """Run the Central Server development process."""
     import uvicorn
 
     settings = Settings.from_env()
     uvicorn.run(
-        "central_server.app.main:app",
+        create_app(settings),
         host=settings.bind_host,
         port=settings.bind_port,
     )

@@ -18,9 +18,9 @@ from google.protobuf import descriptor_pb2
 from grpc_tools import protoc
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-PROTO_ROOT = REPOSITORY_ROOT / "Labnet" / "protos" / "labnet" / "devices" / "v1"
-OUTPUT_ROOT = REPOSITORY_ROOT / "Labnet" / "labnet" / "grpc" / "generated"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROTO_ROOT = PROJECT_ROOT / "protos" / "labnet" / "devices" / "v1"
+OUTPUT_ROOT = PROJECT_ROOT / "labnet" / "grpc" / "generated"
 RPC_OPTIONS_FILE = "rpc_options.proto"
 RPC_OPTION_FULL_NAME = "labnet.devices.v1.rpc"
 LOCAL_IMPORT = re.compile(
@@ -1171,7 +1171,7 @@ def _verify_repository_imports() -> None:
                 "dummy_device_pb2, dummy_device_pb2_grpc, device_contracts"
             ),
         ],
-        cwd=REPOSITORY_ROOT,
+        cwd=PROJECT_ROOT,
         check=True,
     )
 

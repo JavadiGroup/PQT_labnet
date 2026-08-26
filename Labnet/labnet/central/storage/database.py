@@ -102,7 +102,7 @@ class Database:
             )
         Base.metadata.create_all(self.engine)
         # Test/development convenience only. Normal deployments let Alembic
-        # own this table through `central_server.manage db upgrade`.
+        # own this table through `labnet-central-admin db upgrade`.
         with self.engine.begin() as connection:
             connection.execute(
                 text(

@@ -1,7 +1,0 @@
-include tools/generate_protos.py
-recursive-include Labnet/protos *.proto
-include lab_pc/.env.example
-include central_server/.env.example
-include central_server/README.md
-include central_server/alembic.ini
-recursive-include central_server/alembic *.py *.mako

@@ -19,10 +19,9 @@ from labnet.grpc.generated.device_contracts import (
 from tools.generate_protos import ContractValidationError, generate_protos
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RPC_OPTIONS_PROTO = (
-    REPOSITORY_ROOT
-    / "Labnet"
+    PROJECT_ROOT
     / "protos"
     / "labnet"
     / "devices"

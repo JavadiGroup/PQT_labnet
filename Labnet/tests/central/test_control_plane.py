@@ -12,19 +12,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.dialects import postgresql
 
-from central_server.app.config import Settings
-from central_server.app.main import create_app
-from central_server.app.models.common import ErrorCode, ServiceError
-from central_server.app.services.auth import UserService
-from central_server.app.services.leases import (
+from labnet.central.config import Settings
+from labnet.central.main import create_app
+from labnet.central.models.common import ErrorCode, ServiceError
+from labnet.central.services.auth import UserService
+from labnet.central.services.leases import (
     _locked_active_device_leases_statement,
     _locked_device_statement,
     _locked_expiring_leases_statement,
     _locked_manager_devices_statement,
 )
-from central_server.manage import _alembic_config
-from central_server.app.storage.database import Database
-from central_server.app.storage.orm import DeviceManagerRow
+from labnet.central.manage import _alembic_config
+from labnet.central.storage.database import Database
+from labnet.central.storage.orm import DeviceManagerRow
 
 
 def _settings(path: Path) -> Settings:
@@ -327,7 +327,7 @@ def test_twenty_simultaneous_requests_create_one_active_lease(tmp_path: Path) ->
     users = app.state.user_service
     manager_actor = users.authenticate(manager_key)
     user_actor = users.authenticate(user_key)
-    from central_server.app.models.devices import DeviceManagerRegistrationRequest
+    from labnet.central.models.devices import DeviceManagerRegistrationRequest
 
     registry.register(
         DeviceManagerRegistrationRequest.model_validate(_registration()), manager_actor
@@ -363,7 +363,7 @@ def test_simultaneous_replay_of_one_idempotency_key_returns_one_lease(
 ) -> None:
     app, manager_key, user_key, _ = _setup(tmp_path)
     users = app.state.user_service
-    from central_server.app.models.devices import DeviceManagerRegistrationRequest
+    from labnet.central.models.devices import DeviceManagerRegistrationRequest
 
     app.state.registry_service.register(
         DeviceManagerRegistrationRequest.model_validate(_registration()),
@@ -445,7 +445,7 @@ def test_heartbeat_timeout_revokes_lease_and_marks_device_unavailable(
     users = app.state.user_service
     manager_actor = users.authenticate(manager_key)
     user_actor = users.authenticate(user_key)
-    from central_server.app.models.devices import DeviceManagerRegistrationRequest
+    from labnet.central.models.devices import DeviceManagerRegistrationRequest
 
     registry.register(
         DeviceManagerRegistrationRequest.model_validate(_registration()), manager_actor
@@ -535,7 +535,10 @@ def test_default_database_is_user_writable_and_sqlite_creates_parent(
     tmp_path: Path,
 ) -> None:
     normalized_default = Settings().database_url.replace("\\", "/").lower()
-    assert "/central_server/data/" not in normalized_default
+    package_data = (
+        Path(__file__).resolve().parents[2] / "labnet" / "central" / "data"
+    )
+    assert package_data.as_posix().lower() not in normalized_default
 
     database_path = tmp_path / "new" / "nested" / "central.db"
     database = Database(

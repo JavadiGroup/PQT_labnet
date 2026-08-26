@@ -43,23 +43,19 @@ dev = [
 ]
 
 [project.scripts]
-labnet-lab-pc = "lab_pc.main:main"
-labnet-central = "central_server.app.main:main"
-labnet-central-admin = "central_server.manage:main"
+labnet-central = "labnet.central.main:main"
+labnet-central-admin = "labnet.central.manage:main"
 
 [tool.setuptools.packages.find]
-where = ["Labnet", "."]
-include = ["labnet*", "lab_pc*", "central_server*"]
-exclude = ["Labnet.tests*", "central_server.tests*"]
+where = ["."]
+include = ["labnet*"]
+exclude = ["tests*"]
 namespaces = false
 
 [tool.setuptools.package-data]
 labnet = ["py.typed"]
 "labnet.grpc.generated" = ["*.pyi"]
-lab_pc = [".env.example"]
-central_server = [
-    ".env.example",
-    "README.md",
+"labnet.central" = [
     "alembic.ini",
     "alembic/*.py",
     "alembic/*.mako",
@@ -68,10 +64,11 @@ central_server = [
 
 [tool.setuptools.data-files]
 "share/labnet/protos/labnet/devices/v1" = [
-    "Labnet/protos/labnet/devices/v1/*.proto",
+    "protos/labnet/devices/v1/*.proto",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["Labnet/tests", "central_server/tests"]
+testpaths = ["tests"]
+pythonpath = [".", ".."]
 addopts = "-ra"
 asyncio_mode = "auto"

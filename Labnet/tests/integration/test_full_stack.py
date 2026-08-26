@@ -10,9 +10,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from central_server.app.config import Settings
-from central_server.app.main import create_app
-from central_server.app.services.auth import UserService
+from labnet.central.config import Settings
+from labnet.central.main import create_app
+from labnet.central.services.auth import UserService
 from labnet.client import AsyncLabClient, LeaseAuthorityError
 from labnet.device_manager import (
     DeviceManager,

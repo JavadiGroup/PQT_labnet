@@ -38,7 +38,7 @@ class Settings:
     bind_host: str = "127.0.0.1"
     bind_port: int = 8008
     # Development/tests may opt in. Normal deployments use `python -m
-    # central_server.manage db upgrade` so startup never mutates an old schema.
+    # labnet-central-admin db upgrade` so startup never mutates an old schema.
     create_schema_on_startup: bool = False
 
     @classmethod

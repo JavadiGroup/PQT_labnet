@@ -10,8 +10,8 @@ import grpc
 import httpx
 import pytest
 
-from lab_pc.config import LabPCSettings
-from lab_pc.main import create_app
+from examples.lab_pc.config import LabPCSettings
+from examples.lab_pc.main import create_app
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
 from labnet.grpc import LEASE_METADATA_KEY
 from labnet.grpc.generated import dummy_device_pb2, dummy_device_pb2_grpc
