@@ -157,6 +157,13 @@ The complete guide in [`Labnet/README.md`](Labnet/README.md) covers:
 - lease, streaming, database, and operational behavior; and
 - testing, release checks, and troubleshooting.
 
+If Python packaging or private-CA certificates are new to you, start with
+[copying and installing the wheel](Labnet/README.md#copy-verify-and-install-the-wheel)
+and then follow the complete
+[certificate setup](Labnet/README.md#certificates-and-trust). Those sections
+explain what each file does, which computer receives it, and which private-key
+files must never be copied.
+
 Each directory under [`examples/`](examples/) also contains a focused README.
 
 ## Development and contributions

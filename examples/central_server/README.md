@@ -122,6 +122,26 @@ loopback. For a multi-computer deployment:
 Lab PCs and clients must use the proxy's `https://` URL. When using a private
 CA, configure `SSL_CERT_FILE` in their process environments.
 
+The certificate and key are read by the reverse proxy, not by the Central
+Python process. For the example deployment, copy these files to Central:
+
+```text
+C:\ProgramData\LabNet\certs\central.crt  public server certificate
+C:\ProgramData\LabNet\certs\central.key  secret Central private key
+```
+
+Copy the public CA certificate—not either of the files above—to every Lab PC
+and client that must trust Central:
+
+```text
+C:\ProgramData\LabNet\certs\labnet-ca.pem
+```
+
+The certificate's subject alternative name must contain the exact DNS name or
+IP used in `LABNET_SERVER_URL`. The private-CA creation, signing, verification,
+file-distribution, and renewal procedure is in the main
+[certificate guide](../../Labnet/README.md#certificates-and-trust).
+
 ## Important settings
 
 | Variable | Default | Purpose |

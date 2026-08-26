@@ -281,6 +281,124 @@ Get-FileHash .\dist\labnet-*.whl -Algorithm SHA256
 Record the Git revision, package version, wheel filename, and SHA-256 hash.
 Copy the exact same wheel to Central, Lab PCs, and client computers.
 
+#### What the wheel is
+
+A wheel is the installable release artifact produced from this repository. It
+is a ZIP-format archive whose filename ends in `.whl`; it is not a running
+server and should not be unpacked by hand. For example:
+
+```text
+labnet-0.2.0-py3-none-any.whl
+```
+
+That wheel contains the `labnet` Python package, including Central, database
+migrations, physical-device adapters, protobuf definitions, and generated
+protobuf Python modules. It does **not** contain:
+
+- the site-specific programs under the repository's `examples/` directory;
+- API keys, TLS certificates, `.env` files, or other configuration;
+- an existing Central database; or
+- LabNet's third-party Python dependencies.
+
+Copying the wheel only transfers one file. Installing it with `pip` verifies
+that it is a valid package, copies its contents into the selected virtual
+environment, installs its declared dependencies, and creates commands such as
+`labnet-central.exe`. Never copy the wheel directly into `site-packages` or
+unzip it into the Python installation.
+
+The extras in `[central]` and `[lab-pc]` select additional dependencies from
+the same wheel. They are not different editions of the wheel:
+
+```text
+labnet-0.2.0-py3-none-any.whl            base client library
+labnet-0.2.0-py3-none-any.whl[central]   same library plus Central dependencies
+labnet-0.2.0-py3-none-any.whl[lab-pc]    same library plus Lab-PC dependencies
+```
+
+#### Copy, verify, and install the wheel
+
+Create a versioned staging directory on every destination computer. A staging
+directory is simply a holding area for release files; it is not the virtual
+environment and LabNet does not run from it.
+
+```powershell
+New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
+```
+
+Transfer the wheel using whatever approved file-transfer mechanism connects
+the computers. Common choices are:
+
+- an authenticated Windows file share;
+- `scp` over SSH;
+- an organization-managed software deployment system; or
+- removable media when the instrument network is isolated.
+
+For example, from a Windows file share:
+
+```powershell
+Copy-Item `
+  \\fileserver\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  C:\LabNet-Staging\0.2.0\
+```
+
+Or, from a computer with an SSH server:
+
+```powershell
+scp build-user@192.168.50.40:/releases/0.2.0/labnet-0.2.0-py3-none-any.whl `
+  C:\LabNet-Staging\0.2.0\
+```
+
+On **each** destination, calculate the hash of the received file:
+
+```powershell
+Get-FileHash `
+  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  -Algorithm SHA256
+```
+
+Compare the full hash with the value recorded on the build computer. A
+difference means that the file is not the reviewed artifact; do not install it.
+The hash detects a wrong or damaged file, but it is not a substitute for
+controlling who can write to the release share.
+
+Install from the absolute path to the local copy. For example, on Central:
+
+```powershell
+C:\ProgramData\LabNet\central-venv\Scripts\python.exe -m pip install --upgrade `
+  "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[central]"
+```
+
+On a normal internet-connected computer, `pip` obtains any missing third-party
+dependencies from the configured package index. Merely copying the LabNet
+wheel does not copy those dependencies. For an offline instrument network,
+prepare a wheelhouse on a connected build computer:
+
+```powershell
+New-Item -ItemType Directory -Force .\dist\wheelhouse
+python -m pip download --dest .\dist\wheelhouse `
+  ".\dist\labnet-0.2.0-py3-none-any.whl[central,lab-pc]"
+```
+
+Copy the entire `wheelhouse` directory to the isolated computer and install
+without contacting an external package index:
+
+```powershell
+python -m pip install --no-index `
+  --find-links C:\LabNet-Staging\0.2.0\wheelhouse `
+  "C:\LabNet-Staging\0.2.0\wheelhouse\labnet-0.2.0-py3-none-any.whl[lab-pc]"
+```
+
+Build the wheelhouse on the same operating system, CPU architecture, and Python
+version used by the destination computers, because some dependency wheels are
+platform-specific. Keep the reviewed wheel and its hash after deployment; they
+identify exactly what was installed and make a controlled rollback possible.
+
+The Lab-PC composition is separate from the wheel. Copy only its reviewed
+source files—such as `examples/__init__.py` and `examples/lab_pc/`—to the
+Lab-PC application directory. Do not copy a development `.env`, runtime
+database, cache, or private key with it. Client application code is deployed in
+the same way when it is maintained separately from LabNet.
+
 ### 2. Example three-computer topology
 
 | Role | Example static address | Required inbound traffic |
@@ -298,17 +416,352 @@ LAN. The public paths are Central HTTPS on 443 and Lab-PC gRPC TLS on 50051.
 
 ### 3. Certificates and trust
 
-Provision certificates before starting services:
+TLS provides two things: encryption while data crosses the network and proof
+that the computer reached by a client is the intended server. gRPC uses the
+same certificate model as HTTPS. In normal TLS the client verifies the server;
+in mutual TLS (mTLS), the server also verifies a certificate presented by the
+client. See the [gRPC authentication guide](https://grpc.io/docs/guides/auth/)
+for the underlying model.
 
-- Central needs a server certificate for `192.168.50.10` or its DNS name.
-- Each Lab PC needs a server certificate for its advertised gRPC name/address.
-- Lab PCs and clients need the CA certificate that issued Central's certificate.
-- Clients need the CA certificate that issued Lab-PC certificates.
-- In mTLS mode, each client additionally needs its own certificate and private
-  key, and the Lab PC needs the client-issuing CA.
+TLS identity and LabNet authorization are separate layers. A valid server
+certificate does not grant a lease, and a valid client certificate does not
+replace an API key or lease. The certificate secures and authenticates the
+connection; LabNet's API keys, roles, and leases decide what the caller may do.
 
-Keep private keys readable only by the relevant service account. Never copy a
-CA private key to a runtime host.
+#### Certificate vocabulary
+
+- A **private key** proves identity. It must remain secret and is used by the
+  process that acts as that identity.
+- A **certificate** is a public document that binds a public key to an identity,
+  validity period, and one or more DNS names or IP addresses.
+- A **certificate authority (CA)** signs certificates. Its private key issues
+  identities; its public CA certificate is the trust anchor copied to machines
+  that must verify those identities.
+- A **certificate signing request (CSR)** contains a public key and requested
+  identity. The CA signs it to create a certificate. The CSR is not secret.
+- The **subject alternative name (SAN)** lists the DNS names and IP addresses
+  for which a server certificate is valid. Modern clients check the SAN, not
+  merely the certificate's common name.
+
+The trust relationship is therefore:
+
+```text
+CA private key signs server certificate
+              |
+              +--> Central certificate  <-- trusted by Lab PCs and clients
+              |
+              +--> Lab-PC certificate   <-- trusted by clients
+
+With mTLS:
+              +--> client certificate   <-- trusted by the Lab PC
+```
+
+For a small private laboratory, one private CA can issue all three kinds of
+certificate. An organization with an existing PKI should ask its administrator
+to issue them instead. The manual OpenSSL process below is a transparent
+bootstrap procedure; it does not provide automatic renewal, revocation, or
+central certificate inventory.
+
+The signing computer is not a fourth always-running LabNet host. It can be a
+secured administrative workstation or encrypted offline VM that is powered on
+only to issue or renew certificates. It does not run Central, a Lab PC, or a
+client.
+
+#### Which files go on each computer
+
+| Computer | Files retained or installed there | Why |
+| --- | --- | --- |
+| Offline/signing computer | `labnet-ca.key`, `labnet-ca.pem`, CA serial and issue records | Issues certificates; the CA key never leaves this computer |
+| Central | `central.crt`, `central.key` | The HTTPS reverse proxy presents Central's identity |
+| Lab PC | `lab-pc.crt`, `lab-pc.key`, `labnet-ca.pem` | The gRPC server presents its identity; the Lab-PC client trusts Central |
+| Client | `labnet-ca.pem` | Trusts Central HTTPS and Lab-PC gRPC certificates |
+| Client using mTLS | Also one client-specific pair, such as `researcher-laptop.crt` and `researcher-laptop.key` | Presents a client identity to the Lab PC |
+
+`labnet-ca.pem`, `.crt` files, and `.csr` files contain public information and
+may be copied. Files ending in `.key` contain private keys. Only the identity
+that uses a key should receive it. In particular, **never copy
+`labnet-ca.key` to Central, a Lab PC, a client, a release share, or the source
+repository**.
+
+The OpenSSL commands below create PEM-encoded text files. A certificate usually
+starts with `-----BEGIN CERTIFICATE-----`; a private key starts with
+`-----BEGIN PRIVATE KEY-----` or `-----BEGIN ENCRYPTED PRIVATE KEY-----`. The
+filename suffix helps humans understand the file's purpose, but does not itself
+provide security.
+
+Central itself listens on loopback HTTP. The reverse proxy reads `central.crt`
+and `central.key`, terminates HTTPS, and forwards the already decrypted request
+to `127.0.0.1:8008`. The Lab-PC Python process terminates gRPC TLS directly, so
+it reads `lab-pc.crt` and `lab-pc.key` itself.
+
+#### Create a private CA
+
+The following example uses OpenSSL 3.x on a dedicated signing computer. Keep
+that computer offline or tightly controlled, protect it with full-disk
+encryption, and back up its CA files securely. Substitute the real stable DNS
+names and static addresses for the examples.
+
+OpenSSL is a separate command-line program and is not included with every
+Windows installation. Install an organization-approved OpenSSL 3.x build on
+the signing computer and temporarily on each computer that creates a key and
+CSR. Confirm that PowerShell can find it before continuing:
+
+```powershell
+openssl version
+```
+
+The output should begin with `OpenSSL 3.`. LabNet, Caddy, and the deployed gRPC
+service do not require the `openssl` command after certificate setup; it is
+used here only to create and inspect the files.
+
+The request/response pattern for each identity is:
+
+1. The identity computer generates its `.key` and `.csr` files.
+2. Only the public `.csr` is copied to the signing computer.
+3. The signing computer uses `labnet-ca.key` to create a `.crt`.
+4. The `.crt` is copied back; public `labnet-ca.pem` is copied to each computer
+   that must trust certificates issued by this CA.
+5. The identity's `.key` stays on its original computer throughout.
+
+Create a working directory and an encrypted 4096-bit CA private key:
+
+```powershell
+New-Item -ItemType Directory -Force C:\LabNet-CA
+Set-Location C:\LabNet-CA
+openssl genpkey -algorithm RSA -aes-256-cbc `
+  -pkeyopt rsa_keygen_bits:4096 -out labnet-ca.key
+```
+
+OpenSSL prompts for a passphrase. Store it in the laboratory's approved secret
+manager; losing it makes the CA unusable, while exposing it together with the
+key lets an attacker issue trusted certificates.
+
+Create a ten-year self-signed public CA certificate:
+
+```powershell
+openssl req -x509 -new -sha256 -days 3650 `
+  -key labnet-ca.key -out labnet-ca.pem `
+  -subj "/CN=LabNet Laboratory Root CA" `
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" `
+  -addext "keyUsage=critical,keyCertSign,cRLSign" `
+  -addext "subjectKeyIdentifier=hash"
+```
+
+The `CA:TRUE` and certificate-signing key usage make this a CA certificate.
+OpenSSL documents these fields in its
+[X.509 extension configuration guide](https://docs.openssl.org/3.0/man5/x509v3_config/).
+The long CA lifetime does not mean server certificates should be long-lived.
+
+#### Issue the Central server certificate
+
+On the **Central computer**, open an administrative PowerShell and create the
+certificate directory, Central's private key, and its CSR. Generating the key
+where it will be used avoids transporting that private key from the CA
+computer:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
+Set-Location C:\ProgramData\LabNet\certs
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
+  -out central.key
+openssl req -new -key central.key -out central.csr `
+  -subj "/CN=central.lab.example"
+```
+
+The server key is intentionally unencrypted so a restricted service account
+can start the reverse proxy without an interactive passphrase. Its operating
+system file permissions are therefore essential.
+
+Copy only `central.csr` to the signing computer. A CSR contains the public key
+and requested subject, not the private key. Leave `central.key` on Central.
+
+On the **signing computer**, create `central-ext.cnf` with the following
+contents. Include every name by which a Lab PC or client will contact Central:
+
+```ini
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:central.lab.example,IP:192.168.50.10
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+```
+
+Sign a one-year certificate:
+
+```powershell
+openssl x509 -req -in central.csr `
+  -CA labnet-ca.pem -CAkey labnet-ca.key -CAcreateserial `
+  -out central.crt -days 365 -sha256 -extfile central-ext.cnf
+```
+
+`-CAcreateserial` creates `labnet-ca.srl`, which tracks the last certificate
+serial number. Preserve it with the CA records. Copy the resulting
+`central.crt` back to Central. Copy public `labnet-ca.pem` to the Lab PCs and
+clients that must trust Central. The private `labnet-ca.key` remains on the
+signing computer.
+
+#### Issue a Lab-PC server certificate
+
+On the **Lab-PC computer**, open an administrative PowerShell and create the
+certificate directory, a separate key, and a CSR for that Lab PC. Never reuse
+Central's key:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
+Set-Location C:\ProgramData\LabNet\certs
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
+  -out lab-pc-01.key
+openssl req -new -key lab-pc-01.key -out lab-pc-01.csr `
+  -subj "/CN=lab-pc-01.lab.example"
+```
+
+Leave `lab-pc-01.key` on the Lab PC and copy only `lab-pc-01.csr` to the
+signing computer. On the **signing computer**, create `lab-pc-01-ext.cnf`:
+
+```ini
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:lab-pc-01.lab.example,IP:192.168.50.20
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+```
+
+Then sign it:
+
+```powershell
+openssl x509 -req -in lab-pc-01.csr `
+  -CA labnet-ca.pem -CAkey labnet-ca.key `
+  -CAserial labnet-ca.srl `
+  -out lab-pc-01.crt -days 365 -sha256 -extfile lab-pc-01-ext.cnf
+```
+
+Copy the resulting `lab-pc-01.crt` and public `labnet-ca.pem` back to the Lab
+PC. Deploy the certificate and existing private key as `lab-pc.crt` and
+`lab-pc.key`, or keep the numbered filenames and use those exact paths in the
+Lab-PC environment. If clients connect to
+`192.168.50.20`, the IP SAN must be present. If they connect to
+`lab-pc-01.lab.example`, the DNS SAN must be present. Prefer stable DNS names
+when the laboratory provides DNS.
+
+#### Optionally issue an mTLS client certificate
+
+Normal TLS is sufficient to encrypt traffic and verify the Lab PC. Enable mTLS
+when the Lab PC must also reject connections that do not possess a laboratory-
+issued client identity. On the **client computer**, open an administrative
+PowerShell and make a unique key and CSR so one compromised client can be
+replaced independently:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
+Set-Location C:\ProgramData\LabNet\certs
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
+  -out researcher-laptop.key
+openssl req -new -key researcher-laptop.key -out researcher-laptop.csr `
+  -subj "/CN=researcher-laptop"
+```
+
+Leave `researcher-laptop.key` on the client and copy only
+`researcher-laptop.csr` to the signing computer. On the **signing computer**,
+create `researcher-laptop-ext.cnf`:
+
+```ini
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+extendedKeyUsage=clientAuth
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+```
+
+Sign it:
+
+```powershell
+openssl x509 -req -in researcher-laptop.csr `
+  -CA labnet-ca.pem -CAkey labnet-ca.key `
+  -CAserial labnet-ca.srl `
+  -out researcher-laptop.crt -days 365 -sha256 `
+  -extfile researcher-laptop-ext.cnf
+```
+
+The difference from a server certificate is the `clientAuth` extended key
+usage. Copy `researcher-laptop.crt` and public `labnet-ca.pem` back to the
+client. The Lab PC receives only the public CA certificate and uses it to
+verify the client certificate; it does not receive the client's private key.
+
+#### Verify and distribute certificates
+
+Before copying anything, verify the signatures, names, purposes, and dates:
+
+```powershell
+openssl verify -CAfile labnet-ca.pem -purpose sslserver `
+  central.crt lab-pc-01.crt
+openssl verify -CAfile labnet-ca.pem -purpose sslclient `
+  researcher-laptop.crt
+openssl x509 -in central.crt -noout -subject -issuer -dates `
+  -ext subjectAltName,extendedKeyUsage
+openssl x509 -in lab-pc-01.crt -noout -subject -issuer -dates `
+  -ext subjectAltName,extendedKeyUsage
+```
+
+The second `openssl verify` command applies only when an mTLS client
+certificate was created.
+
+For TLS without mTLS, copy only these files:
+
+```text
+Central C:\ProgramData\LabNet\certs\central.crt
+Central C:\ProgramData\LabNet\certs\central.key
+
+Lab PC C:\ProgramData\LabNet\certs\lab-pc.crt
+Lab PC C:\ProgramData\LabNet\certs\lab-pc.key
+Lab PC C:\ProgramData\LabNet\certs\labnet-ca.pem
+
+Client C:\ProgramData\LabNet\certs\labnet-ca.pem
+```
+
+Verify hashes after transfer. Restrict each private key so that only
+administrators and the service account running that identity can read it. The
+public CA certificate may be broadly readable. Because the procedure above
+generates each identity key on its destination computer, no private key needs
+to pass through removable media or a release share. On Windows, providing the
+CA explicitly avoids depending on the machine's system trust store.
+
+On each Windows host, open the private key's **Properties > Security >
+Advanced** dialog. Disable inherited permissions, remove broad groups such as
+`Users`, and retain only administrators plus the exact Windows account that
+runs Caddy, the Lab PC, or the client. Grant the service account read access,
+not write access. Perform this carefully while signed in as an administrator so
+the service account is not accidentally locked out.
+
+Copying a file does not activate it. The Caddy `tls` directive below tells the
+proxy which Central certificate and key to present. The Lab-PC environment
+variables tell gRPC which Lab-PC certificate and key to present. On clients,
+`SSL_CERT_FILE` and `GrpcTlsConfig` tell the HTTPS and gRPC libraries which CA
+to trust. This explicit configuration does not install the private CA into the
+Windows system-wide trust store.
+
+For mTLS, copy `researcher-laptop.crt` and `labnet-ca.pem` back to that client;
+its `researcher-laptop.key` is already there because it was generated locally.
+Configure `GrpcTlsConfig.from_files()` with `certificate_chain` and
+`private_key`, and set the Lab PC's `LABNET_GRPC_CA_FILE` to its copy of
+`labnet-ca.pem`.
+
+#### Renewal and incident handling
+
+Record each certificate's owner, SANs, serial number, issue date, and expiry
+date. Renew server and client certificates before expiry by generating a new
+private key and CSR, signing a replacement, deploying it, and restarting the
+process that terminates TLS. The CA certificate remains unchanged during an
+ordinary renewal.
+
+If a server or client private key may have been copied or exposed, stop trusting
+that identity and issue a replacement key and certificate. The simple commands
+above do not implement certificate revocation. If immediate revocation,
+automated renewal, or many identities are required, use the organization's PKI
+or a managed private-CA system rather than operating this minimal manual CA.
+If the CA private key is exposed, create a new CA and distribute its public
+certificate to every relying computer before replacing all issued certificates.
 
 ### 4. Deploy Central
 
@@ -317,7 +770,7 @@ Create and activate a dedicated environment, then install the wheel:
 ```powershell
 py -3.11 -m venv C:\ProgramData\LabNet\central-venv
 C:\ProgramData\LabNet\central-venv\Scripts\python.exe -m pip install `
-  ".\labnet-0.2.0-py3-none-any.whl[central]"
+  "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[central]"
 ```
 
 Set the Central service environment:
@@ -361,6 +814,11 @@ https://192.168.50.10 {
 }
 ```
 
+Here Caddy's [`tls` directive](https://caddyserver.com/docs/caddyfile/directives/tls)
+loads the public certificate and matching private key, while
+[`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+forwards requests to Central's loopback HTTP listener.
+
 Run the proxy and Central under restricted service accounts and configure them
 to start automatically after networking is available.
 
@@ -371,7 +829,7 @@ Install the wheel with Lab-PC dependencies:
 ```powershell
 py -3.11 -m venv C:\ProgramData\LabNet\lab-pc-venv
 C:\ProgramData\LabNet\lab-pc-venv\Scripts\python.exe -m pip install `
-  ".\labnet-0.2.0-py3-none-any.whl[lab-pc]"
+  "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[lab-pc]"
 ```
 
 Copy the reviewed `examples/` package, or an equivalent site-owned composition,
@@ -406,7 +864,7 @@ LABNET_HTTP_PORT=9001
 When Central uses a private CA, also set the Lab-PC process variable:
 
 ```powershell
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\lab-ca.pem"
+$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
 ```
 
 Start from the application parent:
@@ -425,13 +883,13 @@ Install the base wheel:
 ```powershell
 py -3.11 -m venv C:\ProgramData\LabNet\client-venv
 C:\ProgramData\LabNet\client-venv\Scripts\python.exe -m pip install `
-  .\labnet-0.2.0-py3-none-any.whl
+  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl
 ```
 
 For a private CA, set HTTPS trust and construct gRPC trust explicitly:
 
 ```powershell
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\lab-ca.pem"
+$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
 ```
 
 ```python
@@ -439,7 +897,7 @@ from labnet import DummyDevice, GrpcTlsConfig, LabClient
 
 central = LabClient("https://192.168.50.10", "<researcher API key>")
 tls = GrpcTlsConfig.from_files(
-    root_certificates=r"C:\ProgramData\LabNet\certs\lab-ca.pem",
+    root_certificates=r"C:\ProgramData\LabNet\certs\labnet-ca.pem",
 )
 
 try:

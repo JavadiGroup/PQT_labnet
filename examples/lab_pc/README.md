@@ -146,16 +146,32 @@ LABNET_HTTP_PORT=9001
 
 The advertised address must be reachable by clients and must match a subject
 alternative name in the server certificate. When Central uses a private CA,
-set `SSL_CERT_FILE` in the Lab-PC service environment.
+copy the public `labnet-ca.pem` to the Lab PC and set `SSL_CERT_FILE` in the
+Lab-PC service environment. These files have distinct jobs:
+
+```text
+C:\ProgramData\LabNet\certs\lab-pc.crt    public Lab-PC server certificate
+C:\ProgramData\LabNet\certs\lab-pc.key    secret Lab-PC private key
+C:\ProgramData\LabNet\certs\labnet-ca.pem public CA certificate used to trust Central
+```
+
+The Lab-PC process reads `lab-pc.crt` and `lab-pc.key` to prove its identity to
+gRPC clients. It uses the CA certificate separately when connecting to Central
+over HTTPS. Never copy the CA private key to the Lab PC.
 
 For mutual TLS, use:
 
 ```dotenv
 LABNET_GRPC_TLS_MODE=mtls
-LABNET_GRPC_CA_FILE=C:/ProgramData/LabNet/certs/client-ca.pem
+LABNET_GRPC_CA_FILE=C:/ProgramData/LabNet/certs/labnet-ca.pem
 ```
 
-The CA file must contain the issuer trusted for client certificates.
+The CA file must contain the issuer trusted for client certificates. It can be
+the same CA used for server certificates in a small laboratory, as shown here,
+or a separate client CA. The Lab PC receives the public CA certificate but
+never a client's private key. See the main
+[certificate guide](../../Labnet/README.md#certificates-and-trust) for the full
+creation, signing, distribution, and renewal workflow.
 
 ## Deployment guidance
 

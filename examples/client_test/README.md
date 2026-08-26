@@ -59,27 +59,44 @@ renews its lease without blocking the event loop.
 
 ## TLS setup
 
-For a private certificate authority, configure Central HTTPS trust through
-`SSL_CERT_FILE` and Lab-PC gRPC trust through `LABNET_GRPC_CA_FILE`:
+The client normally receives only the public CA certificate. It does not need
+Central's or the Lab PC's private key. Put the CA certificate in a directory
+readable by the user running the client:
+
+```text
+C:\ProgramData\LabNet\certs\labnet-ca.pem
+```
+
+That one public file can establish both trust paths when the same private CA
+issued Central's HTTPS certificate and the Lab PC's gRPC certificate. Configure
+Central HTTPS trust through `SSL_CERT_FILE` and Lab-PC gRPC trust through
+`LABNET_GRPC_CA_FILE`:
 
 ```powershell
 $env:LABNET_SERVER_URL = "https://192.168.50.10"
 $env:LABNET_API_KEY = "<researcher API key>"
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\lab-ca.pem"
-$env:LABNET_GRPC_CA_FILE = "C:\ProgramData\LabNet\certs\lab-ca.pem"
+$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
+$env:LABNET_GRPC_CA_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
 ```
 
-The gRPC certificate must contain the hostname or IP advertised by Central for
-the Lab PC.
+`SSL_CERT_FILE` is used when the client makes HTTPS requests to Central.
+`LABNET_GRPC_CA_FILE` is read by this example and passed to gRPC when it makes a
+direct instrument connection. They refer to the same file here but configure
+two different networking libraries. The gRPC server certificate must contain
+the exact hostname or IP advertised by Central for the Lab PC.
 
 For mutual TLS, also set:
 
 ```powershell
-$env:LABNET_GRPC_CLIENT_KEY_FILE = "C:\ProgramData\LabNet\certs\client.key"
-$env:LABNET_GRPC_CLIENT_CERT_FILE = "C:\ProgramData\LabNet\certs\client.crt"
+$env:LABNET_GRPC_CLIENT_KEY_FILE = "C:\ProgramData\LabNet\certs\researcher-laptop.key"
+$env:LABNET_GRPC_CLIENT_CERT_FILE = "C:\ProgramData\LabNet\certs\researcher-laptop.crt"
 ```
 
-The examples pass these files to `GrpcTlsConfig.from_files()`.
+The examples pass these files to `GrpcTlsConfig.from_files()`. The client
+private key is needed only for mTLS and must remain readable only by this
+client's user or service account. The CA/private-key mental model and complete
+OpenSSL setup are in the main
+[certificate guide](../../Labnet/README.md#certificates-and-trust).
 
 ## Synchronous lifecycle
 
