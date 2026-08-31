@@ -523,9 +523,9 @@ installed on the other computers.
 
 OpenSSL is a separate command-line program and is not included with every
 Windows installation. Install an organization-approved OpenSSL 3.x build on
-`development_pc` and confirm that PowerShell can find it:
+`development_pc` and confirm that Windows Command Prompt can find it:
 
-```powershell
+```cmd
 openssl version
 ```
 
@@ -534,11 +534,10 @@ the `openssl` command after certificate setup.
 
 Create a working directory and an encrypted 4096-bit CA private key:
 
-```powershell
-New-Item -ItemType Directory -Force C:\LabNet-CA
-Set-Location C:\LabNet-CA
-openssl genpkey -algorithm RSA -aes-256-cbc `
-  -pkeyopt rsa_keygen_bits:4096 -out labnet-ca.key
+```cmd
+if not exist "C:\LabNet-CA" mkdir "C:\LabNet-CA"
+cd /d "C:\LabNet-CA"
+openssl genpkey -algorithm RSA -aes-256-cbc -pkeyopt rsa_keygen_bits:4096 -out labnet-ca.key
 ```
 
 OpenSSL prompts for a passphrase. Store it in the laboratory's approved secret
@@ -547,13 +546,8 @@ key lets an attacker issue trusted certificates.
 
 Create a ten-year self-signed public CA certificate:
 
-```powershell
-openssl req -x509 -new -sha256 -days 3650 `
-  -key labnet-ca.key -out labnet-ca.pem `
-  -subj "/CN=LabNet Laboratory Root CA" `
-  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" `
-  -addext "keyUsage=critical,keyCertSign,cRLSign" `
-  -addext "subjectKeyIdentifier=hash"
+```cmd
+openssl req -x509 -new -sha256 -days 3650 -key labnet-ca.key -out labnet-ca.pem -subj "/CN=LabNet Laboratory Root CA" -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign" -addext "subjectKeyIdentifier=hash"
 ```
 
 The `CA:TRUE` and certificate-signing key usage make this a CA certificate.
@@ -566,34 +560,33 @@ The long CA lifetime does not mean server certificates should be long-lived.
 Continue in `C:\LabNet-CA` on the administrative computer. Create Central's
 private key and CSR:
 
-```powershell
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
-  -out central.key
-openssl req -new -key central.key -out central.csr `
-  -subj "/CN=192.168.50.10"
+```cmd
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out central.key
+openssl req -new -key central.key -out central.csr -subj "/CN=192.168.50.10"
 ```
 
 The server key is intentionally unencrypted so a restricted service account
 can start the reverse proxy without an interactive passphrase. Its operating
 system file permissions are therefore essential.
 
-Create `central-ext.cnf` in `C:\LabNet-CA` with the following contents:
+Create `central-ext.cnf` in `C:\LabNet-CA`:
 
-```ini
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature,keyEncipherment
-extendedKeyUsage=serverAuth
-subjectAltName=IP:192.168.50.10
-subjectKeyIdentifier=hash
-authorityKeyIdentifier=keyid,issuer
+```cmd
+(
+  echo basicConstraints=critical,CA:FALSE
+  echo keyUsage=critical,digitalSignature,keyEncipherment
+  echo extendedKeyUsage=serverAuth
+  echo subjectAltName=IP:192.168.50.10
+  echo subjectKeyIdentifier=hash
+  echo authorityKeyIdentifier=keyid,issuer
+) > central-ext.cnf
+type central-ext.cnf
 ```
 
 Sign a one-year certificate:
 
-```powershell
-openssl x509 -req -in central.csr `
-  -CA labnet-ca.pem -CAkey labnet-ca.key -CAcreateserial `
-  -out central.crt -days 365 -sha256 -extfile central-ext.cnf
+```cmd
+openssl x509 -req -in central.csr -CA labnet-ca.pem -CAkey labnet-ca.key -CAcreateserial -out central.crt -days 365 -sha256 -extfile central-ext.cnf
 ```
 
 `-CAcreateserial` creates `labnet-ca.srl`, which tracks the last certificate
@@ -604,31 +597,29 @@ serial number. Preserve it with the CA records.
 Still in `C:\LabNet-CA`, create a separate key and CSR for the Lab PC. Never
 reuse Central's key:
 
-```powershell
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
-  -out lab-pc-01.key
-openssl req -new -key lab-pc-01.key -out lab-pc-01.csr `
-  -subj "/CN=192.168.50.20"
+```cmd
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out lab-pc-01.key
+openssl req -new -key lab-pc-01.key -out lab-pc-01.csr -subj "/CN=192.168.50.20"
 ```
 
 Create `lab-pc-01-ext.cnf` in the same directory:
 
-```ini
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature,keyEncipherment
-extendedKeyUsage=serverAuth
-subjectAltName=IP:192.168.50.20
-subjectKeyIdentifier=hash
-authorityKeyIdentifier=keyid,issuer
+```cmd
+(
+  echo basicConstraints=critical,CA:FALSE
+  echo keyUsage=critical,digitalSignature,keyEncipherment
+  echo extendedKeyUsage=serverAuth
+  echo subjectAltName=IP:192.168.50.20
+  echo subjectKeyIdentifier=hash
+  echo authorityKeyIdentifier=keyid,issuer
+) > lab-pc-01-ext.cnf
+type lab-pc-01-ext.cnf
 ```
 
 Then sign it:
 
-```powershell
-openssl x509 -req -in lab-pc-01.csr `
-  -CA labnet-ca.pem -CAkey labnet-ca.key `
-  -CAserial labnet-ca.srl `
-  -out lab-pc-01.crt -days 365 -sha256 -extfile lab-pc-01-ext.cnf
+```cmd
+openssl x509 -req -in lab-pc-01.csr -CA labnet-ca.pem -CAkey labnet-ca.key -CAserial labnet-ca.srl -out lab-pc-01.crt -days 365 -sha256 -extfile lab-pc-01-ext.cnf
 ```
 
 The IP SAN must match `LABNET_GRPC_ADVERTISED_TARGET`. In this walkthrough that
@@ -639,13 +630,10 @@ target is `192.168.50.20:50051`, so the certificate contains
 
 Before copying anything, verify the signatures, names, purposes, and dates:
 
-```powershell
-openssl verify -CAfile labnet-ca.pem -purpose sslserver `
-  central.crt lab-pc-01.crt
-openssl x509 -in central.crt -noout -subject -issuer -dates `
-  -ext subjectAltName,extendedKeyUsage
-openssl x509 -in lab-pc-01.crt -noout -subject -issuer -dates `
-  -ext subjectAltName,extendedKeyUsage
+```cmd
+openssl verify -CAfile labnet-ca.pem -purpose sslserver central.crt lab-pc-01.crt
+openssl x509 -in central.crt -noout -subject -issuer -dates -ext subjectAltName,extendedKeyUsage
+openssl x509 -in lab-pc-01.crt -noout -subject -issuer -dates -ext subjectAltName,extendedKeyUsage
 ```
 
 The destination layout will be:
@@ -664,10 +652,13 @@ Client C:\ProgramData\LabNet\certs\labnet-ca.pem
 Stage the required files on encrypted removable media or another approved
 transfer location. For example, if the media is mounted as `E:`:
 
-```powershell
-New-Item -ItemType Directory -Force E:\LabNet-TLS
-Copy-Item .\central.crt, .\central.key, .\lab-pc-01.crt, `
-  .\lab-pc-01.key, .\labnet-ca.pem E:\LabNet-TLS\
+```cmd
+if not exist "E:\LabNet-TLS" mkdir "E:\LabNet-TLS"
+copy /Y central.crt "E:\LabNet-TLS\central.crt"
+copy /Y central.key "E:\LabNet-TLS\central.key"
+copy /Y lab-pc-01.crt "E:\LabNet-TLS\lab-pc-01.crt"
+copy /Y lab-pc-01.key "E:\LabNet-TLS\lab-pc-01.key"
+copy /Y labnet-ca.pem "E:\LabNet-TLS\labnet-ca.pem"
 ```
 
 For another Lab PC, repeat only the Lab-PC key, CSR, and signing block with its
