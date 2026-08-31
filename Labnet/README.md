@@ -252,13 +252,40 @@ Production hosts should install a reviewed wheel, not execute from a writable
 clone. The examples are deliberately excluded from the wheel because Lab-PC
 inventories and client programs are deployment-specific.
 
-### 1. Prepare and test a release
+This walkthrough uses four Windows computers on one private LAN. All addresses
+are static and all connections use raw IP addresses; no DNS service is assumed.
 
-On a development or build computer:
+| Step | Computer | Static IP | Required inbound traffic |
+| --- | --- | --- | --- |
+| 1 | `development_pc` | `192.168.50.40` | None for LabNet; only the chosen file-transfer method |
+| 2 | `central_server_pc` | `192.168.50.10` | TCP 443 from `lab_pc_1` and clients |
+| 3 | `lab_pc_1` | `192.168.50.20` | TCP 50051 from approved clients |
+| 4 | `client` | `192.168.50.30` | None for LabNet |
+
+Use the same subnet mask and gateway required by the laboratory LAN. Confirm
+that each address is excluded from DHCP or reserved for that computer. The
+certificate SANs below contain the raw server IP addresses, so changing either
+server IP requires a replacement certificate.
+
+### 1. Set up `development_pc`
+
+`development_pc` is the only computer that needs a repository clone, developer
+dependencies, protobuf generation tools, or OpenSSL. Clone the repository and
+create a development environment:
 
 ```powershell
-cd Labnet
-python -m pip install -e ".[dev,central,lab-pc]"
+git clone <repository-url> lab_network
+Set-Location .\lab_network
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".\Labnet[dev,central,lab-pc]"
+```
+
+Run the release checks from the installable project directory:
+
+```powershell
+Set-Location .\Labnet
 python tools/generate_protos.py --check
 python -m pytest
 ```
@@ -271,15 +298,19 @@ python tools/generate_protos.py --check
 python -m pytest
 ```
 
-Update `version` in `pyproject.toml`, then build one wheel:
+Update `version` in `pyproject.toml` and commit the reviewed release. Confirm
+that `git status --short` is empty; the application ZIP commands below archive
+`HEAD`, so building from uncommitted files could produce mismatched artifacts.
+Then build one wheel:
 
 ```powershell
+git status --short
 python -m pip wheel --no-deps . --wheel-dir dist
 Get-FileHash .\dist\labnet-*.whl -Algorithm SHA256
 ```
 
 Record the Git revision, package version, wheel filename, and SHA-256 hash.
-Copy the exact same wheel to Central, Lab PCs, and client computers.
+The later steps copy this exact wheel to the three runtime computers.
 
 #### What the wheel is
 
@@ -315,40 +346,54 @@ labnet-0.2.0-py3-none-any.whl[central]   same library plus Central dependencies
 labnet-0.2.0-py3-none-any.whl[lab-pc]    same library plus Lab-PC dependencies
 ```
 
-#### Copy, verify, and install the wheel
+#### Stage the release artifacts
 
-Create a versioned staging directory on every destination computer. A staging
-directory is simply a holding area for release files; it is not the virtual
-environment and LabNet does not run from it.
+Create a versioned release directory on `development_pc` and put the reviewed
+wheel in it:
 
 ```powershell
-New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
+New-Item -ItemType Directory -Force C:\LabNet-Releases\0.2.0
+Copy-Item .\dist\labnet-0.2.0-py3-none-any.whl `
+  C:\LabNet-Releases\0.2.0\
 ```
 
-Transfer the wheel using whatever approved file-transfer mechanism connects
-the computers. Common choices are:
+The wheel deliberately excludes site compositions and examples. Create clean
+archives directly from tracked Git files so an ignored development `.env` or
+runtime database cannot be copied accidentally:
+
+```powershell
+git -C .. archive --format=zip `
+  --output=C:\LabNet-Releases\0.2.0\lab-pc-app.zip `
+  HEAD examples/__init__.py examples/lab_pc
+git -C .. archive --format=zip `
+  --output=C:\LabNet-Releases\0.2.0\sync-client-example.zip `
+  HEAD examples/__init__.py examples/client_test
+```
+
+Each runtime step will copy from this release directory into its local
+`C:\LabNet-Staging\0.2.0` directory. Use an approved transfer mechanism, such
+as:
 
 - an authenticated Windows file share;
 - `scp` over SSH;
 - an organization-managed software deployment system; or
 - removable media when the instrument network is isolated.
 
-For example, from a Windows file share:
+The commands in steps 2-4 assume the read-only Windows share shown below. If
+the lab uses `scp` or removable media instead, change only the source path; the
+destination paths and hash checks stay the same.
+
+For example, if `C:\LabNet-Releases` is exposed as a restricted, read-only
+Windows share on `development_pc`, a destination can use the raw IP address:
 
 ```powershell
 Copy-Item `
-  \\fileserver\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
   C:\LabNet-Staging\0.2.0\
 ```
 
-Or, from a computer with an SSH server:
-
-```powershell
-scp build-user@192.168.50.40:/releases/0.2.0/labnet-0.2.0-py3-none-any.whl `
-  C:\LabNet-Staging\0.2.0\
-```
-
-On **each** destination, calculate the hash of the received file:
+The destination-specific steps repeat this transfer and calculate the hash of
+the received file:
 
 ```powershell
 Get-FileHash `
@@ -360,13 +405,6 @@ Compare the full hash with the value recorded on the build computer. A
 difference means that the file is not the reviewed artifact; do not install it.
 The hash detects a wrong or damaged file, but it is not a substitute for
 controlling who can write to the release share.
-
-Install from the absolute path to the local copy. For example, on Central:
-
-```powershell
-C:\ProgramData\LabNet\central-venv\Scripts\python.exe -m pip install --upgrade `
-  "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[central]"
-```
 
 On a normal internet-connected computer, `pip` obtains any missing third-party
 dependencies from the configured package index. Merely copying the LabNet
@@ -393,33 +431,15 @@ version used by the destination computers, because some dependency wheels are
 platform-specific. Keep the reviewed wheel and its hash after deployment; they
 identify exactly what was installed and make a controlled rollback possible.
 
-The Lab-PC composition is separate from the wheel. Copy only its reviewed
-source files—such as `examples/__init__.py` and `examples/lab_pc/`—to the
-Lab-PC application directory. Do not copy a development `.env`, runtime
-database, cache, or private key with it. Client application code is deployed in
-the same way when it is maintained separately from LabNet.
+The two ZIP archives remain separate from the wheel because Lab-PC inventories
+and experiment programs are deployment-specific.
 
-### 2. Example three-computer topology
+#### Generate the minimum TLS certificate set
 
-| Role | Example static address | Required inbound traffic |
-| --- | --- | --- |
-| Central | `192.168.50.10` | TCP 443 from Lab PCs and clients |
-| Lab PC | `192.168.50.20` | TCP 50051 from approved clients |
-| Client | `192.168.50.30` | None for LabNet |
-
-Assign addresses statically or reserve them in DHCP. Stable DNS names are
-preferable when available. The names or IP addresses advertised by LabNet must
-appear in the corresponding certificate subject alternative names.
-
-Do not expose Central's loopback port 8008 or the Lab-PC health port 9001 to the
-LAN. The public paths are Central HTTPS on 443 and Lab-PC gRPC TLS on 50051.
-
-### 3. Certificates and trust
-
-For the three-computer example, the complete minimum is one CA certificate,
-one Central server certificate, and one Lab-PC server certificate. The client
-receives only a copy of the public CA certificate. There are no client
-certificates and no client private keys.
+For this deployment, the complete minimum is one CA certificate, one Central
+server certificate, and one Lab-PC server certificate. The client receives
+only a copy of the public CA certificate. There are no client certificates and
+no client private keys.
 
 TLS provides two things: encryption while data crosses the network and proof
 that the computer reached by a client is the intended server. gRPC uses the
@@ -439,15 +459,16 @@ keys.
 - A **private key** proves identity. It must remain secret and is used by the
   process that acts as that identity.
 - A **certificate** is a public document that binds a public key to an identity,
-  validity period, and one or more DNS names or IP addresses.
+  validity period, and one or more network names or IP addresses. This guide
+  uses IP addresses only.
 - A **certificate authority (CA)** signs certificates. Its private key issues
   identities; its public CA certificate is the trust anchor copied to machines
   that must verify those identities.
 - A **certificate signing request (CSR)** contains a public key and requested
   identity. The CA signs it to create a certificate. The CSR is not secret.
-- The **subject alternative name (SAN)** lists the DNS names and IP addresses
-  for which a server certificate is valid. Modern clients check the SAN, not
-  merely the certificate's common name.
+- The **subject alternative name (SAN)** lists the addresses for which a server
+  certificate is valid. Here the SAN is the server's static IP address. Modern
+  clients check the SAN, not merely the certificate's common name.
 
 The trust relationship is therefore:
 
@@ -464,16 +485,15 @@ an existing PKI can ask its administrator to issue them instead. The manual
 OpenSSL process below is a small-laboratory bootstrap procedure; it does not
 provide automatic renewal or revocation.
 
-The signing computer is not a fourth always-running LabNet host. It can be a
-secured administrative workstation or encrypted offline VM that is powered on
-only to issue or renew certificates. It does not run Central, a Lab PC, or a
-client.
+In this walkthrough, `development_pc` is also the signing computer. After
+deployment, protect the CA files in encrypted offline storage and restore them
+to `development_pc` only when issuing or renewing a server certificate.
 
 #### Which files go on each computer
 
 | Computer | Files retained or installed there | Why |
 | --- | --- | --- |
-| Offline/signing computer | `labnet-ca.key`, `labnet-ca.pem`, CA serial and issue records | Issues certificates; the CA key never leaves this computer |
+| `development_pc` / protected CA storage | `labnet-ca.key`, `labnet-ca.pem`, CA serial and issue records | Issues certificates; the CA key never goes to a runtime computer |
 | Central | `central.crt`, `central.key` | The HTTPS reverse proxy presents Central's identity |
 | Lab PC | `lab-pc.crt`, `lab-pc.key`, `labnet-ca.pem` | The gRPC server presents its identity; the Lab-PC client trusts Central |
 | Client | `labnet-ca.pem` | Trusts Central HTTPS and Lab-PC gRPC certificates |
@@ -497,14 +517,13 @@ it reads `lab-pc.crt` and `lab-pc.key` itself.
 
 #### Create a private CA
 
-The following example uses OpenSSL 3.x on one secured administrative computer.
-It generates the CA and both server identities in one place so OpenSSL does not
-need to be installed on Central, the Lab PC, or client computers. Substitute
-the real stable DNS names and static addresses for the examples.
+The following example uses OpenSSL 3.x on `development_pc`. It generates the CA
+and both server identities in one place, so OpenSSL does not need to be
+installed on the other computers.
 
 OpenSSL is a separate command-line program and is not included with every
 Windows installation. Install an organization-approved OpenSSL 3.x build on
-the administrative computer and confirm that PowerShell can find it:
+`development_pc` and confirm that PowerShell can find it:
 
 ```powershell
 openssl version
@@ -551,21 +570,20 @@ private key and CSR:
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
   -out central.key
 openssl req -new -key central.key -out central.csr `
-  -subj "/CN=central.lab.example"
+  -subj "/CN=192.168.50.10"
 ```
 
 The server key is intentionally unencrypted so a restricted service account
 can start the reverse proxy without an interactive passphrase. Its operating
 system file permissions are therefore essential.
 
-Create `central-ext.cnf` in `C:\LabNet-CA` with the following contents. Include
-every name by which a Lab PC or client will contact Central:
+Create `central-ext.cnf` in `C:\LabNet-CA` with the following contents:
 
 ```ini
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:central.lab.example,IP:192.168.50.10
+subjectAltName=IP:192.168.50.10
 subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid,issuer
 ```
@@ -590,7 +608,7 @@ reuse Central's key:
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 `
   -out lab-pc-01.key
 openssl req -new -key lab-pc-01.key -out lab-pc-01.csr `
-  -subj "/CN=lab-pc-01.lab.example"
+  -subj "/CN=192.168.50.20"
 ```
 
 Create `lab-pc-01-ext.cnf` in the same directory:
@@ -599,7 +617,7 @@ Create `lab-pc-01-ext.cnf` in the same directory:
 basicConstraints=critical,CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:lab-pc-01.lab.example,IP:192.168.50.20
+subjectAltName=IP:192.168.50.20
 subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid,issuer
 ```
@@ -613,12 +631,11 @@ openssl x509 -req -in lab-pc-01.csr `
   -out lab-pc-01.crt -days 365 -sha256 -extfile lab-pc-01-ext.cnf
 ```
 
-If clients connect to
-`192.168.50.20`, the IP SAN must be present. If they connect to
-`lab-pc-01.lab.example`, the DNS SAN must be present. Prefer stable DNS names
-when the laboratory provides DNS.
+The IP SAN must match `LABNET_GRPC_ADVERTISED_TARGET`. In this walkthrough that
+target is `192.168.50.20:50051`, so the certificate contains
+`IP:192.168.50.20`.
 
-#### Verify and distribute certificates
+#### Verify and stage certificates
 
 Before copying anything, verify the signatures, names, purposes, and dates:
 
@@ -631,8 +648,7 @@ openssl x509 -in lab-pc-01.crt -noout -subject -issuer -dates `
   -ext subjectAltName,extendedKeyUsage
 ```
 
-Create `C:\ProgramData\LabNet\certs` on Central, the Lab PC, and the client,
-then copy only these files:
+The destination layout will be:
 
 ```text
 Central C:\ProgramData\LabNet\certs\central.crt
@@ -645,33 +661,21 @@ Lab PC C:\ProgramData\LabNet\certs\labnet-ca.pem
 Client C:\ProgramData\LabNet\certs\labnet-ca.pem
 ```
 
-For example, if approved removable media is mounted as `E:` and contains the
-files under `E:\LabNet-TLS`, run the relevant block on each destination:
+Stage the required files on encrypted removable media or another approved
+transfer location. For example, if the media is mounted as `E:`:
 
 ```powershell
-# On Central
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
-Copy-Item E:\LabNet-TLS\central.crt C:\ProgramData\LabNet\certs\central.crt
-Copy-Item E:\LabNet-TLS\central.key C:\ProgramData\LabNet\certs\central.key
-
-# On the Lab PC
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
-Copy-Item E:\LabNet-TLS\lab-pc-01.crt C:\ProgramData\LabNet\certs\lab-pc.crt
-Copy-Item E:\LabNet-TLS\lab-pc-01.key C:\ProgramData\LabNet\certs\lab-pc.key
-Copy-Item E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
-
-# On the client
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
-Copy-Item E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
+New-Item -ItemType Directory -Force E:\LabNet-TLS
+Copy-Item .\central.crt, .\central.key, .\lab-pc-01.crt, `
+  .\lab-pc-01.key, .\labnet-ca.pem E:\LabNet-TLS\
 ```
 
 For another Lab PC, repeat only the Lab-PC key, CSR, and signing block with its
 own name and SANs. Clients still receive the same single `labnet-ca.pem` file.
 
-Use encrypted removable media or an authenticated administrative file-transfer
-channel because this one-time transfer includes the two server private keys.
-After verifying the deployment, remove the transfer copies of `central.key`
-and `lab-pc-01.key`. Keep `labnet-ca.key` only in protected CA storage.
+This transfer includes two server private keys. After verifying the deployment,
+remove `central.key` and `lab-pc-01.key` from the transfer location. Never put
+`labnet-ca.key` there; keep it only in protected CA storage.
 
 Restrict each deployed private key so that only administrators and the service
 account running that identity can read it. The public CA certificate may be
@@ -707,7 +711,36 @@ or a managed private-CA system rather than operating this minimal manual CA.
 If the CA private key is exposed, create a new CA and distribute its public
 certificate to every relying computer before replacing all issued certificates.
 
-### 4. Deploy Central
+### 2. Set up `central_server_pc`
+
+Configure the Windows network adapter with static IP `192.168.50.10`, then
+confirm that it can reach `development_pc`:
+
+```powershell
+Test-NetConnection 192.168.50.40 -Port 445
+```
+
+Copy the wheel into a local staging directory and compare its SHA-256 hash with
+the value recorded on `development_pc`:
+
+```powershell
+New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
+Copy-Item `
+  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  C:\LabNet-Staging\0.2.0\
+Get-FileHash `
+  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  -Algorithm SHA256
+```
+
+Copy only Central's certificate and private key from the approved TLS transfer
+location. This example assumes the encrypted media is mounted as `E:`:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
+Copy-Item E:\LabNet-TLS\central.crt C:\ProgramData\LabNet\certs\central.crt
+Copy-Item E:\LabNet-TLS\central.key C:\ProgramData\LabNet\certs\central.key
+```
 
 Create and activate a dedicated environment, then install the wheel:
 
@@ -735,10 +768,23 @@ C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe user create 
   researcher --role user
 ```
 
-Run Central on loopback:
+Each creation command prints its API key once. Store both keys securely:
+
+- the `lab-pc-01` key goes only into `lab_pc_1` configuration;
+- the `researcher` key is used by the client in step 5.
+
+Run Central on loopback and leave this PowerShell open:
 
 ```powershell
 C:\ProgramData\LabNet\central-venv\Scripts\labnet-central.exe
+```
+
+At this point Central is reachable only from `central_server_pc` at
+`http://127.0.0.1:8008`. In a second PowerShell, confirm the local application
+before configuring the network-facing proxy:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8008/health/ready
 ```
 
 Place an HTTPS reverse proxy on the same host. Its responsibilities are:
@@ -749,7 +795,8 @@ Place an HTTPS reverse proxy on the same host. Its responsibilities are:
 4. proxy requests to `http://127.0.0.1:8008`; and
 5. preserve request methods, headers, paths, and status codes.
 
-For example, a Caddy configuration using an already issued certificate can be:
+Install Caddy on `central_server_pc` and save the following as
+`C:\ProgramData\LabNet\Caddyfile`:
 
 ```caddyfile
 https://192.168.50.10 {
@@ -763,10 +810,53 @@ loads the public certificate and matching private key, while
 [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
 forwards requests to Central's loopback HTTP listener.
 
-Run the proxy and Central under restricted service accounts and configure them
-to start automatically after networking is available.
+Validate and run the proxy from another administrative PowerShell during the
+initial test:
 
-### 5. Deploy a Lab PC
+```powershell
+caddy validate --config C:\ProgramData\LabNet\Caddyfile
+caddy run --config C:\ProgramData\LabNet\Caddyfile
+```
+
+Run the proxy and Central under restricted service accounts and configure them
+to start automatically after networking is available. Allow inbound TCP 443
+from `192.168.50.20` and approved client IPs. Do not create an inbound rule for
+port 8008; Central must remain bound to loopback.
+
+### 3. Set up `lab_pc_1`
+
+Configure the Windows network adapter with static IP `192.168.50.20`. Confirm
+that both the development and Central computers are reachable:
+
+```powershell
+Test-NetConnection 192.168.50.40 -Port 445
+Test-NetConnection 192.168.50.10 -Port 443
+```
+
+Copy the wheel and reviewed Lab-PC composition, then verify the wheel hash:
+
+```powershell
+New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
+Copy-Item `
+  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  C:\LabNet-Staging\0.2.0\
+Copy-Item `
+  \\192.168.50.40\LabNet-Releases\0.2.0\lab-pc-app.zip `
+  C:\LabNet-Staging\0.2.0\
+Get-FileHash `
+  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  -Algorithm SHA256
+```
+
+Copy the Lab-PC server identity and the public CA certificate from the approved
+TLS transfer location:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
+Copy-Item E:\LabNet-TLS\lab-pc-01.crt C:\ProgramData\LabNet\certs\lab-pc.crt
+Copy-Item E:\LabNet-TLS\lab-pc-01.key C:\ProgramData\LabNet\certs\lab-pc.key
+Copy-Item E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
+```
 
 Install the wheel with Lab-PC dependencies:
 
@@ -776,13 +866,24 @@ C:\ProgramData\LabNet\lab-pc-venv\Scripts\python.exe -m pip install `
   "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[lab-pc]"
 ```
 
-Copy the reviewed `examples/` package, or an equivalent site-owned composition,
-to a read-only application directory such as `C:\ProgramData\LabNet\app`.
-Configure the service working directory as that application's parent so
-`python -m examples.lab_pc` can import the composition.
+Extract the reviewed composition into its application directory:
 
-Set the Lab-PC service environment or create the example's `.env` before
-starting it:
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\app
+Expand-Archive `
+  C:\LabNet-Staging\0.2.0\lab-pc-app.zip `
+  C:\ProgramData\LabNet\app -Force
+```
+
+Install the vendor drivers required by the physical instruments and test each
+instrument locally before starting LabNet. Edit
+`C:\ProgramData\LabNet\app\examples\lab_pc\device_inventory.py` so it contains
+only the instruments attached to this computer.
+
+Create
+`C:\ProgramData\LabNet\app\examples\lab_pc\.env` with the following contents.
+Replace the API-key placeholder with the `lab-pc-01` key printed by the Central
+administration command:
 
 ```dotenv
 LABNET_ENVIRONMENT=production
@@ -792,6 +893,7 @@ LABNET_CENTRAL_ENABLED=true
 LABNET_SERVER_URL=https://192.168.50.10
 LABNET_DEVICE_MANAGER_API_KEY=<lab-pc-01 API key>
 LABNET_LEASE_VALIDATION_MODE=central
+SSL_CERT_FILE=C:/ProgramData/LabNet/certs/labnet-ca.pem
 
 LABNET_GRPC_BIND_HOST=0.0.0.0
 LABNET_GRPC_PORT=50051
@@ -804,19 +906,64 @@ LABNET_HTTP_BIND_HOST=127.0.0.1
 LABNET_HTTP_PORT=9001
 ```
 
-When Central uses a private CA, also set the Lab-PC process variable:
-
-```powershell
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
-```
-
 Start from the application parent:
 
 ```powershell
+Set-Location C:\ProgramData\LabNet\app
 C:\ProgramData\LabNet\lab-pc-venv\Scripts\python.exe -m examples.lab_pc
 ```
 
-### 6. Deploy a client
+Leave the process running. In a second PowerShell on `lab_pc_1`, check its
+loopback-only readiness endpoint:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9001/health/ready
+```
+
+Allow inbound TCP 50051 from approved client IPs. Do not expose port 9001;
+that health endpoint remains available only at `127.0.0.1:9001` on
+`lab_pc_1`.
+
+### 4. Set up `client`
+
+Configure the Windows network adapter with static IP `192.168.50.30`, then
+confirm that the release share, Central, and `lab_pc_1` are reachable:
+
+```powershell
+Test-NetConnection 192.168.50.40 -Port 445
+Test-NetConnection 192.168.50.10 -Port 443
+Test-NetConnection 192.168.50.20 -Port 50051
+```
+
+Copy the wheel and synchronous client example, then verify the wheel hash:
+
+```powershell
+New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
+Copy-Item `
+  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  C:\LabNet-Staging\0.2.0\
+Copy-Item `
+  \\192.168.50.40\LabNet-Releases\0.2.0\sync-client-example.zip `
+  C:\LabNet-Staging\0.2.0\
+Get-FileHash `
+  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
+  -Algorithm SHA256
+```
+
+The client receives only the public CA certificate:
+
+```powershell
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
+Copy-Item E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
+```
+
+Before installing the client, confirm that Central's HTTPS proxy is reachable
+and that its certificate validates against the copied CA:
+
+```powershell
+curl.exe --cacert C:\ProgramData\LabNet\certs\labnet-ca.pem `
+  https://192.168.50.10/health/ready
+```
 
 Install the base wheel:
 
@@ -826,11 +973,43 @@ C:\ProgramData\LabNet\client-venv\Scripts\python.exe -m pip install `
   C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl
 ```
 
-For a private CA, set HTTPS trust and construct gRPC trust explicitly:
+Extract the client example:
 
 ```powershell
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
+New-Item -ItemType Directory -Force C:\ProgramData\LabNet\client-app
+Expand-Archive `
+  C:\LabNet-Staging\0.2.0\sync-client-example.zip `
+  C:\ProgramData\LabNet\client-app -Force
 ```
+
+No inbound firewall rule is required on the client.
+
+### 5. Run the synchronous client example
+
+Obtain the `researcher` API key created on `central_server_pc`. In the client
+PowerShell session, configure the Central URL and the public CA file used by
+both HTTPS and gRPC:
+
+```powershell
+$env:LABNET_SERVER_URL = "https://192.168.50.10"
+$env:LABNET_API_KEY = "<researcher API key>"
+$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
+$env:LABNET_GRPC_CA_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
+```
+
+Run the packaged example:
+
+```powershell
+Set-Location C:\ProgramData\LabNet\client-app
+C:\ProgramData\LabNet\client-venv\Scripts\python.exe `
+  .\examples\client_test\client.py
+```
+
+The example authenticates with Central at `192.168.50.10`, discovers a device,
+acquires its lease, and then connects directly to `lab_pc_1` at
+`192.168.50.20:50051`.
+
+The equivalent synchronous application pattern is:
 
 ```python
 from labnet import DummyDevice, GrpcTlsConfig, LabClient
@@ -854,7 +1033,7 @@ finally:
     central.close()
 ```
 
-### 7. Firewall rules
+### Network rules summary
 
 Restrict access by role:
 
@@ -867,7 +1046,7 @@ Restrict access by role:
 Limit outbound traffic where practical: Lab PCs need Central HTTPS access;
 clients need Central HTTPS and the gRPC ports of authorized Lab PCs.
 
-### 8. Deployment verification
+### Deployment verification
 
 Verify in this order:
 

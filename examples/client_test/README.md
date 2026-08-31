@@ -87,7 +87,7 @@ the exact hostname or IP advertised by Central for the Lab PC.
 
 The client needs no certificate or private key. The CA/private-key mental model
 and complete one-CA setup are in the main
-[certificate guide](../../Labnet/README.md#certificates-and-trust).
+[certificate guide](../../Labnet/README.md#generate-the-minimum-tls-certificate-set).
 
 ## Synchronous lifecycle
 
@@ -96,7 +96,7 @@ The synchronous pattern is:
 ```python
 from labnet import DummyDevice, LabClient
 
-central = LabClient("https://central.example.org", "<API key>")
+central = LabClient("https://192.168.50.10", "<API key>")
 try:
     device = DummyDevice(device_id="dummy-bench-a", client=central)
     try:
@@ -122,7 +122,7 @@ from labnet import AsyncLabClient
 
 
 async def run() -> None:
-    central = AsyncLabClient("https://central.example.org", "<API key>")
+    central = AsyncLabClient("https://192.168.50.10", "<API key>")
     try:
         devices = await central.list_available_devices("dummy_device")
         device = await central.acquire_dummy(devices[0].device_id)

@@ -149,7 +149,7 @@ The complete guide in [`Labnet/README.md`](Labnet/README.md) covers:
 
 - architecture and security principles;
 - development and wheel-based installation;
-- local and three-computer production deployment;
+- local and static-IP multi-system production deployment;
 - static IP addresses, certificates, firewalls, and TLS;
 - Central, Lab-PC, and client configuration;
 - integrating an instrument from an existing family;
@@ -158,11 +158,11 @@ The complete guide in [`Labnet/README.md`](Labnet/README.md) covers:
 - testing, release checks, and troubleshooting.
 
 If Python packaging or private-CA certificates are new to you, start with
-[copying and installing the wheel](Labnet/README.md#copy-verify-and-install-the-wheel)
+[building and staging the wheel](Labnet/README.md#stage-the-release-artifacts)
 and then follow the complete
-[certificate setup](Labnet/README.md#certificates-and-trust). Those sections
-explain what each file does, which computer receives it, and which private-key
-files must never be copied.
+[certificate setup](Labnet/README.md#generate-the-minimum-tls-certificate-set).
+Those sections explain what each file does, which computer receives it, and
+which private-key files must never be copied.
 
 Each directory under [`examples/`](examples/) also contains a focused README.
 

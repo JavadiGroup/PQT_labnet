@@ -162,7 +162,7 @@ over HTTPS. Never copy the CA private key to the Lab PC.
 Clients do not receive private keys or certificates. They use the public
 `labnet-ca.pem` to verify this Lab-PC certificate, then use their LabNet API key
 and lease for authorization. See the main
-[certificate guide](../../Labnet/README.md#certificates-and-trust) for the
+[certificate guide](../../Labnet/README.md#generate-the-minimum-tls-certificate-set) for the
 one-CA setup and file-copy instructions.
 
 ## Deployment guidance

@@ -115,7 +115,7 @@ loopback. For a multi-computer deployment:
 
 1. keep `LABNET_CENTRAL_BIND_HOST=127.0.0.1`;
 2. run an HTTPS reverse proxy on the same computer;
-3. install a certificate whose SAN matches the advertised DNS name or IP;
+3. install a certificate whose SAN contains the static IP `192.168.50.10`;
 4. allow TCP 443 only from authorized Lab PCs and clients; and
 5. do not expose port 8008 to the LAN.
 
@@ -137,10 +137,10 @@ and client that must trust Central:
 C:\ProgramData\LabNet\certs\labnet-ca.pem
 ```
 
-The certificate's subject alternative name must contain the exact DNS name or
-IP used in `LABNET_SERVER_URL`. The private-CA creation, signing, verification,
+The certificate's subject alternative name must contain the exact raw IP used
+in `LABNET_SERVER_URL`. The private-CA creation, signing, verification,
 file-distribution, and renewal procedure is in the main
-[certificate guide](../../Labnet/README.md#certificates-and-trust).
+[certificate guide](../../Labnet/README.md#generate-the-minimum-tls-certificate-set).
 
 ## Important settings
 
