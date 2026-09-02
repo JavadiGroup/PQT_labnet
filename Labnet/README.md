@@ -81,8 +81,9 @@ new release while the affected process is stopped.
 - SQLite for a single Central process, or PostgreSQL for multiple Central
   workers or replicas.
 
-The examples use PowerShell commands. Equivalent Python and pip commands work
-on Linux and macOS after activating the appropriate virtual environment.
+The Windows examples use Command Prompt (`cmd.exe`) commands. Equivalent Python
+and pip commands work on Linux and macOS after activating the appropriate
+virtual environment.
 
 ## Installation options
 
@@ -90,9 +91,9 @@ Run package commands from this `Labnet/` directory.
 
 ### Development installation
 
-```powershell
+```cmd
 py -3.11 -m venv ..\.venv
-..\.venv\Scripts\Activate.ps1
+call ..\.venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev,central,lab-pc]"
 ```
@@ -102,7 +103,7 @@ working source tree. Do not use editable installs on managed laboratory hosts.
 
 ### Role-specific installations
 
-```powershell
+```cmd
 # Client library
 python -m pip install -e .
 
@@ -142,9 +143,9 @@ loopback.
 
 From the repository root:
 
-```powershell
+```cmd
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+call .\.venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install -e ".\Labnet[dev,central,lab-pc]"
 ```
@@ -153,11 +154,13 @@ Activate this environment in every new terminal used below.
 
 ### 2. Initialize Central
 
-Central reads its process environment directly. If
-`LABNET_DATABASE_URL` is not set, it uses a SQLite database under the current
-user's application-data directory.
+Central reads its process environment directly; it does not automatically load
+a `.env` file. The file is optional unless your own launcher loads it. Set
+`LABNET_DATABASE_URL` in the Command Prompt that runs **both**
+`labnet-central-admin` and Central. If it is not set, each process uses a
+SQLite database under its current user's application-data directory.
 
-```powershell
+```cmd
 labnet-central-admin db upgrade
 labnet-central-admin user create central-admin --role admin
 labnet-central-admin user create lab-pc-dev-01 --role device_manager
@@ -175,23 +178,23 @@ The `device_manager` username must exactly equal the Lab PC's configured
 
 Start Central:
 
-```powershell
+```cmd
 python -m examples.central_server
 ```
 
 Verify both health states from another terminal:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8008/health/live
-Invoke-RestMethod http://127.0.0.1:8008/health/ready
+```cmd
+curl.exe http://127.0.0.1:8008/health/live
+curl.exe http://127.0.0.1:8008/health/ready
 ```
 
 Both responses should report `status: ok`.
 
 ### 3. Configure the Lab PC
 
-```powershell
-Copy-Item .\examples\lab_pc\.env.example .\examples\lab_pc\.env
+```cmd
+copy .\examples\lab_pc\.env.example .\examples\lab_pc\.env
 ```
 
 Set at least these values in `examples/lab_pc/.env`:
@@ -214,15 +217,14 @@ LABNET_HTTP_BIND_HOST=127.0.0.1
 The checked-in `device_inventory.py` constructs one simulated
 `PhysicalDummyDevice`. Start the Lab PC:
 
-```powershell
+```cmd
 python -m examples.lab_pc
 ```
 
 Verify readiness:
 
-```powershell
-$ready = Invoke-RestMethod http://127.0.0.1:9001/health/ready
-$ready | ConvertTo-Json -Depth 6
+```cmd
+curl.exe http://127.0.0.1:9001/health/ready
 ```
 
 The response should show a serving gRPC endpoint, successful Central
@@ -230,15 +232,15 @@ registration, and at least one available device.
 
 ### 4. Run a synchronous client
 
-```powershell
-$env:LABNET_SERVER_URL = "http://127.0.0.1:8008"
-$env:LABNET_API_KEY = "<researcher API key>"
+```cmd
+set "LABNET_SERVER_URL=http://127.0.0.1:8008"
+set "LABNET_API_KEY=<researcher API key>"
 python .\examples\client_test\client.py
 ```
 
 ### 5. Run an asyncio client
 
-```powershell
+```cmd
 python .\examples\client_test\async_client.py
 ```
 
@@ -273,26 +275,26 @@ server IP requires a replacement certificate.
 dependencies, protobuf generation tools, or OpenSSL. Clone the repository and
 create a development environment:
 
-```powershell
+```cmd
 git clone <repository-url> lab_network
-Set-Location .\lab_network
+cd /d .\lab_network
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+call .\.venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install -e ".\Labnet[dev,central,lab-pc]"
 ```
 
 Run the release checks from the installable project directory:
 
-```powershell
-Set-Location .\Labnet
+```cmd
+cd /d .\Labnet
 python tools/generate_protos.py --check
 python -m pytest
 ```
 
 If a proto changed, generate first and then rerun the checks:
 
-```powershell
+```cmd
 python tools/generate_protos.py
 python tools/generate_protos.py --check
 python -m pytest
@@ -303,10 +305,10 @@ that `git status --short` is empty; the application ZIP commands below archive
 `HEAD`, so building from uncommitted files could produce mismatched artifacts.
 Then build one wheel:
 
-```powershell
+```cmd
 git status --short
 python -m pip wheel --no-deps . --wheel-dir dist
-Get-FileHash .\dist\labnet-*.whl -Algorithm SHA256
+certutil -hashfile .\dist\labnet-0.2.0-py3-none-any.whl SHA256
 ```
 
 Record the Git revision, package version, wheel filename, and SHA-256 hash.
@@ -351,22 +353,21 @@ labnet-0.2.0-py3-none-any.whl[lab-pc]    same library plus Lab-PC dependencies
 Create a versioned release directory on `development_pc` and put the reviewed
 wheel in it:
 
-```powershell
-New-Item -ItemType Directory -Force C:\LabNet-Releases\0.2.0
-Copy-Item .\dist\labnet-0.2.0-py3-none-any.whl `
-  C:\LabNet-Releases\0.2.0\
+```cmd
+mkdir C:\LabNet-Releases\0.2.0
+copy .\dist\labnet-0.2.0-py3-none-any.whl C:\LabNet-Releases\0.2.0\
 ```
 
 The wheel deliberately excludes site compositions and examples. Create clean
 archives directly from tracked Git files so an ignored development `.env` or
 runtime database cannot be copied accidentally:
 
-```powershell
-git -C .. archive --format=zip `
-  --output=C:\LabNet-Releases\0.2.0\lab-pc-app.zip `
+```cmd
+git -C .. archive --format=zip ^
+  --output=C:\LabNet-Releases\0.2.0\lab-pc-app.zip ^
   HEAD examples/__init__.py examples/lab_pc
-git -C .. archive --format=zip `
-  --output=C:\LabNet-Releases\0.2.0\sync-client-example.zip `
+git -C .. archive --format=zip ^
+  --output=C:\LabNet-Releases\0.2.0\sync-client-example.zip ^
   HEAD examples/__init__.py examples/client_test
 ```
 
@@ -386,19 +387,15 @@ destination paths and hash checks stay the same.
 For example, if `C:\LabNet-Releases` is exposed as a restricted, read-only
 Windows share on `development_pc`, a destination can use the raw IP address:
 
-```powershell
-Copy-Item `
-  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  C:\LabNet-Staging\0.2.0\
+```cmd
+copy \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl C:\LabNet-Staging\0.2.0\
 ```
 
 The destination-specific steps repeat this transfer and calculate the hash of
 the received file:
 
-```powershell
-Get-FileHash `
-  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  -Algorithm SHA256
+```cmd
+certutil -hashfile C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl SHA256
 ```
 
 Compare the full hash with the value recorded on the build computer. A
@@ -411,18 +408,18 @@ dependencies from the configured package index. Merely copying the LabNet
 wheel does not copy those dependencies. For an offline instrument network,
 prepare a wheelhouse on a connected build computer:
 
-```powershell
-New-Item -ItemType Directory -Force .\dist\wheelhouse
-python -m pip download --dest .\dist\wheelhouse `
+```cmd
+mkdir .\dist\wheelhouse
+python -m pip download --dest .\dist\wheelhouse ^
   ".\dist\labnet-0.2.0-py3-none-any.whl[central,lab-pc]"
 ```
 
 Copy the entire `wheelhouse` directory to the isolated computer and install
 without contacting an external package index:
 
-```powershell
-python -m pip install --no-index `
-  --find-links C:\LabNet-Staging\0.2.0\wheelhouse `
+```cmd
+python -m pip install --no-index ^
+  --find-links C:\LabNet-Staging\0.2.0\wheelhouse ^
   "C:\LabNet-Staging\0.2.0\wheelhouse\labnet-0.2.0-py3-none-any.whl[lab-pc]"
 ```
 
@@ -707,55 +704,53 @@ certificate to every relying computer before replacing all issued certificates.
 Configure the Windows network adapter with static IP `192.168.50.10`, then
 confirm that it can reach `development_pc`:
 
-```powershell
-Test-NetConnection 192.168.50.40 -Port 445
+```cmd
+powershell.exe -NoProfile -Command "Test-NetConnection 192.168.50.40 -Port 445"
 ```
 
 Copy the wheel into a local staging directory and compare its SHA-256 hash with
 the value recorded on `development_pc`:
 
-```powershell
-New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
-Copy-Item `
-  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  C:\LabNet-Staging\0.2.0\
-Get-FileHash `
-  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  -Algorithm SHA256
+```cmd
+mkdir C:\LabNet-Staging\0.2.0
+copy \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl C:\LabNet-Staging\0.2.0\
+certutil -hashfile C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl SHA256
 ```
 
 Copy only Central's certificate and private key from the approved TLS transfer
 location. This example assumes the encrypted media is mounted as `E:`:
 
-```powershell
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
-Copy-Item E:\LabNet-TLS\central.crt C:\ProgramData\LabNet\certs\central.crt
-Copy-Item E:\LabNet-TLS\central.key C:\ProgramData\LabNet\certs\central.key
+```cmd
+mkdir C:\ProgramData\LabNet\certs
+copy E:\LabNet-TLS\central.crt C:\ProgramData\LabNet\certs\central.crt
+copy E:\LabNet-TLS\central.key C:\ProgramData\LabNet\certs\central.key
 ```
 
 Create and activate a dedicated environment, then install the wheel:
 
-```powershell
+```cmd
 py -3.11 -m venv C:\ProgramData\LabNet\central-venv
-C:\ProgramData\LabNet\central-venv\Scripts\python.exe -m pip install `
+C:\ProgramData\LabNet\central-venv\Scripts\python.exe -m pip install ^
   "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[central]"
 ```
 
-Set the Central service environment:
+Set the Central service environment in this Command Prompt. A `.env` file is
+not required and is not read automatically; the same variables must be present
+when running the CLI below and when starting Central:
 
-```powershell
-$env:LABNET_DATABASE_URL = "sqlite:///C:/ProgramData/LabNet/Central/labnet.db"
-$env:LABNET_CENTRAL_BIND_HOST = "127.0.0.1"
-$env:LABNET_CENTRAL_BIND_PORT = "8008"
+```cmd
+set "LABNET_DATABASE_URL=sqlite:///C:/ProgramData/LabNet/Central/labnet.db"
+set "LABNET_CENTRAL_BIND_HOST=127.0.0.1"
+set "LABNET_CENTRAL_BIND_PORT=8008"
 ```
 
 Apply migrations and create principals using the installed environment:
 
-```powershell
+```cmd
 C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe db upgrade
-C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe user create `
+C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe user create ^
   lab-pc-01 --role device_manager
-C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe user create `
+C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe user create ^
   researcher --role user
 ```
 
@@ -764,18 +759,18 @@ Each creation command prints its API key once. Store both keys securely:
 - the `lab-pc-01` key goes only into `lab_pc_1` configuration;
 - the `researcher` key is used by the client in step 5.
 
-Run Central on loopback and leave this PowerShell open:
+Run Central on loopback and leave this Command Prompt open:
 
-```powershell
+```cmd
 C:\ProgramData\LabNet\central-venv\Scripts\labnet-central.exe
 ```
 
 At this point Central is reachable only from `central_server_pc` at
-`http://127.0.0.1:8008`. In a second PowerShell, confirm the local application
+`http://127.0.0.1:8008`. In a second Command Prompt, confirm the local application
 before configuring the network-facing proxy:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8008/health/ready
+```cmd
+curl.exe http://127.0.0.1:8008/health/ready
 ```
 
 Place an HTTPS reverse proxy on the same host. Its responsibilities are:
@@ -801,10 +796,10 @@ loads the public certificate and matching private key, while
 [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
 forwards requests to Central's loopback HTTP listener.
 
-Validate and run the proxy from another administrative PowerShell during the
+Validate and run the proxy from another administrative Command Prompt during the
 initial test:
 
-```powershell
+```cmd
 caddy validate --config C:\ProgramData\LabNet\Caddyfile
 caddy run --config C:\ProgramData\LabNet\Caddyfile
 ```
@@ -819,51 +814,43 @@ port 8008; Central must remain bound to loopback.
 Configure the Windows network adapter with static IP `192.168.50.20`. Confirm
 that both the development and Central computers are reachable:
 
-```powershell
-Test-NetConnection 192.168.50.40 -Port 445
-Test-NetConnection 192.168.50.10 -Port 443
+```cmd
+powershell.exe -NoProfile -Command "Test-NetConnection 192.168.50.40 -Port 445"
+powershell.exe -NoProfile -Command "Test-NetConnection 192.168.50.10 -Port 443"
 ```
 
 Copy the wheel and reviewed Lab-PC composition, then verify the wheel hash:
 
-```powershell
-New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
-Copy-Item `
-  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  C:\LabNet-Staging\0.2.0\
-Copy-Item `
-  \\192.168.50.40\LabNet-Releases\0.2.0\lab-pc-app.zip `
-  C:\LabNet-Staging\0.2.0\
-Get-FileHash `
-  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  -Algorithm SHA256
+```cmd
+mkdir C:\LabNet-Staging\0.2.0
+copy \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl C:\LabNet-Staging\0.2.0\
+copy \\192.168.50.40\LabNet-Releases\0.2.0\lab-pc-app.zip C:\LabNet-Staging\0.2.0\
+certutil -hashfile C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl SHA256
 ```
 
 Copy the Lab-PC server identity and the public CA certificate from the approved
 TLS transfer location:
 
-```powershell
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
-Copy-Item E:\LabNet-TLS\lab-pc-01.crt C:\ProgramData\LabNet\certs\lab-pc.crt
-Copy-Item E:\LabNet-TLS\lab-pc-01.key C:\ProgramData\LabNet\certs\lab-pc.key
-Copy-Item E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
+```cmd
+mkdir C:\ProgramData\LabNet\certs
+copy E:\LabNet-TLS\lab-pc-01.crt C:\ProgramData\LabNet\certs\lab-pc.crt
+copy E:\LabNet-TLS\lab-pc-01.key C:\ProgramData\LabNet\certs\lab-pc.key
+copy E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
 ```
 
 Install the wheel with Lab-PC dependencies:
 
-```powershell
+```cmd
 py -3.11 -m venv C:\ProgramData\LabNet\lab-pc-venv
-C:\ProgramData\LabNet\lab-pc-venv\Scripts\python.exe -m pip install `
+C:\ProgramData\LabNet\lab-pc-venv\Scripts\python.exe -m pip install ^
   "C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl[lab-pc]"
 ```
 
 Extract the reviewed composition into its application directory:
 
-```powershell
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\app
-Expand-Archive `
-  C:\LabNet-Staging\0.2.0\lab-pc-app.zip `
-  C:\ProgramData\LabNet\app -Force
+```cmd
+mkdir C:\ProgramData\LabNet\app
+tar -xf C:\LabNet-Staging\0.2.0\lab-pc-app.zip -C C:\ProgramData\LabNet\app
 ```
 
 Install the vendor drivers required by the physical instruments and test each
@@ -899,16 +886,16 @@ LABNET_HTTP_PORT=9001
 
 Start from the application parent:
 
-```powershell
-Set-Location C:\ProgramData\LabNet\app
+```cmd
+cd /d C:\ProgramData\LabNet\app
 C:\ProgramData\LabNet\lab-pc-venv\Scripts\python.exe -m examples.lab_pc
 ```
 
-Leave the process running. In a second PowerShell on `lab_pc_1`, check its
+Leave the process running. In a second Command Prompt on `lab_pc_1`, check its
 loopback-only readiness endpoint:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:9001/health/ready
+```cmd
+curl.exe http://127.0.0.1:9001/health/ready
 ```
 
 Allow inbound TCP 50051 from approved client IPs. Do not expose port 9001;
@@ -920,57 +907,49 @@ that health endpoint remains available only at `127.0.0.1:9001` on
 Configure the Windows network adapter with static IP `192.168.50.30`, then
 confirm that the release share, Central, and `lab_pc_1` are reachable:
 
-```powershell
-Test-NetConnection 192.168.50.40 -Port 445
-Test-NetConnection 192.168.50.10 -Port 443
-Test-NetConnection 192.168.50.20 -Port 50051
+```cmd
+powershell.exe -NoProfile -Command "Test-NetConnection 192.168.50.40 -Port 445"
+powershell.exe -NoProfile -Command "Test-NetConnection 192.168.50.10 -Port 443"
+powershell.exe -NoProfile -Command "Test-NetConnection 192.168.50.20 -Port 50051"
 ```
 
 Copy the wheel and synchronous client example, then verify the wheel hash:
 
-```powershell
-New-Item -ItemType Directory -Force C:\LabNet-Staging\0.2.0
-Copy-Item `
-  \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  C:\LabNet-Staging\0.2.0\
-Copy-Item `
-  \\192.168.50.40\LabNet-Releases\0.2.0\sync-client-example.zip `
-  C:\LabNet-Staging\0.2.0\
-Get-FileHash `
-  C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl `
-  -Algorithm SHA256
+```cmd
+mkdir C:\LabNet-Staging\0.2.0
+copy \\192.168.50.40\LabNet-Releases\0.2.0\labnet-0.2.0-py3-none-any.whl C:\LabNet-Staging\0.2.0\
+copy \\192.168.50.40\LabNet-Releases\0.2.0\sync-client-example.zip C:\LabNet-Staging\0.2.0\
+certutil -hashfile C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl SHA256
 ```
 
 The client receives only the public CA certificate:
 
-```powershell
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\certs
-Copy-Item E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
+```cmd
+mkdir C:\ProgramData\LabNet\certs
+copy E:\LabNet-TLS\labnet-ca.pem C:\ProgramData\LabNet\certs\labnet-ca.pem
 ```
 
 Before installing the client, confirm that Central's HTTPS proxy is reachable
 and that its certificate validates against the copied CA:
 
-```powershell
-curl.exe --cacert C:\ProgramData\LabNet\certs\labnet-ca.pem `
+```cmd
+curl.exe --cacert C:\ProgramData\LabNet\certs\labnet-ca.pem ^
   https://192.168.50.10/health/ready
 ```
 
 Install the base wheel:
 
-```powershell
+```cmd
 py -3.11 -m venv C:\ProgramData\LabNet\client-venv
-C:\ProgramData\LabNet\client-venv\Scripts\python.exe -m pip install `
+C:\ProgramData\LabNet\client-venv\Scripts\python.exe -m pip install ^
   C:\LabNet-Staging\0.2.0\labnet-0.2.0-py3-none-any.whl
 ```
 
 Extract the client example:
 
-```powershell
-New-Item -ItemType Directory -Force C:\ProgramData\LabNet\client-app
-Expand-Archive `
-  C:\LabNet-Staging\0.2.0\sync-client-example.zip `
-  C:\ProgramData\LabNet\client-app -Force
+```cmd
+mkdir C:\ProgramData\LabNet\client-app
+tar -xf C:\LabNet-Staging\0.2.0\sync-client-example.zip -C C:\ProgramData\LabNet\client-app
 ```
 
 No inbound firewall rule is required on the client.
@@ -978,21 +957,21 @@ No inbound firewall rule is required on the client.
 ### 5. Run the synchronous client example
 
 Obtain the `researcher` API key created on `central_server_pc`. In the client
-PowerShell session, configure the Central URL and the public CA file used by
+Command Prompt, configure the Central URL and the public CA file used by
 both HTTPS and gRPC:
 
-```powershell
-$env:LABNET_SERVER_URL = "https://192.168.50.10"
-$env:LABNET_API_KEY = "<researcher API key>"
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
-$env:LABNET_GRPC_CA_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
+```cmd
+set "LABNET_SERVER_URL=https://192.168.50.10"
+set "LABNET_API_KEY=<researcher API key>"
+set "SSL_CERT_FILE=C:\ProgramData\LabNet\certs\labnet-ca.pem"
+set "LABNET_GRPC_CA_FILE=C:\ProgramData\LabNet\certs\labnet-ca.pem"
 ```
 
 Run the packaged example:
 
-```powershell
-Set-Location C:\ProgramData\LabNet\client-app
-C:\ProgramData\LabNet\client-venv\Scripts\python.exe `
+```cmd
+cd /d C:\ProgramData\LabNet\client-app
+C:\ProgramData\LabNet\client-venv\Scripts\python.exe ^
   .\examples\client_test\client.py
 ```
 
@@ -1175,7 +1154,7 @@ and Alembic migrations and is appropriate for multiple workers or replicas.
 Normal startup never creates or modifies database tables. Apply migrations
 explicitly:
 
-```powershell
+```cmd
 labnet-central-admin db upgrade
 ```
 
@@ -1304,7 +1283,7 @@ Supported patterns are:
 
 From `Labnet/`:
 
-```powershell
+```cmd
 python tools/generate_protos.py
 ```
 
@@ -1354,7 +1333,7 @@ one instance for each attached instrument.
 
 #### 6. Validate before deployment
 
-```powershell
+```cmd
 python tools/generate_protos.py --check
 python -m pytest
 python -m pip wheel --no-deps . --wheel-dir dist
@@ -1376,7 +1355,7 @@ Once a contract is deployed:
 
 From `Labnet/`:
 
-```powershell
+```cmd
 python tools/generate_protos.py --check
 python -m pytest
 ```
@@ -1387,7 +1366,7 @@ imports, and a complete Central-to-Lab-PC-to-client stack.
 
 To deliberately regenerate after editing a proto:
 
-```powershell
+```cmd
 python tools/generate_protos.py
 python tools/generate_protos.py --check
 ```

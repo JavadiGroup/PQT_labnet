@@ -25,9 +25,9 @@ Before running a client:
 
 Clients need only the base package:
 
-```powershell
+```cmd
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+call .\.venv\Scripts\activate.bat
 python -m pip install -e .\Labnet
 ```
 
@@ -35,14 +35,14 @@ python -m pip install -e .\Labnet
 
 Plaintext is accepted only because the local endpoints use loopback.
 
-```powershell
-$env:LABNET_SERVER_URL = "http://127.0.0.1:8008"
-$env:LABNET_API_KEY = "<researcher API key>"
+```cmd
+set "LABNET_SERVER_URL=http://127.0.0.1:8008"
+set "LABNET_API_KEY=<researcher API key>"
 ```
 
 Run the synchronous example:
 
-```powershell
+```cmd
 python .\examples\client_test\client.py
 ```
 
@@ -50,7 +50,7 @@ It prints the value returned by the example device.
 
 Run the asyncio example:
 
-```powershell
+```cmd
 python .\examples\client_test\async_client.py
 ```
 
@@ -72,11 +72,11 @@ issued Central's HTTPS certificate and the Lab PC's gRPC certificate. Configure
 Central HTTPS trust through `SSL_CERT_FILE` and Lab-PC gRPC trust through
 `LABNET_GRPC_CA_FILE`:
 
-```powershell
-$env:LABNET_SERVER_URL = "https://192.168.50.10"
-$env:LABNET_API_KEY = "<researcher API key>"
-$env:SSL_CERT_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
-$env:LABNET_GRPC_CA_FILE = "C:\ProgramData\LabNet\certs\labnet-ca.pem"
+```cmd
+set "LABNET_SERVER_URL=https://192.168.50.10"
+set "LABNET_API_KEY=<researcher API key>"
+set "SSL_CERT_FILE=C:\ProgramData\LabNet\certs\labnet-ca.pem"
+set "LABNET_GRPC_CA_FILE=C:\ProgramData\LabNet\certs\labnet-ca.pem"
 ```
 
 `SSL_CERT_FILE` is used when the client makes HTTPS requests to Central.

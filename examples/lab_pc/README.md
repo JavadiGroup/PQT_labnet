@@ -26,9 +26,9 @@ its own reviewed inventory and deployment configuration.
 
 From the repository root:
 
-```powershell
+```cmd
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+call .\.venv\Scripts\activate.bat
 python -m pip install -e ".\Labnet[lab-pc]"
 ```
 
@@ -39,8 +39,8 @@ Lab PC.
 
 Copy the template:
 
-```powershell
-Copy-Item .\examples\lab_pc\.env.example .\examples\lab_pc\.env
+```cmd
+copy .\examples\lab_pc\.env.example .\examples\lab_pc\.env
 ```
 
 Set these values:
@@ -68,16 +68,15 @@ The API key must belong to that same identity.
 
 Start from the repository root:
 
-```powershell
+```cmd
 python -m examples.lab_pc
 ```
 
 Verify local health:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:9001/health/live
-$ready = Invoke-RestMethod http://127.0.0.1:9001/health/ready
-$ready | ConvertTo-Json -Depth 6
+```cmd
+curl.exe http://127.0.0.1:9001/health/live
+curl.exe http://127.0.0.1:9001/health/ready
 ```
 
 Readiness should show:

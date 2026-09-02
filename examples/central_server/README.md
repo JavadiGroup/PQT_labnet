@@ -14,22 +14,26 @@ settings and runs Uvicorn.
 | `__main__.py` | Support `python -m examples.central_server` |
 | `.env.example` | Reference list of Central environment variables |
 
-Central does not automatically load `.env.example`. Set variables in the
-shell, service manager, container environment, or secrets manager.
+Central does not automatically load `.env` or `.env.example`. Those files are
+optional reference files unless your own launcher explicitly loads them. Set
+the required variables in the Command Prompt that starts **both** Central and
+`labnet-central-admin`, or configure them in the service manager, container,
+or secrets manager. The CLI and Central must receive the same
+`LABNET_DATABASE_URL` or they will use different databases.
 
 ## Install
 
 From the repository root:
 
-```powershell
+```cmd
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+call .\.venv\Scripts\activate.bat
 python -m pip install -e ".\Labnet[central]"
 ```
 
 For development and tests, install `dev` as well:
 
-```powershell
+```cmd
 python -m pip install -e ".\Labnet[central,dev]"
 ```
 
@@ -41,13 +45,13 @@ current user's application-data directory.
 
 Apply the schema before starting Central:
 
-```powershell
+```cmd
 labnet-central-admin db upgrade
 ```
 
 Create one identity for each responsibility:
 
-```powershell
+```cmd
 labnet-central-admin user create central-admin --role admin
 labnet-central-admin user create lab-pc-dev-01 --role device_manager
 labnet-central-admin user create researcher --role user
@@ -59,21 +63,21 @@ match the associated Lab PC's `LABNET_LAB_PC_ID`.
 
 Start the example from the repository root:
 
-```powershell
+```cmd
 python -m examples.central_server
 ```
 
 The installed command provides the same application without this wrapper:
 
-```powershell
+```cmd
 labnet-central
 ```
 
 Verify the service:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8008/health/live
-Invoke-RestMethod http://127.0.0.1:8008/health/ready
+```cmd
+curl.exe http://127.0.0.1:8008/health/live
+curl.exe http://127.0.0.1:8008/health/ready
 ```
 
 Both should report `status: ok`. Readiness remains unavailable until the
@@ -81,12 +85,14 @@ database has the expected migration revision.
 
 ## Use an explicit database location
 
-Set the same environment in every shell or service command that runs Central
-or its administration CLI:
+Set the database URL in the same Command Prompt before running the migration,
+user-management CLI, and Central. A `.env` file alone has no effect unless a
+launcher loads it:
 
-```powershell
-$env:LABNET_DATABASE_URL = "sqlite:///C:/ProgramData/LabNet/Central/labnet.db"
+```cmd
+set "LABNET_DATABASE_URL=sqlite:///C:/ProgramData/LabNet/Central/labnet.db"
 labnet-central-admin db upgrade
+labnet-central-admin user create lab-pc-dev-01 --role device_manager
 python -m examples.central_server
 ```
 
@@ -98,9 +104,9 @@ normal server startup.
 
 Install the PostgreSQL extra and use a SQLAlchemy URL:
 
-```powershell
+```cmd
 python -m pip install -e ".\Labnet[central,postgres]"
-$env:LABNET_DATABASE_URL = "postgresql+psycopg://labnet:<password>@db-host/labnet"
+set "LABNET_DATABASE_URL=postgresql+psycopg://labnet:<password>@db-host/labnet"
 labnet-central-admin db upgrade
 python -m examples.central_server
 ```
@@ -159,13 +165,13 @@ file-distribution, and renewal procedure is in the main
 
 Check the current migration revision:
 
-```powershell
+```cmd
 labnet-central-admin db current
 ```
 
 Rotate a user's API key:
 
-```powershell
+```cmd
 labnet-central-admin user rotate-key researcher
 ```
 

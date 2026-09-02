@@ -59,20 +59,25 @@ Experiment client ────────────────────�
 Python 3.11 or newer is required. The following commands create one local
 development environment containing all three roles.
 
-```powershell
+```cmd
 git clone <repository-url> lab_network
 cd lab_network
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+call .\.venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install -e ".\Labnet[dev,central,lab-pc]"
 ```
 
 ### 1. Initialize Central
 
-In the activated shell:
+Central does not load `.env` automatically. If you choose a non-default
+database location, set `LABNET_DATABASE_URL` with `set "..."` in the activated
+Command Prompt before running both the CLI and Central; see the
+[Central example](examples/central_server/README.md#use-an-explicit-database-location).
 
-```powershell
+In the activated Command Prompt:
+
+```cmd
 labnet-central-admin db upgrade
 labnet-central-admin user create central-admin --role admin
 labnet-central-admin user create lab-pc-dev-01 --role device_manager
@@ -84,22 +89,22 @@ Save the API keys printed by the commands. Each key is shown once. The
 
 Start Central and leave it running:
 
-```powershell
+```cmd
 python -m examples.central_server
 ```
 
 Verify it from another shell:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8008/health/ready
+```cmd
+curl.exe http://127.0.0.1:8008/health/ready
 ```
 
 ### 2. Start the example Lab PC
 
 Copy the environment template:
 
-```powershell
-Copy-Item .\examples\lab_pc\.env.example .\examples\lab_pc\.env
+```cmd
+copy .\examples\lab_pc\.env.example .\examples\lab_pc\.env
 ```
 
 Edit `.env` and set:
@@ -114,29 +119,29 @@ LABNET_LEASE_VALIDATION_MODE=central
 
 Start the Lab PC in a second activated shell:
 
-```powershell
+```cmd
 python -m examples.lab_pc
 ```
 
 The checked-in inventory exposes one simulated `dummy_device`. Verify the Lab
 PC locally:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:9001/health/ready
+```cmd
+curl.exe http://127.0.0.1:9001/health/ready
 ```
 
 ### 3. Run a client
 
 In a third activated shell, use the researcher key:
 
-```powershell
-$env:LABNET_API_KEY = "<researcher API key>"
+```cmd
+set "LABNET_API_KEY=<researcher API key>"
 python .\examples\client_test\client.py
 ```
 
 Or run the asyncio example:
 
-```powershell
+```cmd
 python .\examples\client_test\async_client.py
 ```
 
@@ -170,7 +175,7 @@ Each directory under [`examples/`](examples/) also contains a focused README.
 
 Run contract and test checks from the installable project directory:
 
-```powershell
+```cmd
 cd Labnet
 python tools/generate_protos.py --check
 python -m pytest
