@@ -105,8 +105,8 @@ def test_repatterned_rpc_cannot_use_a_stale_client_convenience_method() -> None:
     )
     repatterned = replace(
         read_spec,
-        pattern="RPC_PATTERN_UNARY_COMMAND",
-        pattern_value=3,
+        pattern="RPC_PATTERN_QUERY_METADATA",
+        pattern_value=4,
     )
     contract = replace(
         DUMMY_DEVICE_CONTRACT,

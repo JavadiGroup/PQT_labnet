@@ -1,4 +1,4 @@
-"""Typed direct gRPC clients for the Labnet DummyDevice service."""
+"""Typed direct gRPC clients driven by generated Labnet device contracts."""
 
 from __future__ import annotations
 
@@ -58,6 +58,7 @@ _QUALITY_BY_PROTO = {
 _MAX_LEASE_ID_LENGTH = 512
 _SCALAR_READ = "RPC_PATTERN_SCALAR_READ"
 _SCALAR_WRITE = "RPC_PATTERN_SCALAR_WRITE"
+_UNARY_COMMAND = "RPC_PATTERN_UNARY_COMMAND"
 _POLLED_SCALAR_STREAM = "RPC_PATTERN_POLLED_SCALAR_STREAM"
 
 
@@ -262,7 +263,7 @@ def _contract_method(contract: DeviceContract, python_name: str) -> RpcSpec | No
 def _contract_dispatch_kind(spec: RpcSpec) -> str:
     """Return the generated transport shape, rejecting stale/malformed specs."""
 
-    if spec.pattern in {_SCALAR_READ, _SCALAR_WRITE}:
+    if spec.pattern in {_SCALAR_READ, _SCALAR_WRITE, _UNARY_COMMAND}:
         if spec.client_streaming or spec.server_streaming:
             raise RuntimeError(
                 f"Generated RPC {spec.rpc_full_name} uses {spec.pattern} but "
@@ -432,6 +433,26 @@ def _build_contract_request(
     return request, _optional_timeout(timeout_seconds, None)
 
 
+def _command_value(response: object) -> Any:
+    """Decode a lossless unary-command result into its Python value."""
+
+    result = response.result
+    kind = result.WhichOneof("kind")
+    if kind == "none_value":
+        return None
+    if kind == "boolean_value":
+        return bool(result.boolean_value)
+    if kind == "integer_value":
+        return int(result.integer_value)
+    if kind == "floating_point_value":
+        return float(result.floating_point_value)
+    if kind == "text_value":
+        return str(result.text_value)
+    if kind == "integer_sequence":
+        return tuple(int(value) for value in result.integer_sequence.values)
+    raise RuntimeError("The device returned an empty or unknown command result.")
+
+
 class _ContractDeviceRequests:
     device_id: str
     lease_id: str
@@ -493,7 +514,7 @@ class ContractDeviceGrpcClient(_ContractDeviceRequests):
 
             return stream
 
-        def unary(*args: Any, **kwargs: Any) -> Measurement:
+        def unary(*args: Any, **kwargs: Any) -> Any:
             return self._invoke_generated_unary(spec, args, kwargs)
 
         return unary
@@ -503,7 +524,7 @@ class ContractDeviceGrpcClient(_ContractDeviceRequests):
         spec: RpcSpec,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
-    ) -> Measurement:
+    ) -> Any:
         if _contract_dispatch_kind(spec) != "unary":
             raise RuntimeError(
                 f"RPC {spec.rpc_full_name} is not a unary operation."
@@ -525,6 +546,8 @@ class ContractDeviceGrpcClient(_ContractDeviceRequests):
             )
         except grpc.RpcError as exc:
             raise translate_grpc_error(exc) from exc
+        if spec.pattern == _UNARY_COMMAND:
+            return _command_value(response)
         return _measurement(response)
 
     def _invoke_generated_stream(
@@ -668,7 +691,7 @@ class AsyncContractDeviceClient(_ContractDeviceRequests):
 
             return stream
 
-        async def unary(*args: Any, **kwargs: Any) -> Measurement:
+        async def unary(*args: Any, **kwargs: Any) -> Any:
             return await self._invoke_generated_unary(spec, args, kwargs)
 
         return unary
@@ -678,7 +701,7 @@ class AsyncContractDeviceClient(_ContractDeviceRequests):
         spec: RpcSpec,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
-    ) -> Measurement:
+    ) -> Any:
         if _contract_dispatch_kind(spec) != "unary":
             raise RuntimeError(
                 f"RPC {spec.rpc_full_name} is not a unary operation."
@@ -700,6 +723,8 @@ class AsyncContractDeviceClient(_ContractDeviceRequests):
             )
         except grpc.aio.AioRpcError as exc:
             raise translate_grpc_error(exc) from exc
+        if spec.pattern == _UNARY_COMMAND:
+            return _command_value(response)
         return _measurement(response)
 
     async def _invoke_generated_stream(

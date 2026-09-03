@@ -10,8 +10,10 @@ from google.protobuf import message as _message
 from google.protobuf import symbol_database as _symbol_database
 from . import common_pb2 as _common_pb2
 from . import dummy_device_pb2 as _dummy_device_pb2
+from . import sacher_laser_pb2 as _sacher_laser_pb2
 from . import transfer_pb2 as _transfer_pb2
 from . import dummy_device_pb2_grpc as _dummy_device_pb2_grpc
+from . import sacher_laser_pb2_grpc as _sacher_laser_pb2_grpc
 
 _SYMBOLS = _symbol_database.Default()
 
@@ -151,7 +153,519 @@ DUMMY_DEVICE_CONTRACT: Final = DeviceContract(
 )
 
 
-DEVICE_CONTRACTS: Final[tuple[DeviceContract, ...]] = (DUMMY_DEVICE_CONTRACT,)
+@runtime_checkable
+class SacherLaserPhysicalProtocol(Protocol):
+    def get_acceleration_nm_s2(self) -> Any: ...
+    def get_deceleration_nm_s2(self) -> Any: ...
+    def get_device_error_codes(self) -> Any: ...
+    def get_live_wavelength_nm(self) -> Any: ...
+    def get_position_offset_steps(self) -> Any: ...
+    def get_position_steps(self) -> Any: ...
+    def get_start_wavelength_nm(self) -> Any: ...
+    def get_state(self) -> Any: ...
+    def get_stored_position_steps(self) -> Any: ...
+    def get_stored_wavelength_nm(self) -> Any: ...
+    def get_target_wavelength_nm(self) -> Any: ...
+    def get_velocity_nm_s(self) -> Any: ...
+    def go_to_wavelength_nm(self, wavelength_nm: float, velocity_mode: str | None = None) -> Any: ...
+    def jog_steps(self, relative_steps: int, velocity_mode: str | None = None) -> Any: ...
+    def recalibrate_position(self, measured_wavelength_nm: float) -> Any: ...
+    def reset_position(self) -> Any: ...
+    def set_acceleration_nm_s2(self, acceleration_nm_s2: float) -> Any: ...
+    def set_deceleration_nm_s2(self, deceleration_nm_s2: float) -> Any: ...
+    def set_start_wavelength_nm(self, wavelength_nm: float) -> Any: ...
+    def set_target_wavelength_nm(self, wavelength_nm: float) -> Any: ...
+    def set_velocity_nm_s(self, velocity_nm_s: float) -> Any: ...
+    def start_scan(self, start_wavelength_nm: float, target_wavelength_nm: float) -> Any: ...
+    def stop(self) -> Any: ...
+
+
+_SACHER_LASER_GET_ACCELERATION_NM_S2: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetAccelerationNmS2',
+    rpc_name='GetAccelerationNmS2',
+    python_name='get_acceleration_nm_s2',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_acceleration_nm_s2',
+    default_unit='nm/s2',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_DECELERATION_NM_S2: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetDecelerationNmS2',
+    rpc_name='GetDecelerationNmS2',
+    python_name='get_deceleration_nm_s2',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_deceleration_nm_s2',
+    default_unit='nm/s2',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_DEVICE_ERROR_CODES: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetDeviceErrorCodes',
+    rpc_name='GetDeviceErrorCodes',
+    python_name='get_device_error_codes',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='get_device_error_codes',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_LIVE_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetLiveWavelengthNm',
+    rpc_name='GetLiveWavelengthNm',
+    python_name='get_live_wavelength_nm',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_live_wavelength_nm',
+    default_unit='nm',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_POSITION_OFFSET_STEPS: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetPositionOffsetSteps',
+    rpc_name='GetPositionOffsetSteps',
+    python_name='get_position_offset_steps',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='get_position_offset_steps',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_POSITION_STEPS: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetPositionSteps',
+    rpc_name='GetPositionSteps',
+    python_name='get_position_steps',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='get_position_steps',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_START_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetStartWavelengthNm',
+    rpc_name='GetStartWavelengthNm',
+    python_name='get_start_wavelength_nm',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_start_wavelength_nm',
+    default_unit='nm',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_STATE: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetState',
+    rpc_name='GetState',
+    python_name='get_state',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='get_state',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_STORED_POSITION_STEPS: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetStoredPositionSteps',
+    rpc_name='GetStoredPositionSteps',
+    python_name='get_stored_position_steps',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='get_stored_position_steps',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_STORED_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetStoredWavelengthNm',
+    rpc_name='GetStoredWavelengthNm',
+    python_name='get_stored_wavelength_nm',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_stored_wavelength_nm',
+    default_unit='nm',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_TARGET_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetTargetWavelengthNm',
+    rpc_name='GetTargetWavelengthNm',
+    python_name='get_target_wavelength_nm',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_target_wavelength_nm',
+    default_unit='nm',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GET_VELOCITY_NM_S: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GetVelocityNmS',
+    rpc_name='GetVelocityNmS',
+    python_name='get_velocity_nm_s',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='get_velocity_nm_s',
+    default_unit='nm/s',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherMeasurementResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.SacherMeasurementResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_GO_TO_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.GoToWavelengthNm',
+    rpc_name='GoToWavelengthNm',
+    python_name='go_to_wavelength_nm',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='go_to_wavelength_nm',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherGoToWavelengthRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherGoToWavelengthRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('wavelength_nm', 'velocity_mode'),
+    forwarded_field_specs=(
+        ForwardedField(name='wavelength_nm', python_type='float', optional=False),
+        ForwardedField(name='velocity_mode', python_type='str | None', optional=True),
+    ),
+)
+
+_SACHER_LASER_JOG_STEPS: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.JogSteps',
+    rpc_name='JogSteps',
+    python_name='jog_steps',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='jog_steps',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherJogRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherJogRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('relative_steps', 'velocity_mode'),
+    forwarded_field_specs=(
+        ForwardedField(name='relative_steps', python_type='int', optional=False),
+        ForwardedField(name='velocity_mode', python_type='str | None', optional=True),
+    ),
+)
+
+_SACHER_LASER_RECALIBRATE_POSITION: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.RecalibratePosition',
+    rpc_name='RecalibratePosition',
+    python_name='recalibrate_position',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='recalibrate_position',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRecalibrateRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRecalibrateRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('measured_wavelength_nm',),
+    forwarded_field_specs=(
+        ForwardedField(name='measured_wavelength_nm', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_RESET_POSITION: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.ResetPosition',
+    rpc_name='ResetPosition',
+    python_name='reset_position',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='reset_position',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+_SACHER_LASER_SET_ACCELERATION_NM_S2: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.SetAccelerationNmS2',
+    rpc_name='SetAccelerationNmS2',
+    python_name='set_acceleration_nm_s2',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='set_acceleration_nm_s2',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherAccelerationRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherAccelerationRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('acceleration_nm_s2',),
+    forwarded_field_specs=(
+        ForwardedField(name='acceleration_nm_s2', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_SET_DECELERATION_NM_S2: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.SetDecelerationNmS2',
+    rpc_name='SetDecelerationNmS2',
+    python_name='set_deceleration_nm_s2',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='set_deceleration_nm_s2',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherDecelerationRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherDecelerationRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('deceleration_nm_s2',),
+    forwarded_field_specs=(
+        ForwardedField(name='deceleration_nm_s2', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_SET_START_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.SetStartWavelengthNm',
+    rpc_name='SetStartWavelengthNm',
+    python_name='set_start_wavelength_nm',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='set_start_wavelength_nm',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherWavelengthRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherWavelengthRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('wavelength_nm',),
+    forwarded_field_specs=(
+        ForwardedField(name='wavelength_nm', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_SET_TARGET_WAVELENGTH_NM: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.SetTargetWavelengthNm',
+    rpc_name='SetTargetWavelengthNm',
+    python_name='set_target_wavelength_nm',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='set_target_wavelength_nm',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherWavelengthRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherWavelengthRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('wavelength_nm',),
+    forwarded_field_specs=(
+        ForwardedField(name='wavelength_nm', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_SET_VELOCITY_NM_S: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.SetVelocityNmS',
+    rpc_name='SetVelocityNmS',
+    python_name='set_velocity_nm_s',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='set_velocity_nm_s',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherVelocityRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherVelocityRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('velocity_nm_s',),
+    forwarded_field_specs=(
+        ForwardedField(name='velocity_nm_s', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_START_SCAN: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.StartScan',
+    rpc_name='StartScan',
+    python_name='start_scan',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='start_scan',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherScanRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherScanRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('start_wavelength_nm', 'target_wavelength_nm'),
+    forwarded_field_specs=(
+        ForwardedField(name='start_wavelength_nm', python_type='float', optional=False),
+        ForwardedField(name='target_wavelength_nm', python_type='float', optional=False),
+    ),
+)
+
+_SACHER_LASER_STOP: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SacherLaserService.Stop',
+    rpc_name='Stop',
+    python_name='stop',
+    pattern='RPC_PATTERN_UNARY_COMMAND',
+    pattern_value=3,
+    physical_method='stop',
+    default_unit='1',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SacherRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.CommandResponse'),
+    request_full_name='labnet.devices.v1.SacherRequest',
+    response_full_name='labnet.devices.v1.CommandResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=(),
+    forwarded_field_specs=(
+    ),
+)
+
+SACHER_LASER_CONTRACT: Final = DeviceContract(
+    device_type='sacher_laser',
+    service_full_name='labnet.devices.v1.SacherLaserService',
+    service_name='SacherLaserService',
+    stub_type=_sacher_laser_pb2_grpc.SacherLaserServiceStub,
+    servicer_type=_sacher_laser_pb2_grpc.SacherLaserServiceServicer,
+    add_servicer_to_server=_sacher_laser_pb2_grpc.add_SacherLaserServiceServicer_to_server,
+    methods=(_SACHER_LASER_GET_ACCELERATION_NM_S2, _SACHER_LASER_GET_DECELERATION_NM_S2, _SACHER_LASER_GET_DEVICE_ERROR_CODES, _SACHER_LASER_GET_LIVE_WAVELENGTH_NM, _SACHER_LASER_GET_POSITION_OFFSET_STEPS, _SACHER_LASER_GET_POSITION_STEPS, _SACHER_LASER_GET_START_WAVELENGTH_NM, _SACHER_LASER_GET_STATE, _SACHER_LASER_GET_STORED_POSITION_STEPS, _SACHER_LASER_GET_STORED_WAVELENGTH_NM, _SACHER_LASER_GET_TARGET_WAVELENGTH_NM, _SACHER_LASER_GET_VELOCITY_NM_S, _SACHER_LASER_GO_TO_WAVELENGTH_NM, _SACHER_LASER_JOG_STEPS, _SACHER_LASER_RECALIBRATE_POSITION, _SACHER_LASER_RESET_POSITION, _SACHER_LASER_SET_ACCELERATION_NM_S2, _SACHER_LASER_SET_DECELERATION_NM_S2, _SACHER_LASER_SET_START_WAVELENGTH_NM, _SACHER_LASER_SET_TARGET_WAVELENGTH_NM, _SACHER_LASER_SET_VELOCITY_NM_S, _SACHER_LASER_START_SCAN, _SACHER_LASER_STOP),
+    physical_methods=('get_acceleration_nm_s2', 'get_deceleration_nm_s2', 'get_device_error_codes', 'get_live_wavelength_nm', 'get_position_offset_steps', 'get_position_steps', 'get_start_wavelength_nm', 'get_state', 'get_stored_position_steps', 'get_stored_wavelength_nm', 'get_target_wavelength_nm', 'get_velocity_nm_s', 'go_to_wavelength_nm', 'jog_steps', 'recalibrate_position', 'reset_position', 'set_acceleration_nm_s2', 'set_deceleration_nm_s2', 'set_start_wavelength_nm', 'set_target_wavelength_nm', 'set_velocity_nm_s', 'start_scan', 'stop'),
+    physical_protocol=SacherLaserPhysicalProtocol,
+)
+
+
+DEVICE_CONTRACTS: Final[tuple[DeviceContract, ...]] = (DUMMY_DEVICE_CONTRACT, SACHER_LASER_CONTRACT)
 DEVICE_CONTRACT_BY_TYPE: Final[dict[str, DeviceContract]] = {
     contract.device_type: contract for contract in DEVICE_CONTRACTS
 }

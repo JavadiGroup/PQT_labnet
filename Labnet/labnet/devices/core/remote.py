@@ -36,6 +36,7 @@ from ...lease_policy import (
 
 _SCALAR_READ = "RPC_PATTERN_SCALAR_READ"
 _SCALAR_WRITE = "RPC_PATTERN_SCALAR_WRITE"
+_UNARY_COMMAND = "RPC_PATTERN_UNARY_COMMAND"
 _POLLED_SCALAR_STREAM = "RPC_PATTERN_POLLED_SCALAR_STREAM"
 
 
@@ -66,7 +67,7 @@ def _require_pattern(
 
 
 def _dispatch_kind(spec: RpcSpec) -> str:
-    if spec.pattern in {_SCALAR_READ, _SCALAR_WRITE}:
+    if spec.pattern in {_SCALAR_READ, _SCALAR_WRITE, _UNARY_COMMAND}:
         if spec.client_streaming or spec.server_streaming:
             raise RuntimeError(
                 f"Generated RPC {spec.rpc_full_name} has incompatible "
@@ -392,6 +393,12 @@ class RemoteDeviceBinding:
                 getattr(grpc_client, name)(*args, **kwargs)
 
             return scalar_write
+        if spec.pattern == _UNARY_COMMAND:
+            def unary_command(*args: Any, **kwargs: Any) -> Any:
+                self._ensure_authority()
+                return getattr(grpc_client, name)(*args, **kwargs)
+
+            return unary_command
         if dispatch_kind == "stream":
             def scalar_stream(*args: Any, **kwargs: Any) -> Iterator[Measurement]:
                 self._ensure_authority()

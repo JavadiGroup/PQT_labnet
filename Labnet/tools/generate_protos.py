@@ -119,6 +119,7 @@ _IMPLEMENTED_PATTERNS = frozenset(
     {
         "RPC_PATTERN_SCALAR_READ",
         "RPC_PATTERN_SCALAR_WRITE",
+        "RPC_PATTERN_UNARY_COMMAND",
         "RPC_PATTERN_POLLED_SCALAR_STREAM",
     }
 )
@@ -521,6 +522,18 @@ def _validate_pattern_shape(
             proto3_optional=False,
         )
         require_measurement_response()
+        return
+
+    if pattern == "RPC_PATTERN_UNARY_COMMAND":
+        _require_message_field(
+            rpc_full_name=rpc_full_name,
+            message_name=response_full_name,
+            message=response,
+            field_name="result",
+            field_type=descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE,
+            type_name=".labnet.devices.v1.CommandResult",
+            proto3_optional=False,
+        )
         return
 
     # _validate_implemented_pattern prevents reaching this branch.
@@ -1168,7 +1181,8 @@ def _verify_repository_imports() -> None:
             (
                 "from labnet.grpc.generated import "
                 "common_pb2, transfer_pb2, rpc_options_pb2, "
-                "dummy_device_pb2, dummy_device_pb2_grpc, device_contracts"
+                "dummy_device_pb2, dummy_device_pb2_grpc, "
+                "sacher_laser_pb2, sacher_laser_pb2_grpc, device_contracts"
             ),
         ],
         cwd=PROJECT_ROOT,

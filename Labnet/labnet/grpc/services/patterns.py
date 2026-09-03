@@ -6,7 +6,7 @@ import asyncio
 import math
 import numbers
 import time
-from collections.abc import AsyncIterator, Collection, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -28,9 +28,10 @@ _MAX_STATUS_LENGTH = 64
 
 _SCALAR_READ = "RPC_PATTERN_SCALAR_READ"
 _SCALAR_WRITE = "RPC_PATTERN_SCALAR_WRITE"
+_UNARY_COMMAND = "RPC_PATTERN_UNARY_COMMAND"
 _POLLED_SCALAR_STREAM = "RPC_PATTERN_POLLED_SCALAR_STREAM"
 _SUPPORTED_PATTERNS = frozenset(
-    {_SCALAR_READ, _SCALAR_WRITE, _POLLED_SCALAR_STREAM}
+    {_SCALAR_READ, _SCALAR_WRITE, _UNARY_COMMAND, _POLLED_SCALAR_STREAM}
 )
 
 
@@ -208,6 +209,15 @@ class PatternDeviceGrpcService:
                     )
                 if spec.pattern == _SCALAR_WRITE:
                     return await self._scalar_write(
+                        spec,
+                        request,
+                        context,
+                        lease_id=lease_id,
+                        device_id=device_id,
+                        operation_id=operation_id,
+                    )
+                if spec.pattern == _UNARY_COMMAND:
+                    return await self._unary_command(
                         spec,
                         request,
                         context,
@@ -414,6 +424,33 @@ class PatternDeviceGrpcService:
                 default_unit=unit,
                 default_status="WRITTEN",
             ),
+        )
+
+    async def _unary_command(
+        self,
+        spec: RpcSpec,
+        request: Any,
+        context: grpc.aio.ServicerContext,
+        *,
+        lease_id: str,
+        device_id: str,
+        operation_id: str,
+    ) -> Any:
+        result = await self._executor.execute(
+            lease_id=lease_id,
+            device_id=device_id,
+            method=spec.physical_method,
+            kwargs=_forwarded_kwargs(request, spec) or None,
+            deadline=_unary_deadline(
+                context,
+                self._default_operation_timeout_seconds,
+            ),
+            operation_id=operation_id,
+            expected_device_type=self.contract.device_type,
+        )
+        return spec.response_type(
+            operation_id=operation_id,
+            result=_command_result(result),
         )
 
     @asynccontextmanager
@@ -632,6 +669,53 @@ def _measurement_from_result(
         quality=quality,
         status=status,
         channel=channel,
+    )
+
+
+def _command_result(result: Any) -> common_pb2.CommandResult:
+    """Encode the supported lossless unary-command result vocabulary."""
+
+    if result is None:
+        return common_pb2.CommandResult(none_value={})
+    if isinstance(result, bool):
+        return common_pb2.CommandResult(boolean_value=result)
+    if isinstance(result, numbers.Integral):
+        value = int(result)
+        if not -(2**63) <= value < 2**63:
+            raise GrpcServiceError(
+                grpc.StatusCode.INTERNAL,
+                "INVALID_DEVICE_RESPONSE",
+                "The device returned an integer outside the signed 64-bit range.",
+            )
+        return common_pb2.CommandResult(integer_value=value)
+    if isinstance(result, numbers.Real):
+        value = float(result)
+        if not math.isfinite(value):
+            raise GrpcServiceError(
+                grpc.StatusCode.INTERNAL,
+                "INVALID_DEVICE_RESPONSE",
+                "The device returned a non-finite command result.",
+            )
+        return common_pb2.CommandResult(floating_point_value=value)
+    if isinstance(result, str):
+        return common_pb2.CommandResult(text_value=result)
+    if isinstance(result, Sequence) and not isinstance(result, (str, bytes, bytearray)):
+        values: list[int] = []
+        for item in result:
+            if isinstance(item, bool) or not isinstance(item, numbers.Integral):
+                break
+            value = int(item)
+            if not -(2**63) <= value < 2**63:
+                break
+            values.append(value)
+        else:
+            return common_pb2.CommandResult(
+                integer_sequence=common_pb2.IntegerSequence(values=values)
+            )
+    raise GrpcServiceError(
+        grpc.StatusCode.INTERNAL,
+        "INVALID_DEVICE_RESPONSE",
+        f"The device returned unsupported command result type {type(result).__name__!r}.",
     )
 
 

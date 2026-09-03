@@ -10,7 +10,12 @@ from textwrap import dedent
 import pytest
 
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
-from labnet.grpc.generated import dummy_device_pb2, rpc_options_pb2
+from labnet.devices.SacherLaser.physical import PhysicalSacherLaser
+from labnet.grpc.generated import (
+    dummy_device_pb2,
+    rpc_options_pb2,
+    sacher_laser_pb2,
+)
 from labnet.grpc.generated.device_contracts import (
     DEVICE_CONTRACT_BY_SERVICE,
     PhysicalContractError,
@@ -191,6 +196,38 @@ def test_reference_device_explicitly_declares_every_required_rpc_option() -> Non
         assert rpc_options.default_unit.strip(), method.full_name
 
 
+def test_sacher_contract_declares_all_migrated_operations() -> None:
+    service = sacher_laser_pb2.DESCRIPTOR.services_by_name[
+        "SacherLaserService"
+    ]
+    expected = {
+        "GetLiveWavelengthNm",
+        "GetStoredWavelengthNm",
+        "SetStartWavelengthNm",
+        "GetStartWavelengthNm",
+        "SetTargetWavelengthNm",
+        "GetTargetWavelengthNm",
+        "SetVelocityNmS",
+        "GetVelocityNmS",
+        "SetAccelerationNmS2",
+        "GetAccelerationNmS2",
+        "SetDecelerationNmS2",
+        "GetDecelerationNmS2",
+        "GetStoredPositionSteps",
+        "GetPositionOffsetSteps",
+        "GetPositionSteps",
+        "ResetPosition",
+        "JogSteps",
+        "GoToWavelengthNm",
+        "StartScan",
+        "RecalibratePosition",
+        "GetState",
+        "Stop",
+        "GetDeviceErrorCodes",
+    }
+    assert {method.name for method in service.methods} == expected
+
+
 def test_unitless_supported_operation_uses_explicit_dimensionless_unit(
     tmp_path: Path,
 ) -> None:
@@ -251,15 +288,15 @@ def test_generation_rejects_declared_but_not_yet_implemented_pattern(
 ) -> None:
     with pytest.raises(
         ContractValidationError,
-        match=r"RPC_PATTERN_UNARY_COMMAND.*not (?:yet )?implemented|"
-        r"not (?:yet )?implemented.*RPC_PATTERN_UNARY_COMMAND",
+        match=r"RPC_PATTERN_QUERY_METADATA.*not (?:yet )?implemented|"
+        r"not (?:yet )?implemented.*RPC_PATTERN_QUERY_METADATA",
     ):
         _generate_test_contract(
             tmp_path,
             dedent(
                 """\
                 option (labnet.devices.v1.rpc) = {
-                  pattern: RPC_PATTERN_UNARY_COMMAND
+                  pattern: RPC_PATTERN_QUERY_METADATA
                   physical_method: "reset"
                   default_unit: "1"
                 };
@@ -751,6 +788,12 @@ def test_shared_physical_method_merges_multi_rpc_field_as_optional(
 
 def test_current_physical_device_satisfies_generated_contract() -> None:
     validate_implementation(PhysicalDummyDevice, _dummy_contract())
+    validate_implementation(
+        PhysicalSacherLaser,
+        DEVICE_CONTRACT_BY_SERVICE[
+            "labnet.devices.v1.SacherLaserService"
+        ],
+    )
 
 
 def test_physical_implementation_body_can_change_without_contract_regeneration() -> None:

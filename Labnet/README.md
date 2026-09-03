@@ -215,7 +215,8 @@ LABNET_HTTP_BIND_HOST=127.0.0.1
 ```
 
 The checked-in `device_inventory.py` constructs one simulated
-`PhysicalDummyDevice`. Start the Lab PC:
+`PhysicalDummyDevice` and has an opt-in `PhysicalSacherLaser` entry. Start the
+Lab PC:
 
 ```cmd
 python -m examples.lab_pc
@@ -1277,6 +1278,7 @@ Supported patterns are:
 | --- | --- | --- |
 | `RPC_PATTERN_SCALAR_READ` | Unary | Call one physical read and return a scalar measurement |
 | `RPC_PATTERN_SCALAR_WRITE` | Unary | Pass an absolute double setpoint and return a scalar measurement |
+| `RPC_PATTERN_UNARY_COMMAND` | Unary | Forward typed arguments and return a lossless scalar, string, integer sequence, or no result |
 | `RPC_PATTERN_POLLED_SCALAR_STREAM` | Server streaming | Repeatedly call one physical read with scheduling, cancellation, lease revalidation, and backpressure |
 
 #### 2. Generate Python artifacts

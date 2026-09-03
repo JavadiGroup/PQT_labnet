@@ -5,8 +5,9 @@ instruments. This example composes the installed `labnet` device-manager and
 gRPC components with machine-specific environment settings and a physical
 device inventory.
 
-The checked-in inventory creates one simulated `PhysicalDummyDevice`, so the
-complete system can be evaluated without hardware.
+The checked-in inventory always creates one simulated `PhysicalDummyDevice`,
+so the complete system can be evaluated without hardware. It also creates a
+`PhysicalSacherLaser` when `LABNET_SACHER_LASER_ENABLED=true`.
 
 ## Files
 
@@ -105,6 +106,13 @@ def create_devices() -> list[PhysicalDummyDevice]:
 Every `device_id` must be stable and globally unique. Do not derive IDs from a
 temporary hostname or USB enumeration order. Prefer names that identify a
 physical instrument or fixed rack position.
+
+For the Sacher laser, use the opt-in variables in `.env.example`. The maxon
+EPOS2 driver defaults to `USB0` and the VIS calibration. Set
+`LABNET_DEFAULT_OPERATION_TIMEOUT_SECONDS` at least as high as
+`LABNET_SACHER_LASER_MOVEMENT_TIMEOUT_SECONDS` so a valid slow move is not
+cancelled at the gRPC layer. See the
+[Sacher examples](../sacher_laser/README.md) for local and leased usage.
 
 A physical adapter must provide:
 

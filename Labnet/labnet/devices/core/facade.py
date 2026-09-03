@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, ClassVar
 
 from labnet.client.core.grpc_client import GrpcTlsConfig
@@ -49,15 +49,19 @@ class ContractDeviceFacade:
         connection_timeout_seconds: float = 10.0,
         default_rpc_timeout_seconds: float = 10.0,
         idempotency_key: str | None = None,
+        physical_options: Mapping[str, Any] | None = None,
     ) -> None:
         self._is_remote = client is not None
         self._closed = False
         if client is None:
-            backend = (
-                self.physical_type()
-                if device_id is None
-                else self.physical_type(device_id=device_id)
-            )
+            options = dict(physical_options or {})
+            if "device_id" in options:
+                raise ValueError(
+                    "Pass device_id directly, not inside physical_options."
+                )
+            if device_id is not None:
+                options["device_id"] = device_id
+            backend = self.physical_type(**options)
             try:
                 backend.connect()
             except BaseException as exc:
@@ -70,6 +74,10 @@ class ContractDeviceFacade:
                     )
                 raise
         else:
+            if physical_options:
+                raise ValueError(
+                    "physical_options are valid only for a local device."
+                )
             # Lease lifecycle is shared, contract-driven framework code and is
             # not edited when a device family gains or changes RPC methods.
             from labnet.devices.core.remote import RemoteDeviceBinding

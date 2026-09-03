@@ -53,6 +53,7 @@ Experiment client ────────────────────�
 | [`examples/central_server/`](examples/central_server/) | Central deployment example |
 | [`examples/lab_pc/`](examples/lab_pc/) | Lab-PC configuration and device inventory example |
 | [`examples/client_test/`](examples/client_test/) | Synchronous and asyncio client examples |
+| [`examples/sacher_laser/`](examples/sacher_laser/) | Local calibration and leased Sacher laser examples |
 
 ## Quick start
 
@@ -123,8 +124,9 @@ Start the Lab PC in a second activated shell:
 python -m examples.lab_pc
 ```
 
-The checked-in inventory exposes one simulated `dummy_device`. Verify the Lab
-PC locally:
+The checked-in inventory exposes one simulated `dummy_device` and can
+optionally expose the Sacher laser when its Lab-PC environment flag is enabled.
+Verify the Lab PC locally:
 
 ```cmd
 curl.exe http://127.0.0.1:9001/health/ready
@@ -183,8 +185,9 @@ python -m pytest
 
 Changes to protobuf contracts must include the regenerated Python artifacts.
 Changes to a physical adapter should include tests that exercise its contract
-and failure behavior. Keep credentials, runtime databases, vendor binaries, and
-instrument data out of commits.
+and failure behavior. Keep credentials, runtime databases, and instrument data
+out of commits. Commit vendor runtime binaries only when their redistribution
+terms have been reviewed and the package explicitly requires them.
 
 ## Security
 

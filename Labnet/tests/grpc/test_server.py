@@ -94,9 +94,10 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     stub = dummy_device_pb2_grpc.DummyDeviceServiceStub(channel)
     assert server.started is True
     assert server.serving is True
-    assert tuple(server.device_services) == ("dummy_device",)
+    assert tuple(server.device_services) == ("dummy_device", "sacher_laser")
     assert server.service_names == (
         "labnet.devices.v1.DummyDeviceService",
+        "labnet.devices.v1.SacherLaserService",
     )
 
     read = await stub.ReadValue(

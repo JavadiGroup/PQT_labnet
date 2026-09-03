@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package labnet.devices.v1;
 
+import "google/protobuf/empty.proto";
+
 // The confidence a consumer should place in a scalar measurement.
 // Device adapters may provide more detailed status text alongside this enum.
 enum MeasurementQuality {
@@ -30,4 +32,27 @@ message ScalarMeasurement {
 
   // Empty when the device is not channel-addressable.
   string channel = 7;
+}
+
+// Lossless result values for contract-driven unary device commands. The
+// explicit integer variants avoid JSON-number coercion for encoder positions
+// and controller error codes.
+message IntegerSequence {
+  repeated sint64 values = 1;
+}
+
+message CommandResult {
+  oneof kind {
+    google.protobuf.Empty none_value = 1;
+    bool boolean_value = 2;
+    sint64 integer_value = 3;
+    double floating_point_value = 4;
+    string text_value = 5;
+    IntegerSequence integer_sequence = 6;
+  }
+}
+
+message CommandResponse {
+  string operation_id = 1;
+  CommandResult result = 2;
 }
