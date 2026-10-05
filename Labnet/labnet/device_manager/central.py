@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import ssl
 from datetime import datetime, timezone
 from typing import Protocol, Sequence, runtime_checkable
 
@@ -47,6 +48,7 @@ class HttpCentralRegistryClient:
         api_key: str,
         timeout_seconds: float = 10.0,
         client: httpx.AsyncClient | None = None,
+        verify: ssl.SSLContext | bool = True,
         registration_path: str = "/api/v1/device-managers/register",
         heartbeat_path: str = "/api/v1/device-managers/heartbeat",
     ) -> None:
@@ -69,6 +71,7 @@ class HttpCentralRegistryClient:
         self._client = client or httpx.AsyncClient(
             base_url=server_url,
             timeout=timeout_seconds,
+            verify=verify,
         )
         self._registration_path = registration_path
         self._heartbeat_path = heartbeat_path

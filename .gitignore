@@ -1,7 +1,6 @@
 # Local credentials and environment overrides
 .env
 **/.env
-examples/lab_pc/tls/
 *.key
 *.p12
 *.pfx
@@ -25,5 +24,8 @@ dist/
 # Runtime logs
 *.log
 
-# Central Server example database files
-examples/central_server/data/
+# Local development network state (scripts/dev/seed.sh): database, API keys, logs
+.devnet/
+
+# Output of examples/04_scan_two_devices.py
+scan.csv

@@ -10,8 +10,9 @@ import grpc
 import httpx
 import pytest
 
-from examples.lab_pc.config import LabPCSettings
-from examples.lab_pc.main import create_app
+from labnet.lab_pc.app import create_app, load_device_factory, resolve_lab_pc_id
+from labnet.lab_pc.config import LabPCSettings
+from labnet.lab_pc.inventory import simulated_devices
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
 from labnet.grpc import LEASE_METADATA_KEY
 from labnet.grpc.generated import dummy_device_pb2, dummy_device_pb2_grpc
@@ -20,6 +21,7 @@ from labnet.grpc.generated import transfer_pb2
 
 @pytest.fixture(autouse=True)
 def isolated_labnet_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os, "environ", os.environ.copy())
     for name in tuple(os.environ):
         if name.startswith("LABNET_"):
             monkeypatch.delenv(name, raising=False)
@@ -28,7 +30,7 @@ def isolated_labnet_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_lab_pc_composes_health_control_and_streaming(tmp_path: Path) -> None:
     settings = replace(
-        LabPCSettings.from_env(tmp_path / "missing.env"),
+        LabPCSettings.from_env(search_cwd=False),
         grpc_port=0,
         grpc_advertised_target="127.0.0.1:0",
     )
@@ -116,7 +118,7 @@ async def test_one_hanging_device_does_not_block_healthy_device_startup(
             super().connect()
 
     settings = replace(
-        LabPCSettings.from_env(tmp_path / "missing.env"),
+        LabPCSettings.from_env(search_cwd=False),
         grpc_port=0,
         grpc_advertised_target="127.0.0.1:0",
         device_start_timeout_seconds=0.02,
@@ -154,7 +156,7 @@ async def test_runtime_disconnect_updates_http_and_grpc_readiness(
 
     device = DisconnectingDummyDevice("disconnecting")
     settings = replace(
-        LabPCSettings.from_env(tmp_path / "missing.env"),
+        LabPCSettings.from_env(search_cwd=False),
         grpc_port=0,
         grpc_advertised_target="127.0.0.1:0",
         health_sync_interval_seconds=0.01,
@@ -192,3 +194,75 @@ async def test_runtime_disconnect_updates_http_and_grpc_readiness(
             assert app.state.runtime.grpc_server.serving is False
         finally:
             await channel.close()
+
+
+def test_missing_inventory_serves_one_simulated_device() -> None:
+    assert load_device_factory(None) is simulated_devices
+
+
+def test_inventory_can_be_a_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    devices = load_device_factory("labnet.lab_pc.inventory:simulated_devices")()
+
+    assert [device.device_id for device in devices] == ["dummy_device_1"]
+
+
+def test_inventory_can_be_a_file_path(tmp_path: Path) -> None:
+    inventory = tmp_path / "lab_pc_01.py"
+    inventory.write_text(
+        "from labnet.devices.DummyDevice.physical import PhysicalDummyDevice\n"
+        "def create_devices():\n"
+        "    return [PhysicalDummyDevice('bench-a'), PhysicalDummyDevice('bench-b')]\n",
+        encoding="utf-8",
+    )
+
+    # tmp_path is absolute, so on Windows this spec also contains "C:".
+    devices = load_device_factory(f"{inventory}:create_devices")()
+
+    assert [device.device_id for device in devices] == ["bench-a", "bench-b"]
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "labnet.lab_pc.inventory",
+        "labnet.lab_pc.inventory:missing",
+        "C:/does/not/exist.py:create_devices",
+    ],
+)
+def test_invalid_inventory_is_rejected(spec: str) -> None:
+    with pytest.raises(ValueError, match="LABNET_DEVICE_INVENTORY"):
+        load_device_factory(spec)
+
+
+def _settings_with_key(monkeypatch: pytest.MonkeyPatch) -> LabPCSettings:
+    monkeypatch.setenv("LABNET_DEVICE_MANAGER_API_KEY", "manager-key")
+    return LabPCSettings.from_env(search_cwd=False)
+
+
+@pytest.mark.asyncio
+async def test_lab_pc_id_is_resolved_from_the_key_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def central(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/auth/me"
+        assert request.headers["Authorization"] == "Bearer manager-key"
+        return httpx.Response(200, json={"user": "lab-pc-07", "role": "device_manager"})
+
+    lab_pc_id = await resolve_lab_pc_id(
+        _settings_with_key(monkeypatch),
+        transport=httpx.MockTransport(central),
+    )
+
+    assert lab_pc_id == "lab-pc-07"
+
+
+@pytest.mark.asyncio
+async def test_lab_pc_id_resolution_requires_a_device_manager_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"user": "alice", "role": "user"})
+    )
+
+    with pytest.raises(RuntimeError, match="needs a device_manager key"):
+        await resolve_lab_pc_id(_settings_with_key(monkeypatch), transport=transport)

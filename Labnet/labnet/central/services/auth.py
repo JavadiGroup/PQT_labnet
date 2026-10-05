@@ -102,6 +102,21 @@ class UserService:
             )
         return {"user": username, "api_key": raw_key}
 
+    def list_users(self) -> list[dict[str, object]]:
+        """Return every user without any key material."""
+
+        with self.database.session() as session:
+            rows = session.scalars(select(UserRow).order_by(UserRow.username)).all()
+            return [
+                {
+                    "user": row.username,
+                    "role": row.role,
+                    "enabled": row.enabled,
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+
     @staticmethod
     def generate_api_key() -> str:
         return f"labnet_{secrets.token_urlsafe(32)}"

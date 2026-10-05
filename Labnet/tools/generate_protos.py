@@ -1161,14 +1161,17 @@ def generate_protos(
 
 
 def _verify_repository_imports() -> None:
+    # Import every generated module (not a fixed list) so a new family's
+    # bindings are checked as soon as its proto exists.
+    modules = sorted(path.stem for path in _generated_files(OUTPUT_ROOT) if path.suffix == ".py")
     subprocess.run(
         [
             sys.executable,
             "-c",
             (
-                "from labnet.grpc.generated import "
-                "common_pb2, transfer_pb2, rpc_options_pb2, "
-                "dummy_device_pb2, dummy_device_pb2_grpc, device_contracts"
+                "import importlib\n"
+                f"for name in {modules!r}:\n"
+                "    importlib.import_module('labnet.grpc.generated.' + name)"
             ),
         ],
         cwd=PROJECT_ROOT,

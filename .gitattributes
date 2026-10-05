@@ -1,0 +1,6 @@
+# Shell scripts must keep LF endings; with CRLF, bash fails on every line.
+*.sh text eol=lf
+
+# tools/generate_protos.py writes LF and `--check` compares bytes, so a CRLF
+# checkout (core.autocrlf=true on Windows) would always report stale files.
+Labnet/labnet/grpc/generated/** text eol=lf

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labnet"
-version = "1.0.0"
+version = "2.0.0"
 description = "Typed device control and acquisition services for a lab network"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,13 +12,13 @@ dependencies = [
     "grpcio>=1.81.1,<2.0",
     "httpx>=0.27,<1.0",
     "protobuf>=6.33.5,<7.0",
+    "python-dotenv>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]
 lab-pc = [
     "fastapi>=0.115,<1.0",
     "grpcio-health-checking>=1.81.1,<2.0",
-    "python-dotenv>=1.0,<2.0",
     "uvicorn>=0.30,<1.0",
 ]
 central = [
@@ -30,14 +30,17 @@ central = [
 postgres = [
     "psycopg[binary]>=3.2,<4.0",
 ]
+certs = [
+    "cryptography>=42,<47",
+]
 dev = [
     "alembic>=1.19.1,<2.0",
+    "cryptography>=42,<47",
     "fastapi>=0.115,<1.0",
     "grpcio-health-checking>=1.81.1,<2.0",
     "grpcio-tools==1.81.1",
     "pytest>=8.0,<10.0",
     "pytest-asyncio>=0.24,<2.0",
-    "python-dotenv>=1.0,<2.0",
     "SQLAlchemy>=2.0.52,<3.0",
     "uvicorn>=0.30,<1.0",
 ]
@@ -45,6 +48,8 @@ dev = [
 [project.scripts]
 labnet-central = "labnet.central.main:main"
 labnet-central-admin = "labnet.central.manage:main"
+labnet-lab-pc = "labnet.lab_pc.app:main"
+labnet-certs = "labnet.certs:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -69,6 +74,6 @@ labnet = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", ".."]
+pythonpath = ["."]
 addopts = "-ra"
 asyncio_mode = "auto"

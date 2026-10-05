@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import math
+import os
+import ssl
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlsplit
 
 import httpx
 
+from labnet.envfile import load_env_file
 from labnet.lease_policy import (
     DEFAULT_LEASE_DURATION_SECONDS,
     DEFAULT_RENEWAL_INTERVAL_SECONDS,
@@ -205,6 +209,45 @@ def _parse_lease(data: Any) -> LeaseInfo:
         raise ServerResponseError(200, f"Central returned an invalid lease record: {exc}") from exc
 
 
+def _trust_from_ca_file(
+    ca_file: str | Path | None,
+) -> tuple[ssl.SSLContext | bool, "GrpcTlsConfig | None"]:
+    """Build HTTPS verification and gRPC trust from one public CA file."""
+
+    if ca_file is None:
+        return True, None
+    from .grpc_client import GrpcTlsConfig
+
+    path = Path(ca_file).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"CA file not found: {path}")
+    return (
+        ssl.create_default_context(cafile=str(path)),
+        GrpcTlsConfig.from_files(root_certificates=path),
+    )
+
+
+def _client_settings_from_env(
+    env_file: str | Path | None,
+) -> tuple[str, str, str | None]:
+    # Clients have no command line, so LABNET_ENV_FILE plays --env-file's role.
+    load_env_file(env_file or os.getenv("LABNET_ENV_FILE") or None, search_cwd=True)
+    if os.getenv("LABNET_GRPC_CA_FILE"):
+        raise ValueError(
+            "LABNET_GRPC_CA_FILE was removed in LabNet 2.0. Set LABNET_CA_FILE; "
+            "it verifies both Central and the Lab PCs."
+        )
+    api_key = os.getenv("LABNET_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError(
+            "LABNET_API_KEY is not set. Put your Central API key in the "
+            "environment or a .env file (see `labnet-central-admin setup`)."
+        )
+    server_url = os.getenv("LABNET_SERVER_URL", "").strip() or "http://127.0.0.1:8008"
+    ca_file = os.getenv("LABNET_CA_FILE", "").strip() or None
+    return server_url, api_key, ca_file
+
+
 class LabClient:
     """Blocking Central client for scripts and synchronous device wrappers."""
 
@@ -215,12 +258,15 @@ class LabClient:
         timeout_seconds: float = 10.0,
         authenticate_on_start: bool = True,
         *,
+        ca_file: str | Path | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.server_url = _validate_central_url(server_url)
         if not api_key:
             raise ValueError("api_key cannot be empty.")
         self.api_key = api_key
+        # One CA file verifies both Central (HTTPS) and every Lab PC (gRPC).
+        verify, self.grpc_tls = _trust_from_ca_file(ca_file)
         timeout_seconds = _validate_timeout(timeout_seconds)
         self._request_timeout_seconds = timeout_seconds
         self.current_user: AuthenticatedUser | None = None
@@ -228,6 +274,7 @@ class LabClient:
             base_url=self.server_url,
             timeout=timeout_seconds,
             transport=transport,
+            verify=verify,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Accept": "application/json",
@@ -245,6 +292,18 @@ class LabClient:
                         f"failed: {cleanup_exc}"
                     )
                 raise
+
+
+    @classmethod
+    def from_env(cls, env_file: str | Path | None = None, **options: Any) -> "LabClient":
+        """Connect using LABNET_SERVER_URL, LABNET_API_KEY, and LABNET_CA_FILE.
+
+        Values come from the process environment, then from ``env_file``,
+        the file named by ``LABNET_ENV_FILE``, or ``./.env``, in that order.
+        """
+
+        server_url, api_key, ca_file = _client_settings_from_env(env_file)
+        return cls(server_url, api_key, ca_file=ca_file, **options)
 
     def authenticate(self) -> AuthenticatedUser:
         data = _mapping(self._request("GET", f"{API_PREFIX}/auth/me"), "auth response")
@@ -379,12 +438,15 @@ class AsyncLabClient:
         timeout_seconds: float = 10.0,
         authenticate_on_start: bool = True,
         *,
+        ca_file: str | Path | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.server_url = _validate_central_url(server_url)
         if not api_key:
             raise ValueError("api_key cannot be empty.")
         self.api_key = api_key
+        # One CA file verifies both Central (HTTPS) and every Lab PC (gRPC).
+        verify, self.grpc_tls = _trust_from_ca_file(ca_file)
         timeout_seconds = _validate_timeout(timeout_seconds)
         self.current_user: AuthenticatedUser | None = None
         self._authenticate_on_start = authenticate_on_start
@@ -392,6 +454,7 @@ class AsyncLabClient:
             base_url=self.server_url,
             timeout=timeout_seconds,
             transport=transport,
+            verify=verify,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Accept": "application/json",
@@ -403,6 +466,17 @@ class AsyncLabClient:
         self._active_acquires = 0
         self._lifecycle_condition = asyncio.Condition()
         self._close_lock = asyncio.Lock()
+
+    @classmethod
+    def from_env(cls, env_file: str | Path | None = None, **options: Any) -> "AsyncLabClient":
+        """Connect using LABNET_SERVER_URL, LABNET_API_KEY, and LABNET_CA_FILE.
+
+        Values come from the process environment, then from ``env_file``,
+        the file named by ``LABNET_ENV_FILE``, or ``./.env``, in that order.
+        """
+
+        server_url, api_key, ca_file = _client_settings_from_env(env_file)
+        return cls(server_url, api_key, ca_file=ca_file, **options)
 
     async def authenticate(self) -> AuthenticatedUser:
         data = _mapping(
@@ -591,7 +665,7 @@ class AsyncLabClient:
                     lease_duration_seconds=duration_seconds,
                     auto_renew=auto_renew,
                     renewal_interval_seconds=renewal_interval_seconds,
-                    tls=tls,
+                    tls=tls if tls is not None else self.grpc_tls,
                     default_timeout_seconds=default_rpc_timeout_seconds,
                     _contract=contract,
                 )

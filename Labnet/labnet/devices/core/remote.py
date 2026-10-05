@@ -154,7 +154,8 @@ class RemoteDeviceBinding:
         try:
             self.grpc = ContractDeviceGrpcClient(
                 grant,
-                tls=tls,
+                # Devices inherit the CA configured on the Central client.
+                tls=tls if tls is not None else getattr(client, "grpc_tls", None),
                 default_timeout_seconds=default_rpc_timeout_seconds,
                 _contract=_contract,
             )

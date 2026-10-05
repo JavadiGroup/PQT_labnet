@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -165,11 +166,25 @@ def _error(code: ErrorCode, message: str, metadata: dict) -> dict:
     ).model_dump(mode="json")
 
 
-def main() -> None:
-    """Run the Central Server development process."""
+def main(argv: list[str] | None = None) -> None:
+    """Run the Central Server process (``labnet-central``)."""
+    import argparse
+
     import uvicorn
 
-    settings = Settings.from_env()
+    parser = argparse.ArgumentParser(
+        prog="labnet-central",
+        description="Run the LabNet Central Server on its loopback HTTP port.",
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="Settings file such as central.env (process environment wins).",
+    )
+    try:
+        settings = Settings.from_env(parser.parse_args(argv).env_file)
+    except (ValueError, FileNotFoundError) as exc:
+        parser.exit(2, f"labnet-central: error: {exc}\n")
     uvicorn.run(
         create_app(settings),
         host=settings.bind_host,

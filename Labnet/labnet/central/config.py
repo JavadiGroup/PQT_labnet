@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from labnet.envfile import load_env_file
 from labnet.lease_policy import DEFAULT_IDLE_TIMEOUT_SECONDS
 
 
@@ -42,7 +43,10 @@ class Settings:
     create_schema_on_startup: bool = False
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls, env_file: str | Path | None = None) -> "Settings":
+        """Read settings from ``env_file`` (if given) and the process environment."""
+
+        load_env_file(env_file)
         return cls(
             database_url=os.getenv("LABNET_DATABASE_URL", DEFAULT_DATABASE_URL),
             lease_min_seconds=int(os.getenv("LABNET_LEASE_MIN_SECONDS", "5")),

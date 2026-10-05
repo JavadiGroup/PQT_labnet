@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import ssl
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from types import MappingProxyType
@@ -65,6 +66,7 @@ class HttpLeaseValidator:
         api_key: str,
         timeout_seconds: float = 10.0,
         client: httpx.AsyncClient | None = None,
+        verify: ssl.SSLContext | bool = True,
     ) -> None:
         server_url = validate_central_server_url(server_url)
         api_key = api_key.strip()
@@ -82,6 +84,7 @@ class HttpLeaseValidator:
         self._client = client or httpx.AsyncClient(
             base_url=server_url,
             timeout=timeout_seconds,
+            verify=verify,
         )
         self._closed = False
 

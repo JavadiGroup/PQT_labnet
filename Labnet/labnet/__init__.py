@@ -47,6 +47,8 @@ _CLIENT_EXPORTS = {
 _DEVICE_EXPORTS = {
     "DummyDevice": ".devices.DummyDevice.device",
     "PhysicalDummyDevice": ".devices.DummyDevice.physical",
+    "SimulatedWavemeter": ".devices.SimulatedWavemeter.device",
+    "PhysicalSimulatedWavemeter": ".devices.SimulatedWavemeter.physical",
 }
 __all__ = sorted(_CLIENT_EXPORTS | set(_DEVICE_EXPORTS))
 

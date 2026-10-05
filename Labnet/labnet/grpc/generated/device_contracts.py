@@ -10,8 +10,10 @@ from google.protobuf import message as _message
 from google.protobuf import symbol_database as _symbol_database
 from . import common_pb2 as _common_pb2
 from . import dummy_device_pb2 as _dummy_device_pb2
+from . import simulated_wavemeter_pb2 as _simulated_wavemeter_pb2
 from . import transfer_pb2 as _transfer_pb2
 from . import dummy_device_pb2_grpc as _dummy_device_pb2_grpc
+from . import simulated_wavemeter_pb2_grpc as _simulated_wavemeter_pb2_grpc
 
 _SYMBOLS = _symbol_database.Default()
 
@@ -151,7 +153,67 @@ DUMMY_DEVICE_CONTRACT: Final = DeviceContract(
 )
 
 
-DEVICE_CONTRACTS: Final[tuple[DeviceContract, ...]] = (DUMMY_DEVICE_CONTRACT,)
+@runtime_checkable
+class SimulatedWavemeterPhysicalProtocol(Protocol):
+    def read_wavelength(self, channel: str | None = None) -> Any: ...
+
+
+_SIMULATED_WAVEMETER_READ_WAVELENGTH: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SimulatedWavemeterService.ReadWavelength',
+    rpc_name='ReadWavelength',
+    python_name='read_wavelength',
+    pattern='RPC_PATTERN_SCALAR_READ',
+    pattern_value=1,
+    physical_method='read_wavelength',
+    default_unit='nm',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.ReadWavelengthRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.ReadWavelengthResponse'),
+    request_full_name='labnet.devices.v1.ReadWavelengthRequest',
+    response_full_name='labnet.devices.v1.ReadWavelengthResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('channel',),
+    forwarded_field_specs=(
+        ForwardedField(name='channel', python_type='str | None', optional=True),
+    ),
+)
+
+_SIMULATED_WAVEMETER_STREAM_WAVELENGTH: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SimulatedWavemeterService.StreamWavelength',
+    rpc_name='StreamWavelength',
+    python_name='stream_wavelength',
+    pattern='RPC_PATTERN_POLLED_SCALAR_STREAM',
+    pattern_value=6,
+    physical_method='read_wavelength',
+    default_unit='nm',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.StreamDataRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.StreamDataResponse'),
+    request_full_name='labnet.devices.v1.StreamDataRequest',
+    response_full_name='labnet.devices.v1.StreamDataResponse',
+    client_streaming=False,
+    server_streaming=True,
+    cardinality='server_streaming',
+    forwarded_fields=('channel',),
+    forwarded_field_specs=(
+        ForwardedField(name='channel', python_type='str | None', optional=True),
+    ),
+)
+
+SIMULATED_WAVEMETER_CONTRACT: Final = DeviceContract(
+    device_type='simulated_wavemeter',
+    service_full_name='labnet.devices.v1.SimulatedWavemeterService',
+    service_name='SimulatedWavemeterService',
+    stub_type=_simulated_wavemeter_pb2_grpc.SimulatedWavemeterServiceStub,
+    servicer_type=_simulated_wavemeter_pb2_grpc.SimulatedWavemeterServiceServicer,
+    add_servicer_to_server=_simulated_wavemeter_pb2_grpc.add_SimulatedWavemeterServiceServicer_to_server,
+    methods=(_SIMULATED_WAVEMETER_READ_WAVELENGTH, _SIMULATED_WAVEMETER_STREAM_WAVELENGTH),
+    physical_methods=('read_wavelength',),
+    physical_protocol=SimulatedWavemeterPhysicalProtocol,
+)
+
+
+DEVICE_CONTRACTS: Final[tuple[DeviceContract, ...]] = (DUMMY_DEVICE_CONTRACT, SIMULATED_WAVEMETER_CONTRACT)
 DEVICE_CONTRACT_BY_TYPE: Final[dict[str, DeviceContract]] = {
     contract.device_type: contract for contract in DEVICE_CONTRACTS
 }
