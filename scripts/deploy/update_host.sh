@@ -3,7 +3,7 @@
 # This file is copied into every release directory by scripts/release/build.sh,
 # so runtime hosts need only Git Bash (Windows) or bash, plus Python 3.11.
 #
-# Usage: bash <release dir>/update_host.sh <central|lab-pc|client> [release dir]
+# Usage: bash <release dir>/update_host.sh <central|lab-pc|client|control-center> [release dir]
 #
 # Steps:
 #   1. verify the wheel (and archives) against the hashes in RELEASE.TXT
@@ -13,6 +13,7 @@
 #        central  back up the SQLite database, then apply schema migrations
 #        lab-pc   install site/ (inventories), then check lab-pc.env loads
 #        client   install the example scripts
+#        control-center  check control-center.env loads
 #   5. record the installed release next to the virtual environment
 #
 # Each role keeps its settings in one file that updates never touch:
@@ -53,7 +54,8 @@ case "$role" in
     central) extra="[central]" ;;
     lab-pc) extra="[lab-pc]" ;;
     client) extra="" ;;
-    *) die "Usage: update_host.sh <central|lab-pc|client> [release dir]" ;;
+    control-center) extra="[control-center]" ;;
+    *) die "Usage: update_host.sh <central|lab-pc|client|control-center> [release dir]" ;;
 esac
 
 if is_windows; then
@@ -99,6 +101,7 @@ case "$role" in
     central) port="${CENTRAL_PORT:-8008}" ;;
     lab-pc) port="${LAB_PC_HEALTH_PORT:-9001}" ;;
     client) port="" ;;
+    control-center) port="${CONTROL_CENTER_PORT:-8080}" ;;
 esac
 if [[ -n "$port" ]] && running_on "$port"; then
     die "$role is still running (answers on 127.0.0.1:$port). Stop it, then re-run this script."
@@ -192,6 +195,17 @@ EOF
         [[ -f "$settings_file" ]] ||
             warn "No $settings_file yet. Copy the researcher file from setup --write-env there."
         ;;
+    control-center)
+        # It belongs next to Central and reaches it over loopback.
+        [[ -f "$LABNET_HOME/central.env" ]] ||
+            warn "No $LABNET_HOME/central.env here. The Control Center is meant to run on central_server_pc."
+        if [[ -f "$settings_file" ]]; then
+            log "Checking $settings_file"
+            "$python" -c "import sys; from labnet.control_center.config import ControlCenterSettings as S; s = S.from_env(sys.argv[1]); print(' ok settings load; Central', s.server_url)" "$(native_path "$settings_file")"
+        else
+            warn "No $settings_file yet. Start from site/control-center.env.example and the file from setup --write-env."
+        fi
+        ;;
 esac
 
 # --- 5. Record what is installed --------------------------------------------
@@ -204,4 +218,5 @@ case "$role" in
     central) echo "  $bin_dir/labnet-central --env-file $settings_file   then   curl http://127.0.0.1:8008/health/ready" ;;
     lab-pc) echo "  $bin_dir/labnet-lab-pc --env-file $settings_file   then   curl http://127.0.0.1:9001/health/ready" ;;
     client) echo "  LABNET_ENV_FILE=$settings_file $python $LABNET_HOME/client-app/01_hello_device.py" ;;
+    control-center) echo "  $bin_dir/labnet-control-center --env-file $settings_file   then   curl http://127.0.0.1:8080/health/ready" ;;
 esac

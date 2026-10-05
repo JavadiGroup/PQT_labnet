@@ -25,10 +25,26 @@ python examples/01_hello_device.py
 
 ## How they connect
 
-Every networked example starts with:
+Every networked example has the same shape. Objects start as `None`, are
+created inside `try`, and are closed in `finally`:
 
 ```python
-with LabClient.from_env() as central:
+from labnet import DummyDevice, LabClient, LabClientError
+
+central = None
+device = None
+try:
+    central = LabClient.from_env()               # connect to Central
+    device = DummyDevice(client=central)         # lease a device
+    device.write_value(12.5)
+    print(device.read_value())
+except LabClientError as error:                  # any LabNet failure
+    raise SystemExit(f"LabNet error: {error}")
+finally:                                         # always runs, even on Ctrl+C
+    if device is not None:
+        device.close()                           # releases the lease
+    if central is not None:
+        central.close()
 ```
 
 `from_env()` reads three settings, looking in the process environment first,
@@ -46,10 +62,15 @@ settings file changes. On a lab client computer that file is
 
 ## Rules every experiment should follow
 
-- **Release what you lease.** Use `with` blocks (or `ExitStack` for several
-  devices, as in 04). A lease is released the moment its block ends.
-  A crashed script's lease expires within about a minute.
-- **Close in reverse order:** streams, then devices, then the Central client.
+- **Release what you lease.** Create devices inside `try` and close them in
+  `finally`. A lease is released the moment `close()` runs, including after
+  an error or Ctrl+C. A crashed script's lease expires within about a minute.
+- **Close in reverse order:** files and streams, then devices, then the
+  Central client. Check `is not None` first, so a failure halfway through
+  setup only closes what was actually created.
+- **Catch `LabClientError`** for every LabNet failure: connection, login, a
+  device already leased, or a failed device call. Let other errors (bugs in
+  your own code) show their full traceback.
 - **Expect exclusivity.** While you hold a device, nobody else can lease it.
   Leasing a device someone else holds raises `ResourceConflictError`.
 - **Keep API keys out of scripts.** They belong in the settings file.

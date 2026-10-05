@@ -8,6 +8,7 @@ installs it on each Lab PC as `C:\ProgramData\LabNet\site\`.
 | --- | --- | --- |
 | `central.env.example` | Central | Template for `C:\ProgramData\LabNet\central.env` |
 | `lab-pc.env.example` | each Lab PC | Template for `C:\ProgramData\LabNet\lab-pc.env` |
+| `control-center.env.example` | Central | Template for `C:\ProgramData\LabNet\control-center.env` (the web interface) |
 | `inventories/<lab pc>.py` | that Lab PC | Which instruments the Lab PC serves |
 
 Real `.env` files hold API keys. They live only on their own computer,

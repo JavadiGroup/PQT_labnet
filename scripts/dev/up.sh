@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start the local development network in dependency order and wait until each
 # component reports ready:
-#   Central (:8008)  ->  every Lab PC in scripts/dev/config.sh
+#   Central (:8008)  ->  every Lab PC in scripts/dev/config.sh  ->  Control Center (:8080)
 #
 # Processes run in the background; logs go to .devnet/logs/. Stop them with
 # scripts/dev/down.sh.
@@ -44,5 +44,18 @@ for entry in "${LAB_PCS[@]}"; do
     ok "$lab_pc_id ready"
 done
 
-ok "Network is up."
+log_file="$DEVNET_DIR/logs/control-center.log"
+if port_in_use "$CONTROL_CENTER_PORT"; then
+    ok "Control Center already running (run down.sh first to load code changes)"
+else
+    [[ -f "$DEVNET_DIR/$CONTROL_CENTER_USER.env" ]] || die "No Control Center settings. Re-run scripts/dev/seed.sh."
+    log "Starting the Control Center"
+    start_process control-center "$CONTROL_CENTER_PORT" "$log_file" \
+        "$(native_path "$(labnet_bin labnet-control-center)")" \
+        --env-file "$(native_path "$DEVNET_DIR/$CONTROL_CENTER_USER.env")"
+fi
+wait_for_http "http://127.0.0.1:$CONTROL_CENTER_PORT/health/ready" 30 "$log_file"
+ok "Control Center ready"
+
+ok "Network is up. Control Center: http://127.0.0.1:$CONTROL_CENTER_PORT/status"
 echo "Inspect: scripts/dev/status.sh    Exercise: scripts/dev/smoke.sh    Stop: scripts/dev/down.sh"

@@ -12,22 +12,30 @@ from __future__ import annotations
 
 import asyncio
 
-from labnet import AsyncLabClient, SimulatedWavemeter
+from labnet import AsyncLabClient, LabClientError, SimulatedWavemeter
 
 
 async def run() -> None:
-    async with AsyncLabClient.from_env() as central:
+    central = None
+    device = None
+    samples = None
+    try:
+        central = AsyncLabClient.from_env()
         device = await central.acquire_device(SimulatedWavemeter.contract)
-        try:
-            samples = device.stream_wavelength(sample_rate_hz=10, sample_count=20)
-            try:
-                async for sample in samples:
-                    print(f"{sample.sequence:3d}  {sample.value:.6f} {sample.unit}")
-            finally:
-                await samples.aclose()   # 1. close the stream
-        finally:
-            await device.aclose()        # 2. release the lease
-    # 3. leaving the block closes the Central client
+        samples = device.stream_wavelength(sample_rate_hz=10, sample_count=20)
+
+        async for sample in samples:
+            print(f"{sample.sequence:3d}  {sample.value:.6f} {sample.unit}")
+    except LabClientError as error:
+        raise SystemExit(f"LabNet error: {error}")
+    finally:
+        # Reverse order: the stream, then the device (its lease), then Central.
+        if samples is not None:
+            await samples.aclose()
+        if device is not None:
+            await device.aclose()
+        if central is not None:
+            await central.aclose()
 
 
 def main() -> None:

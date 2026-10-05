@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-from labnet import DummyDevice, LabClient
+from labnet import DummyDevice, LabClient, LabClientError
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -20,14 +20,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--lab-pc", default="lab-pc-dev-02", help="Else: first dummy device on this Lab PC.")
     args = parser.parse_args(argv)
 
-    with LabClient.from_env() as central:
-        devices = central.list_devices()
+    central = None
+    device = None
+    try:
+        central = LabClient.from_env()
+
         print(f"{'DEVICE':<16} {'TYPE':<20} {'LAB PC':<15} LEASABLE")
-        for info in devices:
+        for info in central.list_devices():
             leasable = "yes" if info.effective_available else "no"
             print(f"{info.device_id:<16} {info.device_type:<20} {info.manager_id:<15} {leasable}")
 
-        if args.device is None:
+        device_id = args.device
+        if device_id is None:
             on_lab_pc = [
                 info.device_id
                 for info in central.list_available_devices("dummy_device")
@@ -35,10 +39,17 @@ def main(argv: list[str] | None = None) -> None:
             ]
             if not on_lab_pc:
                 raise SystemExit(f"No available dummy device on {args.lab_pc}.")
-            args.device = on_lab_pc[0]
+            device_id = on_lab_pc[0]
 
-        with DummyDevice(device_id=args.device, client=central) as device:
-            print(f"\nLeased {device.device_id}; it reads {device.read_value()}")
+        device = DummyDevice(device_id=device_id, client=central)
+        print(f"\nLeased {device.device_id}; it reads {device.read_value()}")
+    except LabClientError as error:
+        raise SystemExit(f"LabNet error: {error}")
+    finally:
+        if device is not None:
+            device.close()
+        if central is not None:
+            central.close()
 
 
 if __name__ == "__main__":

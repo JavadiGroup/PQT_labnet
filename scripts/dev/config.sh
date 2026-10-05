@@ -12,6 +12,11 @@ CENTRAL_URL="http://127.0.0.1:$CENTRAL_PORT"
 ADMIN_USER="dev-admin"
 RESEARCHER_USER="researcher"
 
+# The PQT Lab Control Center web app: a LabNet client with its own Central
+# user. In development it serves http://127.0.0.1:$CONTROL_CENTER_PORT/status.
+CONTROL_CENTER_USER="control-center"
+CONTROL_CENTER_PORT=8080
+
 # One line per simulated Lab PC:
 #   <lab-pc id>  <gRPC port>  <health port>  <inventory file, relative to the repo>
 #

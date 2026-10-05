@@ -30,7 +30,7 @@ from .exceptions import (
     ServerConnectionError,
     ServerResponseError,
 )
-from .models import AuthenticatedUser, DeviceInfo, LeaseGrant, LeaseInfo
+from .models import AuthenticatedUser, DeviceInfo, LabPCInfo, LeaseGrant, LeaseInfo
 
 if TYPE_CHECKING:
     from .grpc_client import AsyncContractDeviceClient, GrpcTlsConfig
@@ -168,6 +168,17 @@ def _parse_devices(data: Any) -> list[DeviceInfo]:
         return [DeviceInfo.from_dict(_mapping(record, "device record")) for record in records]
     except (KeyError, TypeError, ValueError) as exc:
         raise ServerResponseError(200, f"Central returned an invalid device record: {exc}") from exc
+
+
+def _parse_lab_pcs(data: Any) -> list[LabPCInfo]:
+    payload = _mapping(data, "Lab PC list response")
+    records = payload.get("device_managers")
+    if not isinstance(records, list):
+        raise ServerResponseError(200, "Central Lab PC list is missing 'device_managers'.")
+    try:
+        return [LabPCInfo.from_dict(_mapping(record, "Lab PC record")) for record in records]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ServerResponseError(200, f"Central returned an invalid Lab PC record: {exc}") from exc
 
 
 def _parse_device(data: Any) -> DeviceInfo:
@@ -357,6 +368,11 @@ class LabClient:
             if device.effective_available
         ]
 
+    def list_lab_pcs(self) -> list[LabPCInfo]:
+        """Every Lab PC registered with Central, online or not, with its devices."""
+
+        return _parse_lab_pcs(self._request("GET", f"{API_PREFIX}/device-managers"))
+
     def get_device(self, device_id: str) -> DeviceInfo:
         return _parse_device(
             self._request(
@@ -539,6 +555,13 @@ class AsyncLabClient:
             )
             if device.effective_available
         ]
+
+    async def list_lab_pcs(self) -> list[LabPCInfo]:
+        """Every Lab PC registered with Central, online or not, with its devices."""
+
+        return _parse_lab_pcs(
+            await self._request("GET", f"{API_PREFIX}/device-managers")
+        )
 
     async def get_device(self, device_id: str) -> DeviceInfo:
         return _parse_device(

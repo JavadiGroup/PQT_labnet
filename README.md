@@ -36,6 +36,7 @@ development all three run on your laptop. Each role reads one settings file.
 | **Central** | `labnet-central --env-file central.env` | `central.env` | HTTP `127.0.0.1:8008` (HTTPS `:443` via Caddy in the lab) | Users and API keys, the device directory, exclusive leases |
 | **Lab PC** | `labnet-lab-pc --env-file lab-pc.env` | `lab-pc.env` | gRPC `:50051`; health `127.0.0.1:9001` | Owns the attached instruments and serves their operations |
 | **Client** | your script, using `LabClient.from_env()` | `client.env` | nothing | Leases a device from Central, then talks directly to its Lab PC |
+| **Control Center** | `labnet-control-center --env-file control-center.env` | `control-center.env` | HTTP `127.0.0.1:8080` (HTTPS via Caddy in the lab) | Web interface; a client of Central like any other |
 
 ```text
                   ┌─────────────────────────────┐
@@ -179,9 +180,10 @@ the lease with Central again every few seconds.
 
 ## Local development network
 
-The scripts run a complete network on one machine: Central plus **two Lab
-PCs**. One serves two DummyDevices; the other serves a DummyDevice and a
-SimulatedWavemeter. Everything binds to `127.0.0.1`.
+The scripts run a complete network on one machine: Central, **two Lab
+PCs**, and the **Control Center** web interface. One Lab PC serves two
+DummyDevices; the other serves a DummyDevice and a SimulatedWavemeter.
+Everything binds to `127.0.0.1`.
 
 **Prerequisites:** Python 3.11+ and bash. On Windows, use **Git Bash** (it
 comes with Git for Windows). From PowerShell, call it explicitly with
@@ -191,7 +193,7 @@ comes with Git for Windows). From PowerShell, call it explicitly with
 ```bash
 scripts/dev/setup.sh    # once: create .venv, install LabNet editable with all extras
 scripts/dev/seed.sh     # fresh database, users, and one settings file per user
-scripts/dev/up.sh       # start Central, then each Lab PC; waits until all are ready
+scripts/dev/up.sh       # start Central, each Lab PC, then the Control Center; waits until ready
 scripts/dev/status.sh   # health of each process + the device table clients see
 scripts/dev/smoke.sh    # lease every device, call it over gRPC, release
 scripts/dev/down.sh     # stop everything (data in .devnet/ is kept)
@@ -220,6 +222,7 @@ own settings file:
 | `dev-admin.env` | Central URL + the admin key |
 | `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `scripts/dev/inventories/dev_lab_pc_01.py` |
 | `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `scripts/dev/inventories/dev_lab_pc_02.py` |
+| `control-center.env` | Central URL + the `control-center` key, port 8080 |
 | `logs/` | One log per process; `up.sh` prints the tail if a start fails |
 
 A dev Lab PC file is six lines. Having an API key turns on Central
@@ -229,6 +232,31 @@ plaintext. `.devnet/` is git-ignored, and its keys are throwaway.
 To change the topology (more Lab PCs, other ports), edit
 [`scripts/dev/config.sh`](scripts/dev/config.sh), add an inventory under
 `scripts/dev/inventories/`, then run `down.sh`, `seed.sh`, and `up.sh`.
+
+### The Control Center
+
+`up.sh` also starts the web interface at
+**http://127.0.0.1:8080/status**: every Lab PC, its devices, their state
+(available, leased, unavailable), and each device's callable methods. The
+**Network** tab is that status page, and **Devices** is a placeholder for the
+device control pages. The Photo-Agent sidebar is a working chat box; the
+agent behind it is not connected yet.
+
+The Control Center is just another LabNet client with its own Central user,
+so the browser never sees an API key. In both development and the lab it
+runs on the same computer as Central and reaches it over loopback. Only the
+settings file's location and the address people open differ:
+
+| | Development | Lab (on `central_server_pc`) |
+| --- | --- | --- |
+| Settings | `.devnet/control-center.env` (written by `seed.sh`) | `C:\ProgramData\LabNet\control-center.env` |
+| `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | `http://127.0.0.1:8008` (same computer as Central) |
+| Started by | `scripts/dev/up.sh` | you, in its own window (see [starting the lab by hand](Labnet/README.md#starting-the-lab-by-hand)) |
+| Address | `http://127.0.0.1:8080/status` | `https://pqt-control-center/status` or `https://192.168.50.10:8443/status`, via Caddy |
+
+Use `pqt-control-center`, with hyphens: underscores are not valid in host
+names or certificates. Setup is in
+[`Labnet/README.md` → Control Center](Labnet/README.md#control-center).
 
 ### Using the dev network from your own code
 
@@ -313,11 +341,14 @@ retype fields, add new fields as optional, and reserve removed numbers. See
 
 Runtime computers never run from a git checkout. They install a versioned,
 hash-checked release built on the development PC. Each computer keeps its
-settings in one file that updates never touch:
+settings in one file that updates never touch. You start each process by
+hand in its own window, in the order listed in
+[starting the lab by hand](Labnet/README.md#starting-the-lab-by-hand):
 
 | Computer | Settings file | Start command |
 | --- | --- | --- |
 | Central | `C:\ProgramData\LabNet\central.env` | `central-venv\Scripts\labnet-central --env-file …\central.env` |
+| Central (web interface) | `C:\ProgramData\LabNet\control-center.env` | `control-center-venv\Scripts\labnet-control-center --env-file …\control-center.env` |
 | Lab PC | `C:\ProgramData\LabNet\lab-pc.env` | `lab-pc-venv\Scripts\labnet-lab-pc --env-file …\lab-pc.env` |
 | Client | `C:\ProgramData\LabNet\client.env` | set `LABNET_ENV_FILE` to it, then run scripts |
 
@@ -351,13 +382,15 @@ Copy that directory to the release share (for example
 
 ### 2. Install it on each computer, in dependency order
 
-Stop processes in reverse order (clients, then Lab PCs, then Central). Then
-update and start them in this order: **Central → each Lab PC → clients**. On
-each computer, in Git Bash:
+Stop processes in reverse order (clients, then Lab PCs, then the Control
+Center, Caddy, and Central). Then update and start them in this order:
+**Central → Control Center → each Lab PC → clients**. On each computer, in
+Git Bash:
 
 ```bash
 R=//192.168.50.40/LabNet-Releases/x.y.z      # or a local copy of the directory
 bash $R/update_host.sh central               # on central_server_pc
+bash $R/update_host.sh control-center        # on central_server_pc too
 bash $R/update_host.sh lab-pc                # on each Lab PC
 bash $R/update_host.sh client                # on each client
 ```
@@ -389,7 +422,7 @@ backup if you need to.
 | --- | --- | --- |
 | `scripts/dev/setup.sh` | dev machine | Create `.venv`, editable install with `dev,central,lab-pc` extras |
 | `scripts/dev/seed.sh` | dev machine | Wipe `.devnet/`, write `central.env`, run `labnet-central-admin setup`, add dev ports and inventories |
-| `scripts/dev/up.sh` | dev machine | Start `labnet-central`, then every `labnet-lab-pc` in `config.sh`; wait for readiness |
+| `scripts/dev/up.sh` | dev machine | Start `labnet-central`, every `labnet-lab-pc` in `config.sh`, then `labnet-control-center`; wait for readiness |
 | `scripts/dev/status.sh` | dev machine | Component health + Central's device table |
 | `scripts/dev/smoke.sh` | dev machine | Lease and read every available device end to end |
 | `scripts/dev/down.sh` | dev machine | Stop Lab PCs, then Central (found by port; only Python processes) |
@@ -397,7 +430,7 @@ backup if you need to.
 | `scripts/dev/redeploy.sh [--skip-tests]` | dev machine | `down` → `codegen` → `up` → `smoke` |
 | `scripts/dev/config.sh` | — | Dev topology: Lab-PC ids, ports, inventories |
 | `scripts/release/build.sh [--wheelhouse] [--output DIR]` | development PC | Build and stage a hash-recorded release |
-| `update_host.sh <central\|lab-pc\|client>` | each runtime computer | Verify, install, migrate or install site/examples, record |
+| `update_host.sh <central\|lab-pc\|client\|control-center>` | each runtime computer | Verify, install, migrate or install site/examples, record |
 | `labnet-certs init-ca / issue / show` | development PC | Create the private CA and server certificates |
 | `labnet-central-admin setup / user …` | Central | Migrate, create users, write their settings files |
 
@@ -410,6 +443,7 @@ backup if you need to.
 | [`Labnet/tools/generate_protos.py`](Labnet/tools/generate_protos.py) | Contract validator and code generator |
 | [`Labnet/labnet/devices/`](Labnet/labnet/devices/) | Device families: `physical.py` driver wrappers and facades |
 | [`Labnet/labnet/lab_pc/`](Labnet/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
+| [`Labnet/labnet/control_center/`](Labnet/labnet/control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |
 | [`Labnet/tests/`](Labnet/tests/) | Unit, full-stack, and example tests |
 | [`site/`](site/README.md) | The PQT lab's configuration: env templates and Lab PC inventories |
 | [`examples/`](examples/README.md) | Experiment scripts 01–05 |

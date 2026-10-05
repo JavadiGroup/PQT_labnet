@@ -101,6 +101,12 @@ class DeviceInfo:
     last_seen: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     effective_available: bool = False
+    # "free" or "leased" as reported by Central; "unknown" from older servers.
+    allocation_state: str = "unknown"
+
+    @property
+    def leased(self) -> bool:
+        return self.allocation_state == "leased"
 
     @property
     def type(self) -> str:
@@ -137,6 +143,37 @@ class DeviceInfo:
             last_seen=parse_datetime(raw_last_seen) if raw_last_seen is not None else None,
             metadata=dict(metadata),
             effective_available=effective_available,
+            allocation_state=str(data.get("allocation_state", "unknown")).strip(),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LabPCInfo:
+    """One Lab PC (device manager) and the devices it registered with Central."""
+
+    manager_id: str
+    host: str
+    endpoint: EndpointDescriptor
+    online: bool
+    last_seen: datetime | None = None
+    devices: tuple[DeviceInfo, ...] = ()
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "LabPCInfo":
+        endpoint = data.get("endpoint")
+        if not isinstance(endpoint, Mapping):
+            raise ValueError("Lab PC endpoint must be an object.")
+        devices = data.get("devices", [])
+        if not isinstance(devices, list):
+            raise ValueError("Lab PC devices must be a list.")
+        raw_last_seen = data.get("last_seen")
+        return cls(
+            manager_id=_required_text(data, "manager_id"),
+            host=str(data.get("host", "")).strip(),
+            endpoint=EndpointDescriptor.from_dict(endpoint),
+            online=data.get("status") == "online",
+            last_seen=parse_datetime(raw_last_seen) if raw_last_seen is not None else None,
+            devices=tuple(DeviceInfo.from_dict(item) for item in devices),
         )
 
 

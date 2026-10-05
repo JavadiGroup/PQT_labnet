@@ -19,6 +19,7 @@ _CLIENT_EXPORTS = {
     "DeviceDeadlineExceededError",
     "DeviceFailedPreconditionError",
     "DeviceInfo",
+    "LabPCInfo",
     "DeviceInternalError",
     "DeviceNotFoundError",
     "DeviceOutOfRangeError",

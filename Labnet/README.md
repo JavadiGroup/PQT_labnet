@@ -19,6 +19,7 @@ installed command that reads one settings file:
 | `labnet-lab-pc --env-file lab-pc.env` | Lab PC | `C:\ProgramData\LabNet\lab-pc.env` |
 | `LabClient.from_env()` in your script | Client | `C:\ProgramData\LabNet\client.env` (via `LABNET_ENV_FILE`) |
 | `labnet-certs …` | Certificate creation (development PC) | none |
+| `labnet-control-center --env-file control-center.env` | Web interface ([Control Center](#control-center)) | `C:\ProgramData\LabNet\control-center.env` |
 
 For everyday development workflows (local network, change loop, release
 updates), start with the [repository README](../README.md).
@@ -31,6 +32,7 @@ updates), start with the [repository README](../README.md).
 - [Local setup](#local-setup)
 - [Production deployment](#production-deployment)
 - [Client programming](#client-programming)
+- [Control Center](#control-center)
 - [Lease and streaming behavior](#lease-and-streaming-behavior)
 - [Central database and API](#central-database-and-api)
 - [Configuration reference](#configuration-reference)
@@ -95,6 +97,7 @@ the additional dependencies:
 | `pip install "labnet[central]"` | FastAPI, SQLAlchemy, Alembic, Uvicorn | Central |
 | `pip install "labnet[central,postgres]"` | + psycopg | Central with PostgreSQL |
 | `pip install "labnet[certs]"` | cryptography | The computer that issues certificates |
+| `pip install "labnet[control-center]"` | FastAPI, Uvicorn | The Control Center (on the Central computer) |
 | `pip install -e ".[dev,central,lab-pc]"` | Everything, plus protobuf tools and pytest | Development (`scripts/dev/setup.sh` does this) |
 
 Production hosts install a reviewed wheel, never an editable checkout. In
@@ -274,8 +277,8 @@ from the `--wheelhouse` folder).
 
    Running `setup` again later only creates missing users.
 
-5. **Start Central** on loopback, under a restricted service account that
-   starts automatically once networking is available:
+5. **Start Central** by hand in its own PowerShell window, and leave that
+   window open (it listens on loopback only):
 
    ```powershell
    C:\ProgramData\LabNet\central-venv\Scripts\labnet-central.exe --env-file C:\ProgramData\LabNet\central.env
@@ -293,7 +296,8 @@ from the `--wheelhouse` folder).
    ```
 
    Validate it with `caddy validate --config C:\ProgramData\LabNet\Caddyfile`,
-   then run it as a service. Caddy loads the certificate and key with its
+   then start it by hand in a second window with
+   `caddy run --config C:\ProgramData\LabNet\Caddyfile`. Caddy loads the certificate and key with its
    [`tls` directive](https://caddyserver.com/docs/caddyfile/directives/tls)
    and forwards to Central with
    [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
@@ -301,6 +305,8 @@ from the `--wheelhouse` folder).
 
 7. **Firewall.** Allow inbound TCP 443 from the Lab PCs and approved clients.
    Never open port 8008.
+8. **Control Center.** The web interface runs on this same computer; see
+   [Control Center](#control-center) for its setup.
 
 ### 3. Set up each Lab PC
 
@@ -337,7 +343,7 @@ from the `--wheelhouse` folder).
    bash //192.168.50.40/LabNet-Releases/x.y.z/update_host.sh lab-pc
    ```
 
-5. **Start the Lab PC** as an automatically starting service:
+5. **Start the Lab PC** by hand in its own PowerShell window, and leave it open:
 
    ```powershell
    C:\ProgramData\LabNet\lab-pc-venv\Scripts\labnet-lab-pc.exe --env-file C:\ProgramData\LabNet\lab-pc.env
@@ -370,6 +376,24 @@ from the `--wheelhouse` folder).
    and connects directly to `lab_pc_1` at `192.168.50.20:50051`. One CA file
    verifies both connections.
 
+### Starting the lab by hand
+
+Every process runs in its own PowerShell window that stays open. Start them
+in this order; to stop one, press Ctrl+C in its window.
+
+| Order | Computer | Window | Command |
+| --- | --- | --- | --- |
+| 1 | `central_server_pc` | Central | `C:\ProgramData\LabNet\central-venv\Scripts\labnet-central.exe --env-file C:\ProgramData\LabNet\central.env` |
+| 2 | `central_server_pc` | Caddy | `caddy run --config C:\ProgramData\LabNet\Caddyfile` |
+| 3 | `central_server_pc` | Control Center | `C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-control-center.exe --env-file C:\ProgramData\LabNet\control-center.env` |
+| 4 | each Lab PC | Lab PC | `C:\ProgramData\LabNet\lab-pc-venv\Scripts\labnet-lab-pc.exe --env-file C:\ProgramData\LabNet\lab-pc.env` |
+| 5 | clients | experiments | your scripts, with `LABNET_ENV_FILE` set |
+
+Only Central has to come first; everything else recovers if it starts early.
+Lab PCs keep retrying their registration, and the Control Center shows a
+banner until Central answers. Before an update, stop the affected windows;
+`update_host.sh` refuses to run while that role is still running.
+
 ### Network rules summary
 
 - Central: allow TCP 443 from approved Lab PCs and client networks.
@@ -398,13 +422,29 @@ Verify in this order:
 Every client starts from one `LabClient` (or `AsyncLabClient`) per process:
 
 ```python
-from labnet import DummyDevice, LabClient
+from labnet import DummyDevice, LabClient, LabClientError
 
-with LabClient.from_env() as central:
-    with DummyDevice(client=central) as device:      # first available; or device_id="..."
-        device.write_value(12.5, channel="main")
-        print(device.read_value(channel="main"))
+central = None
+device = None
+try:
+    central = LabClient.from_env()
+    device = DummyDevice(client=central)          # first available; or device_id="..."
+    device.write_value(12.5, channel="main")
+    print(device.read_value(channel="main"))
+except LabClientError as error:                   # any LabNet failure
+    raise SystemExit(f"LabNet error: {error}")
+finally:                                          # runs after errors and Ctrl+C too
+    if device is not None:
+        device.close()                            # releases the lease
+    if central is not None:
+        central.close()
 ```
+
+Create every object inside `try` and close it in `finally`, newest first.
+The `is not None` checks mean a failure halfway through setup closes only what
+exists. `LabClientError` is the base class of every LabNet error: connection,
+authentication, a device leased by someone else (`ResourceConflictError`), and
+failed device calls.
 
 `from_env()` reads `LABNET_SERVER_URL`, `LABNET_API_KEY`, and `LABNET_CA_FILE`.
 It looks in the process environment, then the file named by
@@ -419,8 +459,13 @@ methods:
 ```python
 from labnet import SimulatedWavemeter
 
-with SimulatedWavemeter(device_id="local-wavemeter") as meter:
+meter = None
+try:
+    meter = SimulatedWavemeter(device_id="local-wavemeter")
     print(meter.read_wavelength())
+finally:
+    if meter is not None:
+        meter.close()                             # disconnects the driver
 ```
 
 Use `AsyncLabClient` to overlap independent instruments or consume streams:
@@ -428,21 +473,28 @@ Use `AsyncLabClient` to overlap independent instruments or consume streams:
 ```python
 import asyncio
 
-from labnet import AsyncLabClient, SimulatedWavemeter
+from labnet import AsyncLabClient, LabClientError, SimulatedWavemeter
 
 
 async def main() -> None:
-    async with AsyncLabClient.from_env() as central:
+    central = None
+    meter = None
+    samples = None
+    try:
+        central = AsyncLabClient.from_env()
         meter = await central.acquire_device(SimulatedWavemeter.contract)
-        try:
-            samples = meter.stream_wavelength(sample_rate_hz=10, sample_count=20)
-            try:
-                async for sample in samples:
-                    print(sample.sequence, sample.value, sample.unit)
-            finally:
-                await samples.aclose()
-        finally:
-            await meter.aclose()
+        samples = meter.stream_wavelength(sample_rate_hz=10, sample_count=20)
+        async for sample in samples:
+            print(sample.sequence, sample.value, sample.unit)
+    except LabClientError as error:
+        raise SystemExit(f"LabNet error: {error}")
+    finally:
+        if samples is not None:
+            await samples.aclose()                # 1. the stream
+        if meter is not None:
+            await meter.aclose()                  # 2. the device and its lease
+        if central is not None:
+            await central.aclose()                # 3. Central
 
 
 asyncio.run(main())
@@ -451,6 +503,91 @@ asyncio.run(main())
 Asyncio lets unrelated operations overlap. It does not make one instrument
 run several driver calls at once; that instrument's worker stays serialized.
 The [`examples/`](../examples/README.md) directory has five complete scripts.
+
+## Control Center
+
+The PQT Lab Control Center is the lab's web interface. It is a LabNet
+client with its own Central user: the browser talks only to it, and it asks
+Central for the network picture, so no API key ever reaches a browser.
+
+| Path | Page |
+| --- | --- |
+| `/` | Redirects to `/status` |
+| `/status` | **Network** tab: every Lab PC (online/offline, IP), its devices (available, leased, unavailable), and each device's callable methods from its generated contract |
+| `/devices`, `/devices/<id>` | **Devices** tab: placeholder for the device control pages |
+| `/api/status` | The same picture as JSON; refreshed from Central at most every `LABNET_CONTROL_CENTER_REFRESH_SECONDS` |
+| `/api/agent/messages` | Photo-Agent chat endpoint; replies that the agent is not connected yet |
+
+In development `scripts/dev/up.sh` starts it at `http://127.0.0.1:8080/status`.
+
+In the lab it runs on **`central_server_pc`**, next to Central and Caddy:
+- **Central over loopback:** it reaches Central at `http://127.0.0.1:8008` on
+  the same computer, so it needs no CA file and doesn't depend on Caddy.
+- **Browsers through Caddy:** Caddy serves the page to the rest of the lab
+  over HTTPS.
+
+The load is small: one Central request every few seconds, however many
+people have the page open.
+
+1. **Central user.** On `central_server_pc`, create it and its settings file:
+
+   ```powershell
+   & $admin --env-file C:\ProgramData\LabNet\central.env setup --user control-center `
+       --write-env C:\LabNet-Keys --server-url http://127.0.0.1:8008
+   ```
+
+   Move `control-center.env` to `C:\ProgramData\LabNet\control-center.env` and
+   add `LABNET_CONTROL_CENTER_PORT=8080`, as in
+   [`site/control-center.env.example`](../site/control-center.env.example).
+2. **Install.** On the same computer, run
+   `bash <release>/update_host.sh control-center`. It installs into
+   `control-center-venv` and checks that the settings file loads.
+3. **Address.** Choose how the lab reaches the page:
+
+   | | `https://192.168.50.10:8443/status` | `https://pqt-control-center/status` |
+   | --- | --- | --- |
+   | Certificate | Reuse `central.crt` (it already covers 192.168.50.10) | On the development PC: `labnet-certs issue control-center --dns pqt-control-center --ip 192.168.50.10 --dir C:\LabNet-CA`, then copy the `.crt` and `.key` next to Central's |
+   | Caddyfile site | `https://192.168.50.10:8443` with Central's `tls` line | `https://pqt-control-center` with the new `tls` line |
+   | Firewall | Allow inbound TCP 8443 | Nothing new (443 is already open) |
+   | Viewing computers | Nothing extra | Add `192.168.50.10  pqt-control-center` to `C:\Windows\System32\drivers\etc\hosts` (the lab has no DNS) |
+
+   Either site block forwards to the Control Center:
+
+   ```caddyfile
+   https://pqt-control-center {          # or: https://192.168.50.10:8443
+       tls C:/ProgramData/LabNet/certs/control-center.crt C:/ProgramData/LabNet/certs/control-center.key
+       reverse_proxy 127.0.0.1:8080
+   }
+   ```
+
+4. **Browser trust.** Python clients use `LABNET_CA_FILE`, but browsers use the
+   Windows certificate store. Install the CA once on each viewing computer
+   with `certutil -addstore Root labnet-ca.pem`, or the page shows a
+   certificate warning.
+5. **Start** it by hand in its own PowerShell window on `central_server_pc`:
+
+   ```powershell
+   C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-control-center.exe --env-file C:\ProgramData\LabNet\control-center.env
+   ```
+
+   If Central isn't running yet, the page shows a "can't reach Central"
+   banner and recovers on its own once Central starts.
+6. **Check it from a viewing computer**, not the server:
+   `curl.exe https://pqt-control-center/health/ready`, which returns 200 when
+   the Control Center is up *and* reaching Central.
+
+Use hyphens in the name: `pqt_control_center` with underscores is not a
+valid host name, and certificate tools reject it. The built-in server only
+binds to loopback. Caddy makes it reachable, over HTTPS, so adding logins
+later never sends keys in clear text.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | Central URL; keep the loopback default when it runs on the Central PC |
+| `LABNET_API_KEY` | required | The Control Center's own Central key (role `user`) |
+| `LABNET_CA_FILE` | system trust | Only needed if it ever runs on a different computer and reaches Central over HTTPS |
+| `LABNET_CONTROL_CENTER_HOST` / `_PORT` | `127.0.0.1` / `8080` | Built-in HTTP listener; loopback only |
+| `LABNET_CONTROL_CENTER_REFRESH_SECONDS` | `3` | How often the network picture is refreshed |
 
 ## Lease and streaming behavior
 

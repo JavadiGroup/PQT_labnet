@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Network · PQT Lab Control Center</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-page="network">
+  <main id="page" class="workspace">
+    <div class="page-head">
+      <div>
+        <h1>Network</h1>
+        <p class="subtle" id="summary">Loading the network…</p>
+      </div>
+      <div class="refresh"><span class="pulse" id="pulse"></span><span id="updated"></span></div>
+    </div>
+    <div id="banner" class="banner" role="status" hidden></div>
+    <div id="lab-pcs" class="lab-pcs"></div>
+  </main>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/status.js"></script>
+</body>
+</html>

@@ -46,7 +46,7 @@ done
 
 log "Creating Central schema, users, and their settings files"
 "$(labnet_bin labnet-central-admin)" --env-file "$(native_path "$DEVNET_DIR/central.env")" \
-    setup --admin "$ADMIN_USER" --user "$RESEARCHER_USER" "${lab_pc_args[@]}" \
+    setup --admin "$ADMIN_USER" --user "$RESEARCHER_USER" --user "$CONTROL_CENTER_USER" "${lab_pc_args[@]}" \
     --write-env "$(native_path "$DEVNET_DIR")" --server-url "$CENTRAL_URL" 2>&1 |
     grep -v "^INFO  \[alembic" | sed 's/^/    /'
 
@@ -61,6 +61,10 @@ LABNET_DEVICE_INVENTORY=$(native_path "$REPO_ROOT/$inventory"):create_devices
 EOF
     ok "$lab_pc_id -> gRPC :$grpc_port, health :$http_port, $inventory"
 done
+
+# setup wrote the Control Center's Central URL and key; add where it listens.
+echo "LABNET_CONTROL_CENTER_PORT=$CONTROL_CENTER_PORT" >> "$DEVNET_DIR/$CONTROL_CENTER_USER.env"
+ok "$CONTROL_CENTER_USER -> http://127.0.0.1:$CONTROL_CENTER_PORT/status"
 
 ok "Seeded. Keys and settings are in $DEVNET_DIR (git-ignored)."
 echo "Next: scripts/dev/up.sh"

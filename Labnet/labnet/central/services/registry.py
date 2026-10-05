@@ -9,6 +9,7 @@ from ..models.common import ErrorCode, ServiceError
 from ..models.devices import (
     DeviceHeartbeatItem,
     DeviceManagerHeartbeatRequest,
+    DeviceManagerPublic,
     DeviceManagerRegistrationRequest,
     DevicePublic,
     EndpointDescriptor,
@@ -208,6 +209,32 @@ class DeviceRegistryService:
                 ]
             return devices
 
+    def list_managers(self) -> list[DeviceManagerPublic]:
+        """Every registered Lab PC with its devices, for read-only displays."""
+
+        now = datetime.now(timezone.utc)
+        with self.database.session() as session:
+            managers = session.scalars(
+                select(DeviceManagerRow).order_by(DeviceManagerRow.manager_id)
+            ).all()
+            return [
+                DeviceManagerPublic(
+                    manager_id=manager.manager_id,
+                    host=manager.hostname,
+                    endpoint=_endpoint(manager),
+                    status="online" if self._manager_online(manager, now) else "offline",
+                    registered_at=manager.registered_at,
+                    last_seen=manager.last_seen,
+                    devices=self._list_for_manager(session, manager.manager_id, now),
+                )
+                for manager in managers
+            ]
+
+    def _manager_online(self, manager: DeviceManagerRow, now: datetime) -> bool:
+        return manager.status == "online" and _as_utc(manager.last_seen) > now - timedelta(
+            seconds=self.heartbeat_timeout_seconds
+        )
+
     def get_device(self, device_id: str) -> DevicePublic:
         now = datetime.now(timezone.utc)
         with self.database.session() as session:
@@ -242,18 +269,9 @@ class DeviceRegistryService:
                 LeaseRow.expires_at > now,
             )
         ) is not None
-        endpoint = EndpointDescriptor(
-            transport=row.manager.transport,
-            target=row.manager.target,
-            api_version=row.manager.api_version,
-            secure=row.manager.secure,
-            tls_server_name=row.manager.tls_server_name,
-            attributes=dict(row.manager.endpoint_attributes or {}),
-        )
+        endpoint = _endpoint(row.manager)
         effective = (
-            row.manager.status == "online"
-            and _as_utc(row.manager.last_seen)
-            > now - timedelta(seconds=self.heartbeat_timeout_seconds)
+            self._manager_online(row.manager, now)
             and row.runtime_state == "ready"
             and row.availability == "available"
             and not leased
@@ -289,6 +307,17 @@ class DeviceRegistryService:
                 "Device Manager ownership does not match the authenticated principal.",
                 status_code=403,
             )
+
+
+def _endpoint(manager: DeviceManagerRow) -> EndpointDescriptor:
+    return EndpointDescriptor(
+        transport=manager.transport,
+        target=manager.target,
+        api_version=manager.api_version,
+        secure=manager.secure,
+        tls_server_name=manager.tls_server_name,
+        attributes=dict(manager.endpoint_attributes or {}),
+    )
 
 
 def _update_manager(

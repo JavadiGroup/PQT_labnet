@@ -14,6 +14,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 source "$REPO_ROOT/scripts/dev/config.sh"
 
 log "Stopping local network"
+stop_process control-center "$CONTROL_CENTER_PORT"
 for entry in "${LAB_PCS[@]}"; do
     read -r lab_pc_id grpc_port http_port _inventory <<< "$entry"
     stop_process "$lab_pc_id" "$http_port"

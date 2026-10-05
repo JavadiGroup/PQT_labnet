@@ -14,9 +14,8 @@ from __future__ import annotations
 import argparse
 import csv
 import statistics
-from contextlib import ExitStack
 
-from labnet import DummyDevice, LabClient, SimulatedWavemeter
+from labnet import DummyDevice, LabClient, LabClientError, SimulatedWavemeter
 
 
 SETPOINTS = [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -28,28 +27,46 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output", default="scan.csv")
     args = parser.parse_args(argv)
 
-    with LabClient.from_env() as central, ExitStack() as leases:
-        # ExitStack releases the leases in reverse order, even after an error.
-        source = leases.enter_context(DummyDevice(client=central))
-        meter = leases.enter_context(SimulatedWavemeter(client=central))
+    central = None
+    source = None
+    meter = None
+    output = None
+    try:
+        central = LabClient.from_env()
+        source = DummyDevice(client=central)
+        meter = SimulatedWavemeter(client=central)
         print(f"source: {source.device_id}   meter: {meter.device_id}")
 
-        with open(args.output, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(["setpoint", "wavelength_nm", "std_nm"])
-            for setpoint in SETPOINTS:
-                source.write_value(setpoint)
-                readings = [
-                    sample.value
-                    for sample in meter.stream_wavelength(
-                        sample_rate_hz=50, sample_count=SAMPLES_PER_POINT
-                    )
-                ]
-                mean, spread = statistics.fmean(readings), statistics.stdev(readings)
-                writer.writerow([setpoint, f"{mean:.6f}", f"{spread:.6f}"])
-                print(f"setpoint {setpoint:4.2f} -> {mean:.6f} nm (+/- {spread:.6f})")
+        output = open(args.output, "w", newline="", encoding="utf-8")
+        writer = csv.writer(output)
+        writer.writerow(["setpoint", "wavelength_nm", "std_nm"])
 
-    print(f"Wrote {args.output}")
+        for setpoint in SETPOINTS:
+            source.write_value(setpoint)
+            readings = [
+                sample.value
+                for sample in meter.stream_wavelength(
+                    sample_rate_hz=50, sample_count=SAMPLES_PER_POINT
+                )
+            ]
+            mean, spread = statistics.fmean(readings), statistics.stdev(readings)
+            writer.writerow([setpoint, f"{mean:.6f}", f"{spread:.6f}"])
+            print(f"setpoint {setpoint:4.2f} -> {mean:.6f} nm (+/- {spread:.6f})")
+
+        print(f"Wrote {args.output}")
+    except LabClientError as error:
+        raise SystemExit(f"LabNet error: {error}")
+    finally:
+        # Reverse order of creation. A scan stopped with Ctrl+C still keeps the
+        # rows written so far and frees both instruments for the next user.
+        if output is not None:
+            output.close()
+        if meter is not None:
+            meter.close()
+        if source is not None:
+            source.close()
+        if central is not None:
+            central.close()
 
 
 if __name__ == "__main__":

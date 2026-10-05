@@ -152,6 +152,23 @@ class DeviceManagerResponse(BaseModel):
     devices: list[DevicePublic]
 
 
+class DeviceManagerPublic(BaseModel):
+    """A Lab PC as any authenticated user sees it (no ownership details)."""
+
+    manager_id: LabNetIdentifier
+    host: str
+    endpoint: EndpointDescriptor
+    # Online only while heartbeats arrive within the heartbeat timeout.
+    status: Literal["online", "offline"]
+    registered_at: datetime
+    last_seen: datetime
+    devices: list[DevicePublic]
+
+
+class DeviceManagerListResponse(BaseModel):
+    device_managers: list[DeviceManagerPublic]
+
+
 def _target_host(target: str) -> str:
     value = target.strip()
     if "://" in value or "/" in value or "@" in value:
