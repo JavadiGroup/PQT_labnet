@@ -68,353 +68,154 @@ Leases last 60 s and the client renews them automatically every 20 s. If a
 client crashes, its lease expires and the device frees itself. Central also
 expires a lease after 15 minutes with no device commands.
 
-## From physical device to network call
-
-Every device family (today `DummyDevice` and `SimulatedWavemeter`) passes
-through the same layers. You write three small pieces; the rest is generated
-or shared framework code.
-
-| Layer | File | Who writes it |
-| --- | --- | --- |
-| Network contract | `Labnet/protos/labnet/devices/v1/<family>.proto` | **You** |
-| Generated bindings and contract metadata | `Labnet/labnet/grpc/generated/*` | `tools/generate_protos.py` |
-| Driver wrapper | `Labnet/labnet/devices/<Family>/physical.py` | **You** |
-| Public class for experiments | `Labnet/labnet/devices/<Family>/device.py` | **You** (about 3 lines) |
-| Which instruments a Lab PC serves | `site/inventories/<lab pc>.py` | **You** |
-| gRPC server, lease checks, worker threads, client stubs | `Labnet/labnet/grpc`, `device_manager`, `client` | Framework, do not edit per family |
-
-### 1. The proto is the contract
-
-Each RPC states which reusable pattern it follows and which Python method on
-the driver it maps to:
-
-```protobuf
-rpc ReadWavelength(ReadWavelengthRequest) returns (ReadWavelengthResponse) {
-  option (labnet.devices.v1.rpc) = {
-    pattern: RPC_PATTERN_SCALAR_READ        // how LabNet executes it
-    physical_method: "read_wavelength"      // method called in physical.py
-    default_unit: "nm"
-  };
-}
-```
-
-The supported patterns are `RPC_PATTERN_SCALAR_READ`, `RPC_PATTERN_SCALAR_WRITE`
-and `RPC_PATTERN_POLLED_SCALAR_STREAM`. Other values in `rpc_options.proto` are
-reserved, and the generator rejects them.
-
-### 2. Code generation turns it into Python
-
-`scripts/dev/codegen.sh` runs `tools/generate_protos.py`, which runs `protoc`,
-validates every RPC option, and writes:
-
-- `<family>_pb2.py` / `_pb2_grpc.py`: protobuf messages, gRPC stub, and servicer;
-- `device_contracts.py`: one `DeviceContract` per family. It records each RPC's
-  pattern, the driver method it maps to, and the request fields forwarded as
-  arguments, plus a `Protocol` describing the method signatures `physical.py`
-  must have.
-
-That generated contract is the single source of truth. The server builds its
-handlers from it, the client builds its methods from it, and only the methods
-it names can be called remotely; other helper methods on a driver stay private.
-Generation happens before deployment and is checked in. There is no code
-generation at runtime.
-
-### 3. The driver wrapper does the hardware work
-
-`physical.py` is ordinary Python around your vendor driver. It provides
-`connect`, `disconnect`, `status`, `availability`, `metadata`, and each method
-the proto names (for example `read_wavelength(self, channel=None)`). When a
-Lab PC starts, it checks these signatures against the generated contract and
-refuses to start if they don't match.
-
-### 4. One call, end to end
-
-Here is what happens when a client calls `device.write_value(12.5)`:
-
-```text
-CLIENT PROCESS
-  DummyDevice.write_value(12.5)              devices/DummyDevice/device.py (facade)
-   └─ ContractDeviceGrpcClient               client/core/grpc_client.py
-        builds WriteValueRequest{device_id, operation_id, value}
-        adds metadata  x-labnet-lease-id: <lease>
-            │
-            │  gRPC = HTTP/2 over one TCP connection (TLS outside loopback)
-            ▼
-LAB PC PROCESS (labnet-lab-pc)
-  LabnetGrpcServer                           grpc/server.py
-   └─ PatternDeviceGrpcService               grpc/services/patterns.py
-        generic SCALAR_WRITE handler, built from the generated RpcSpec
-   └─ DeviceExecutor                         device_manager/executor.py
-        POST /api/v1/leases/<id>/validate to Central; checks device type and health
-   └─ DeviceWorker (one thread + queue per device)   device_manager/worker.py
-        method must be on the contract allow-list; calls run one at a time
-   └─ PhysicalDummyDevice.write_value(value=12.5)    devices/DummyDevice/physical.py
-        → vendor driver / hardware
-```
-
-The result travels back as a `ScalarMeasurement` (value, unit, timestamp,
-quality). Because each device has its own worker thread and queue, calls to
-one instrument never overlap, while different instruments work in parallel.
-Streams poll the same physical read method at the requested rate and check
-the lease with Central again every few seconds.
-
-### 5. TCP, TLS, and who trusts whom
-
-- **Transport.** gRPC runs over HTTP/2 on a single TCP connection per device
-  object. Central's API is plain HTTP/1.1 JSON.
-- **Encryption and server identity (TLS).** A Lab PC serves gRPC over TLS as
-  soon as its `.env` names a certificate and key. Central sits behind Caddy
-  for HTTPS. `labnet-certs` creates one private CA that signs both server
-  certificates; each certificate contains the exact IP clients dial.
-  Lab PCs and clients receive only the public `labnet-ca.pem`, named by
-  `LABNET_CA_FILE`, which verifies Central and every Lab PC. There are no
-  client certificates.
-- **Authorization** is separate from TLS. API keys (stored hashed in Central)
-  identify users and Lab PCs, and the lease id in gRPC metadata authorizes
-  each device call.
-- **Guard rails in code.** Plaintext is accepted only on loopback. A Lab PC
-  with no API key skips lease checks, so it may run only on loopback and never
-  in production. A Lab PC without a certificate refuses a LAN address. That
-  is why the local network below can use plain HTTP and gRPC safely.
-
-## Local development network
-
-The scripts run a complete network on one machine: Central plus **two Lab
-PCs**. One serves two DummyDevices; the other serves a DummyDevice and a
-SimulatedWavemeter. Everything binds to `127.0.0.1`.
-
-**Prerequisites:** Python 3.11+ and bash. On Windows, use **Git Bash** (it
-comes with Git for Windows). From PowerShell, call it explicitly with
-`& "C:\Program Files\Git\bin\bash.exe" scripts/dev/up.sh`, because a bare
-`bash` may launch WSL instead.
-
-```bash
-scripts/dev/setup.sh    # once: create .venv, install LabNet editable with all extras
-scripts/dev/seed.sh     # fresh database, users, and one settings file per user
-scripts/dev/up.sh       # start Central, then each Lab PC; waits until all are ready
-scripts/dev/status.sh   # health of each process + the device table clients see
-scripts/dev/smoke.sh    # lease every device, call it over gRPC, release
-scripts/dev/down.sh     # stop everything (data in .devnet/ is kept)
-```
-
-`status.sh` should show:
-
-```text
-DEVICE           TYPE                 LAB PC         gRPC TARGET      STATE  LEASABLE
-dev01-dummy-a    dummy_device         lab-pc-dev-01  127.0.0.1:50051  ready  yes
-dev01-dummy-b    dummy_device         lab-pc-dev-01  127.0.0.1:50051  ready  yes
-dev02-dummy-a    dummy_device         lab-pc-dev-02  127.0.0.1:50052  ready  yes
-dev02-wavemeter  simulated_wavemeter  lab-pc-dev-02  127.0.0.1:50052  ready  yes
-```
-
-### What `seed.sh` creates
-
-`seed.sh` writes `central.env`, then runs `labnet-central-admin setup`. That
-creates the schema and every user, and writes each user's API key into its
-own settings file:
-
-| File in `.devnet/` | Contents |
-| --- | --- |
-| `central.env` | SQLite database at `.devnet/central.db`, port 8008 |
-| `researcher.env` | Central URL + the `researcher` key, for clients and the examples |
-| `dev-admin.env` | Central URL + the admin key |
-| `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `scripts/dev/inventories/dev_lab_pc_01.py` |
-| `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `scripts/dev/inventories/dev_lab_pc_02.py` |
-| `logs/` | One log per process; `up.sh` prints the tail if a start fails |
-
-A dev Lab PC file is six lines. Having an API key turns on Central
-registration and lease checks; having no certificate keeps it on loopback
-plaintext. `.devnet/` is git-ignored, and its keys are throwaway.
-
-To change the topology (more Lab PCs, other ports), edit
-[`scripts/dev/config.sh`](scripts/dev/config.sh), add an inventory under
-`scripts/dev/inventories/`, then run `down.sh`, `seed.sh`, and `up.sh`.
-
-### Using the dev network from your own code
-
-Point clients at the researcher file once, then run any script:
-
-```bash
-export LABNET_ENV_FILE=.devnet/researcher.env        # PowerShell: $env:LABNET_ENV_FILE = ".devnet\researcher.env"
-python examples/01_hello_device.py
-python examples/04_scan_two_devices.py               # leases devices on both Lab PCs
-```
-
-[`examples/README.md`](examples/README.md) describes all five examples.
-
-## The change loop: down → update → generate → redeploy
-
-Running processes never reload code. Device objects are built once at
-startup, so every change follows the same loop:
-
-```bash
-scripts/dev/down.sh                  # 1. take the network down
-#                                       2. edit protos / physical.py / inventories
-scripts/dev/codegen.sh               # 3. regenerate + check + run tests
-scripts/dev/up.sh                    # 4. bring it back with the new code
-scripts/dev/smoke.sh                 # 5. prove every device still answers
-```
-
-`scripts/dev/redeploy.sh` runs steps 1, 3, 4, and 5 in order and stops at the
-first failure. Use `redeploy.sh --skip-tests` for a faster loop when you only
-changed an inventory.
-
-### Adding or removing instruments of an existing family
-
-No code generation is needed. Edit the Lab PC's inventory, for example
-`scripts/dev/inventories/dev_lab_pc_02.py`:
-
-```python
-def create_devices():
-    return [
-        PhysicalDummyDevice(device_id="dev02-dummy-a"),
-        PhysicalSimulatedWavemeter(device_id="dev02-wavemeter"),
-        PhysicalSimulatedWavemeter(device_id="dev02-wavemeter-b", center_nm=852.347),  # new
-    ]
-```
-
-Then run `scripts/dev/redeploy.sh --skip-tests`. Device ids must be unique
-across **all** Lab PCs. A removed device stays in Central's table as `stopped`
-and not leasable. Run `seed.sh` to clear it, or if you moved a device id to a
-different Lab PC (Central rejects that as an ownership conflict).
-
-### Adding a new device family
-
-`SimulatedWavemeter` was added exactly this way and is the model to copy:
-
-1. `scripts/dev/down.sh`
-2. Add `Labnet/protos/labnet/devices/v1/<family>.proto`; see
-   [`simulated_wavemeter.proto`](Labnet/protos/labnet/devices/v1/simulated_wavemeter.proto).
-   Every RPC needs the `pattern`, `physical_method`, and `default_unit` options.
-3. `scripts/dev/codegen.sh`. Generation fails with a precise message if an
-   option is missing or doesn't fit the RPC's shape. On success,
-   `device_contracts.py` gains a `<FAMILY>_CONTRACT` and the gRPC server serves
-   the new service automatically.
-4. Write `Labnet/labnet/devices/<Family>/physical.py` (the driver), the facade
-   `device.py`, and a lazy `__init__.py`; copy
-   [`SimulatedWavemeter/`](Labnet/labnet/devices/SimulatedWavemeter/). The
-   facade is just:
-   ```python
-   class SimulatedWavemeter(ContractDeviceFacade):
-       contract = SIMULATED_WAVEMETER_CONTRACT
-       physical_type = PhysicalSimulatedWavemeter
-   ```
-5. Export it in `Labnet/labnet/__init__.py` and `Labnet/labnet/devices/__init__.py`.
-6. Add instances to an inventory, then run `scripts/dev/redeploy.sh`. The
-   smoke test leases each new device and calls its first scalar-read RPC.
-7. Commit the proto **and** the regenerated files. `codegen.sh` prints the
-   generated files that changed.
-
-After a contract is deployed, keep it backward compatible: never renumber or
-retype fields, add new fields as optional, and reserve removed numbers. See
-[contract compatibility](Labnet/README.md#contract-compatibility).
-
-## Updating the real lab network
-
-Runtime computers never run from a git checkout. They install a versioned,
-hash-checked release built on the development PC. Each computer keeps its
-settings in one file that updates never touch:
-
-| Computer | Settings file | Start command |
-| --- | --- | --- |
-| Central | `C:\ProgramData\LabNet\central.env` | `central-venv\Scripts\labnet-central --env-file …\central.env` |
-| Lab PC | `C:\ProgramData\LabNet\lab-pc.env` | `lab-pc-venv\Scripts\labnet-lab-pc --env-file …\lab-pc.env` |
-| Client | `C:\ProgramData\LabNet\client.env` | set `LABNET_ENV_FILE` to it, then run scripts |
-
-First-time setup of a computer is in
-[`Labnet/README.md` → Production deployment](Labnet/README.md#production-deployment).
-After that, every update follows these steps:
-
-### 1. Build the release (development PC)
-
-```bash
-# bump version = "x.y.z" in Labnet/pyproject.toml, then:
-git commit -am "Release x.y.z"
-scripts/release/build.sh                   # add --wheelhouse for offline hosts
-git add PQT_network_releases/x.y.z && git commit -m "Release artifacts x.y.z"
-```
-
-`build.sh` refuses to run on uncommitted changes or to overwrite an existing
-version. It checks generated files, runs the tests, and stages:
-
-```text
-PQT_network_releases/x.y.z/
-  labnet-x.y.z-py3-none-any.whl   the package (all roles; extras pick dependencies)
-  site.zip                        site/: env templates + every Lab PC inventory
-  client-examples.zip             examples/: the 01–05 scripts
-  update_host.sh                  the installer each runtime computer runs
-  RELEASE.TXT                     git revision, version, SHA-256 of every file
-```
-
-Copy that directory to the release share (for example
-`\\192.168.50.40\LabNet-Releases\x.y.z`).
-
-### 2. Install it on each computer, in dependency order
-
-Stop processes in reverse order (clients, then Lab PCs, then Central). Then
-update and start them in this order: **Central → each Lab PC → clients**. On
-each computer, in Git Bash:
-
-```bash
-R=//192.168.50.40/LabNet-Releases/x.y.z      # or a local copy of the directory
-bash $R/update_host.sh central               # on central_server_pc
-bash $R/update_host.sh lab-pc                # on each Lab PC
-bash $R/update_host.sh client                # on each client
-```
-
-`update_host.sh` handles the steps that are easy to get wrong:
-
-| Step | What it does |
-| --- | --- |
-| Verify | Compares every file's SHA-256 with `RELEASE.TXT`; stops on any mismatch |
-| Safety | Refuses to run while that role still answers on its loopback health port |
-| Install | Creates `C:/ProgramData/LabNet/<role>-venv` if needed and installs the wheel with the right extra |
-| Central | Backs up the SQLite file named in `central.env` (`labnet.db.before-x.y.z.<time>`), then applies migrations |
-| Lab PC | Installs `site/` (the inventories), then loads `lab-pc.env` and imports its inventory, so mistakes appear now rather than at startup |
-| Client | Installs the example scripts in `client-app/` |
-| Record | Copies `RELEASE.TXT` to `C:/ProgramData/LabNet/<role>-RELEASE.TXT` |
-
-Start the role again (the script prints the command) and check its
-`/health/ready`. Then run the
-[deployment verification](Labnet/README.md#deployment-verification) checklist.
-
-**Rollback:** rerun `update_host.sh` from the previous release directory. The
-old `site/` and `client-app/` trees are also kept as `*.previous`. Reinstalling
-old code does not undo a schema migration: restore the `labnet.db.before-*`
-backup if you need to.
-
-## Script reference
-
-| Script / command | Where it runs | Purpose |
-| --- | --- | --- |
-| `scripts/dev/setup.sh` | dev machine | Create `.venv`, editable install with `dev,central,lab-pc` extras |
-| `scripts/dev/seed.sh` | dev machine | Wipe `.devnet/`, write `central.env`, run `labnet-central-admin setup`, add dev ports and inventories |
-| `scripts/dev/up.sh` | dev machine | Start `labnet-central`, then every `labnet-lab-pc` in `config.sh`; wait for readiness |
-| `scripts/dev/status.sh` | dev machine | Component health + Central's device table |
-| `scripts/dev/smoke.sh` | dev machine | Lease and read every available device end to end |
-| `scripts/dev/down.sh` | dev machine | Stop Lab PCs, then Central (found by port; only Python processes) |
-| `scripts/dev/codegen.sh [--skip-tests]` | dev machine | Generate protos, `--check`, run pytest |
-| `scripts/dev/redeploy.sh [--skip-tests]` | dev machine | `down` → `codegen` → `up` → `smoke` |
-| `scripts/dev/config.sh` | — | Dev topology: Lab-PC ids, ports, inventories |
-| `scripts/release/build.sh [--wheelhouse] [--output DIR]` | development PC | Build and stage a hash-recorded release |
-| `update_host.sh <central\|lab-pc\|client>` | each runtime computer | Verify, install, migrate or install site/examples, record |
-| `labnet-certs init-ca / issue / show` | development PC | Create the private CA and server certificates |
-| `labnet-central-admin setup / user …` | Central | Migrate, create users, write their settings files |
-
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
-| [`Labnet/`](Labnet/) | The installable `labnet` Python project ([full guide](Labnet/README.md)) |
-| [`Labnet/protos/`](Labnet/protos/) | Protobuf device contracts (source of truth) |
-| [`Labnet/tools/generate_protos.py`](Labnet/tools/generate_protos.py) | Contract validator and code generator |
-| [`Labnet/labnet/devices/`](Labnet/labnet/devices/) | Device families: `physical.py` driver wrappers and facades |
-| [`Labnet/labnet/lab_pc/`](Labnet/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
-| [`Labnet/tests/`](Labnet/tests/) | Unit, full-stack, and example tests |
-| [`site/`](site/README.md) | The PQT lab's configuration: env templates and Lab PC inventories |
-| [`examples/`](examples/README.md) | Experiment scripts 01–05 |
-| [`scripts/`](scripts/) | Development, release, and host-update scripts |
-| [`PQT_network_releases/`](PQT_network_releases/) | Built releases with their `RELEASE.TXT` records |
+| [`Labnet/`](Labnet/) | Self-contained installable Python project |
+| [`Labnet/labnet/`](Labnet/labnet/) | Installed `labnet` package |
+| [`Labnet/labnet/central/`](Labnet/labnet/central/) | Reusable Central API, services, storage, CLI, and migrations |
+| [`Labnet/protos/`](Labnet/protos/) | Protobuf source contracts |
+| [`Labnet/tools/`](Labnet/tools/) | Development-time protobuf generator |
+| [`Labnet/tests/`](Labnet/tests/) | Unit and end-to-end tests |
+| [`examples/central_server/`](examples/central_server/) | Central deployment example |
+| [`examples/lab_pc/`](examples/lab_pc/) | Lab-PC configuration and device inventory example |
+| [`examples/client_test/`](examples/client_test/) | Synchronous and asyncio client examples |
+| [`examples/sacher_laser/`](examples/sacher_laser/) | Local calibration and leased Sacher laser examples |
+
+## Quick start
+
+Python 3.11 or newer is required. The following commands create one local
+development environment containing all three roles.
+
+```cmd
+git clone <repository-url> lab_network
+cd lab_network
+py -3.11 -m venv .venv
+call .\.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+python -m pip install -e ".\Labnet[dev,central,lab-pc]"
+```
+
+### 1. Initialize Central
+
+Central does not load `.env` automatically. If you choose a non-default
+database location, set `LABNET_DATABASE_URL` with `set "..."` in the activated
+Command Prompt before running both the CLI and Central; see the
+[Central example](examples/central_server/README.md#use-an-explicit-database-location).
+
+In the activated Command Prompt:
+
+```cmd
+labnet-central-admin db upgrade
+labnet-central-admin user create central-admin --role admin
+labnet-central-admin user create lab-pc-dev-01 --role device_manager
+labnet-central-admin user create researcher --role user
+```
+
+Save the API keys printed by the commands. Each key is shown once. The
+`device_manager` username must exactly match the Lab PC ID used below.
+
+Start Central and leave it running:
+
+```cmd
+python -m examples.central_server
+```
+
+Verify it from another shell:
+
+```cmd
+curl.exe http://127.0.0.1:8008/health/ready
+```
+
+### 2. Start the example Lab PC
+
+Copy the environment template:
+
+```cmd
+copy .\examples\lab_pc\.env.example .\examples\lab_pc\.env
+```
+
+Edit `.env` and set:
+
+```dotenv
+LABNET_LAB_PC_ID=lab-pc-dev-01
+LABNET_CENTRAL_ENABLED=true
+LABNET_SERVER_URL=http://127.0.0.1:8008
+LABNET_DEVICE_MANAGER_API_KEY=<device-manager API key>
+LABNET_LEASE_VALIDATION_MODE=central
+```
+
+Start the Lab PC in a second activated shell:
+
+```cmd
+python -m examples.lab_pc
+```
+
+The checked-in inventory exposes one simulated `dummy_device` and can
+optionally expose the Sacher laser when its Lab-PC environment flag is enabled.
+Verify the Lab PC locally:
+
+```cmd
+curl.exe http://127.0.0.1:9001/health/ready
+```
+
+### 3. Run a client
+
+In a third activated shell, use the researcher key:
+
+```cmd
+set "LABNET_API_KEY=<researcher API key>"
+python .\examples\client_test\client.py
+```
+
+Or run the asyncio example:
+
+```cmd
+python .\examples\client_test\async_client.py
+```
+
+Both examples authenticate, discover an available device, acquire a lease,
+perform direct gRPC operations, release the lease, and close their transports.
+
+## Documentation
+
+The complete guide in [`Labnet/README.md`](Labnet/README.md) covers:
+
+- architecture and security principles;
+- development and wheel-based installation;
+- local and static-IP multi-system production deployment;
+- static IP addresses, certificates, firewalls, and TLS;
+- Central, Lab-PC, and client configuration;
+- integrating an instrument from an existing family;
+- defining a new protobuf-backed device family;
+- lease, streaming, database, and operational behavior; and
+- testing, release checks, and troubleshooting.
+
+If Python packaging or private-CA certificates are new to you, start with
+[building and staging the wheel](Labnet/README.md#stage-the-release-artifacts)
+and then follow the complete
+[certificate setup](Labnet/README.md#generate-the-minimum-tls-certificate-set).
+Those sections explain what each file does, which computer receives it, and
+which private-key files must never be copied.
+
+Each directory under [`examples/`](examples/) also contains a focused README.
+
+## Development and contributions
+
+Run contract and test checks from the installable project directory:
+
+```cmd
+cd Labnet
+python tools/generate_protos.py --check
+python -m pytest
+```
+
+Changes to protobuf contracts must include the regenerated Python artifacts.
+Changes to a physical adapter should include tests that exercise its contract
+and failure behavior. Keep credentials, runtime databases, and instrument data
+out of commits. Commit vendor runtime binaries only when their redistribution
+terms have been reviewed and the package explicitly requires them.
 
 ## Security
 

@@ -17,6 +17,7 @@ from labnet.grpc.generated import (
 )
 from labnet.grpc.generated.device_contracts import (
     DEVICE_CONTRACT_BY_TYPE,
+    DEVICE_CONTRACTS,
     validate_implementation,
 )
 from labnet.lab_pc.app import create_app
@@ -50,7 +51,7 @@ def test_driver_satisfies_its_generated_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lab_pc_serves_both_families_side_by_side() -> None:
+async def test_lab_pc_serves_generated_families_side_by_side() -> None:
     settings = replace(
         LabPCSettings.from_env(search_cwd=False),
         grpc_port=0,
@@ -66,7 +67,9 @@ async def test_lab_pc_serves_both_families_side_by_side() -> None:
 
     async with app.router.lifespan_context(app):
         server = app.state.runtime.grpc_server
-        assert set(server.device_services) == {"dummy_device", "simulated_wavemeter"}
+        assert set(server.device_services) == {
+            contract.device_type for contract in DEVICE_CONTRACTS
+        }
         channel = grpc.aio.insecure_channel(f"127.0.0.1:{server.bound_port}")
         metadata = ((LEASE_METADATA_KEY, "development-lease"),)
         try:

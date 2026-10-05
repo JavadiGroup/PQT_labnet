@@ -637,7 +637,7 @@ Once a contract is deployed:
 
 From `Labnet/`:
 
-```powershell
+```cmd
 python tools/generate_protos.py --check
 python -m pytest
 ```

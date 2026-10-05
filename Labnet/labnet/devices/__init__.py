@@ -6,20 +6,23 @@ from importlib import import_module
 from typing import Any
 
 
-# Public name -> family package that provides it.
-_FAMILIES = {
+_EXPORT_MODULES = {
     "DummyDevice": ".DummyDevice",
     "PhysicalDummyDevice": ".DummyDevice",
     "SimulatedWavemeter": ".SimulatedWavemeter",
     "PhysicalSimulatedWavemeter": ".SimulatedWavemeter",
+    "PhysicalSacherLaser": ".SacherLaser",
+    "SacherLaser": ".SacherLaser",
 }
-__all__ = sorted(_FAMILIES)
+__all__ = sorted(_EXPORT_MODULES)
 
 
 def __getattr__(name: str) -> Any:
-    if name not in _FAMILIES:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(_FAMILIES[name], __name__), name)
+    try:
+        module_name = _EXPORT_MODULES[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name, __name__), name)
     globals()[name] = value
     return value
 

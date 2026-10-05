@@ -60,6 +60,7 @@ namespaces = false
 [tool.setuptools.package-data]
 labnet = ["py.typed"]
 "labnet.grpc.generated" = ["*.pyi"]
+"labnet.devices.SacherLaser" = ["DLLs/*.dll"]
 "labnet.central" = [
     "alembic.ini",
     "alembic/*.py",

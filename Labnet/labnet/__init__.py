@@ -45,10 +45,21 @@ _CLIENT_EXPORTS = {
     "ServerResponseError",
 }
 _DEVICE_EXPORTS = {
+    "CALIBRATIONS": ".devices.SacherLaser.calibration",
+    "DEFAULT_DLL_PATH": ".devices.SacherLaser.MaxonEpos2_class",
     "DummyDevice": ".devices.DummyDevice.device",
+    "EposCommandError": ".devices.SacherLaser.MaxonEpos2_class",
+    "IR_CALIBRATION": ".devices.SacherLaser.calibration",
+    "LaserCalibration": ".devices.SacherLaser.calibration",
+    "MaxonEpos2": ".devices.SacherLaser.MaxonEpos2_class",
+    "MovementTimeoutError": ".devices.SacherLaser.MaxonEpos2_class",
     "PhysicalDummyDevice": ".devices.DummyDevice.physical",
     "SimulatedWavemeter": ".devices.SimulatedWavemeter.device",
     "PhysicalSimulatedWavemeter": ".devices.SimulatedWavemeter.physical",
+    "PhysicalSacherLaser": ".devices.SacherLaser.physical",
+    "SacherLaser": ".devices.SacherLaser.device",
+    "SacherLaserError": ".devices.SacherLaser.MaxonEpos2_class",
+    "VIS_CALIBRATION": ".devices.SacherLaser.calibration",
 }
 __all__ = sorted(_CLIENT_EXPORTS | set(_DEVICE_EXPORTS))
 
