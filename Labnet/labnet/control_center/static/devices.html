@@ -11,11 +11,24 @@
     <div class="page-head">
       <div>
         <h1>Devices</h1>
-        <p class="subtle">Device control pages are coming next.</p>
+        <p class="subtle" id="summary">Loading devices…</p>
       </div>
+      <div class="refresh"><span class="pulse" id="pulse"></span><span id="updated"></span></div>
     </div>
-    <div class="placeholder"></div>
+    <div id="banner" class="banner" role="status" hidden></div>
+    <div class="lab-pcs">
+      <section class="lab-pc">
+        <header class="lab-pc-head">
+          <h2>All devices</h2>
+          <span class="lab-pc-count" id="device-count"></span>
+        </header>
+        <ul class="devices" id="devices"></ul>
+      </section>
+    </div>
   </main>
+  <script src="/static/js/markdown.js"></script>
   <script src="/static/js/shell.js"></script>
+  <script src="/static/js/live.js"></script>
+  <script src="/static/js/devices.js"></script>
 </body>
 </html>

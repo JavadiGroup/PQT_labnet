@@ -670,6 +670,7 @@ SACHER_LASER_CONTRACT: Final = DeviceContract(
 @runtime_checkable
 class SimulatedWavemeterPhysicalProtocol(Protocol):
     def read_wavelength(self, channel: str | None = None) -> Any: ...
+    def set_exposure(self, value: float, channel: str | None = None) -> Any: ...
 
 
 _SIMULATED_WAVEMETER_READ_WAVELENGTH: Final = RpcSpec(
@@ -689,6 +690,28 @@ _SIMULATED_WAVEMETER_READ_WAVELENGTH: Final = RpcSpec(
     cardinality='unary',
     forwarded_fields=('channel',),
     forwarded_field_specs=(
+        ForwardedField(name='channel', python_type='str | None', optional=True),
+    ),
+)
+
+_SIMULATED_WAVEMETER_SET_EXPOSURE: Final = RpcSpec(
+    rpc_full_name='labnet.devices.v1.SimulatedWavemeterService.SetExposure',
+    rpc_name='SetExposure',
+    python_name='set_exposure',
+    pattern='RPC_PATTERN_SCALAR_WRITE',
+    pattern_value=2,
+    physical_method='set_exposure',
+    default_unit='ms',
+    request_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SetExposureRequest'),
+    response_type=_SYMBOLS.GetSymbol('labnet.devices.v1.SetExposureResponse'),
+    request_full_name='labnet.devices.v1.SetExposureRequest',
+    response_full_name='labnet.devices.v1.SetExposureResponse',
+    client_streaming=False,
+    server_streaming=False,
+    cardinality='unary',
+    forwarded_fields=('value', 'channel'),
+    forwarded_field_specs=(
+        ForwardedField(name='value', python_type='float', optional=False),
         ForwardedField(name='channel', python_type='str | None', optional=True),
     ),
 )
@@ -721,8 +744,8 @@ SIMULATED_WAVEMETER_CONTRACT: Final = DeviceContract(
     stub_type=_simulated_wavemeter_pb2_grpc.SimulatedWavemeterServiceStub,
     servicer_type=_simulated_wavemeter_pb2_grpc.SimulatedWavemeterServiceServicer,
     add_servicer_to_server=_simulated_wavemeter_pb2_grpc.add_SimulatedWavemeterServiceServicer_to_server,
-    methods=(_SIMULATED_WAVEMETER_READ_WAVELENGTH, _SIMULATED_WAVEMETER_STREAM_WAVELENGTH),
-    physical_methods=('read_wavelength',),
+    methods=(_SIMULATED_WAVEMETER_READ_WAVELENGTH, _SIMULATED_WAVEMETER_SET_EXPOSURE, _SIMULATED_WAVEMETER_STREAM_WAVELENGTH),
+    physical_methods=('read_wavelength', 'set_exposure'),
     physical_protocol=SimulatedWavemeterPhysicalProtocol,
 )
 

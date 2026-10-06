@@ -514,11 +514,152 @@ Central for the network picture, so no API key ever reaches a browser.
 | --- | --- |
 | `/` | Redirects to `/status` |
 | `/status` | **Network** tab: every Lab PC (online/offline, IP), its devices (available, leased, unavailable), and each device's callable methods from its generated contract |
-| `/devices`, `/devices/<id>` | **Devices** tab: placeholder for the device control pages |
+| `/devices` | **Devices** tab: every device on the network in one list, with its Lab PC, state, and callable methods |
+| `/<device-id>` | Device control page, e.g. `/dev02-wavemeter` (see below). The app's own paths (`status`, `devices`, `static`, `api`, `health`) can't be used as device ids for this page. |
 | `/api/status` | The same picture as JSON; refreshed from Central at most every `LABNET_CONTROL_CENTER_REFRESH_SECONDS` |
-| `/api/agent/messages` | Photo-Agent chat endpoint; replies that the agent is not connected yet |
+| `/api/devices/<id>/events` | Live events for a device page: state, samples, script output |
+| `/api/devices/<id>/play`, `/pause`, `/script`, `/script/stop` | Device page controls |
+| `/api/agent`, `/api/agent/messages` | Photo-Agent status, and its chat (answers stream as server-sent events; see below) |
 
 In development `scripts/dev/up.sh` starts it at `http://127.0.0.1:8080/status`.
+
+### Device control pages
+
+Each device page loads the control panel for its device type:
+`static/js/panels/<device_type>.js`, or `panels/generic.js` (a script box
+only) when a type has none yet. The simulated wavemeter's panel has three
+parts:
+
+1. **Live graph.**
+   - **Play** leases the device, sends the parameters (exposure first), then
+     starts the stream and plots it live.
+   - **Pause** stops the stream and releases the lease, so the device is free
+     for others.
+   - **Play again** starts a fresh graph.
+   - The time-window buttons only change how much is shown.
+   - **Export CSV** saves every sample since Play.
+2. **Parameters.** Exposure, sample rate, and channel are sent when Play is
+   pressed, and locked while streaming.
+3. **Script box.** Python-style commands that run on the Control Center
+   with the page's lease (see below).
+
+The Control Center holds the lease, not the browser. Everyone viewing a
+device page shares one session, so anyone viewing it sees the same graph.
+The session releases the device:
+- when Pause is pressed;
+- 15 s after the last viewer closes the page;
+- after the maximum hold time (30 min); or
+- if the device or lease fails.
+
+If someone else already holds the device, Play reports that it is in use.
+
+**Stopping a page left running.** The Network and Devices pages show who
+holds each leased device:
+- **Live in the Control Center · 12 min**, **Script running in the Control
+  Center**, or **Used by a script on `<page>`**. These come with a **Pause**
+  button and an **Open page** link. Pause stops the stream and any script and
+  releases every lease that page holds (`POST /api/devices/<id>/release`).
+- **Leased by another LabNet client**, for a Python program outside the
+  Control Center. Only that program can release it.
+
+Anyone using the Control Center can press Pause, from any computer. A
+forgotten tab on another computer can be stopped by whoever notices it.
+
+**Scripts** look like Python but are checked before they run. Allowed:
+- variables, numbers, strings, lists, dicts, `if`, and `for`;
+- `print`, `sleep`, `mean`, `stdev`, `range`, `len`, `min`, `max`, `round`,
+  `abs`, and `sum`;
+- the page's device as `device` (its contract methods, e.g.
+  `device.set_exposure(50)`);
+- other devices through `lease("device-id")`, released when the script ends.
+
+Imports, `def`, `while`, `with`, other attributes, and names starting with
+`_` are rejected. Each script runs in its own process, which holds no
+credentials. The Control Center performs each device call with its lease,
+and Stop or the 10-minute time limit kills the process. Stream methods
+inside a script need a `sample_count` (at most 10 000) and return a list of
+values.
+
+To add a panel for another device type, copy
+`static/js/panels/simulated_wavemeter.js` to `static/js/panels/<device_type>.js`
+and register it as `PQT.panels["<device_type>"]`. The shared pieces are
+`createChart`, `createScriptBox`, and the session (`session.play`,
+`session.pause`, `session.runScript`). The page picks the new panel up
+automatically.
+
+### Photo-Agent
+
+The chat sidebar on every page is answered by **Claude Code in headless
+mode**. For each message, the Control Center runs `claude -p` and streams the
+answer into the chat.
+- **Conversations:** the Control Center picks each conversation's id
+  (`--session-id`), and follow-ups continue it (`--resume`). The pencil icon
+  starts a new chat.
+  - If Claude Code no longer has a conversation, the answer starts a new one
+    under the same id and says so.
+- **Stopping:** the Stop button (the square that replaces Send), or closing
+  the page, ends the `claude` process.
+
+**The toolbar under the message box:**
+- **Paperclip:** attach files. You can also paste a screenshot or drop files
+  onto the box.
+  - **Types:** images (PNG, JPG, GIF, WebP), which the model sees; PDFs; and
+    text files such as CSV, TSV, TXT, JSON, Python or notebooks.
+  - **Limits:** up to 5 files and 20 MB each per message.
+  - **Not supported:** Excel and binary formats (HDF5, `.npy`). Export them
+    to CSV first.
+- **Model:** `--model`, from `LABNET_AGENT_MODELS`. The menu shows the
+  version (for example "Sonnet 5.5") once Claude Code has used that model.
+- **Effort:** `--effort` (Low, Medium, High, Extra high, Max), meaning how
+  much the model thinks before answering. Haiku has no effort levels, so the
+  menu is greyed out for it.
+
+Each viewer's model and effort are remembered in their browser.
+
+**Attached files** are saved in `uploads/<conversation id>/` in the
+workspace.
+- Only that conversation's answers can read them: each run gets `--add-dir`
+  for its own folder only.
+- They are deleted 14 days after the conversation was last used.
+
+**Account.** It uses the Claude Code login of the Windows account that runs
+the Control Center. No API key is used. Any `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` is removed from its
+environment.
+- Set up once, on that computer and as that account: install Claude Code,
+  run `claude`, and use `/login`.
+- The sidebar badge shows **Ready**, **Sign-in needed**, or **Not
+  connected** (Claude Code not found). Hover over it for the reason.
+- Anthropic's terms limit sharing one person's subscription with other
+  people through an app. Before the whole lab uses it, confirm that your
+  plan covers this (for example a Team plan).
+
+**What it can do.** It can read, but not act:
+- **Tools:** only Read, Glob and Grep. `--permission-mode dontAsk` denies
+  everything else instead of asking. It has no shell, no file edits, no
+  device control, none of the account's own MCP connectors, and no memory
+  between chats (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`).
+- **Folders:**
+  - its working folder `home/` in the workspace (`LABNET_AGENT_WORKSPACE`);
+  - `LABNET_AGENT_SOURCES`, the LabNet code, docs and examples;
+  - `LABNET_AGENT_LITERATURE_DIR`, papers, which it can read as PDFs;
+  - the conversation's own uploads.
+- **Blocked even inside those folders:** `*.env` files, `*.key` files,
+  databases and `logs/`. The Control Center's own Central key is never in its
+  environment.
+- **Live network:** before every message the Control Center writes
+  `home/live/network.md` in the workspace: Lab PCs, devices, states, who
+  holds them, and methods. Questions about what is online are answered from
+  it.
+- **Briefing:** its role and the lab's script style (`from_env()`,
+  try/except/finally, release in reverse order) are in
+  [`agent_briefing.md`](labnet/control_center/agent_briefing.md).
+
+It writes scripts for people to run. It never runs them.
+
+In development, `scripts/dev/seed.sh` points it at this checkout's `Labnet/`
+and `examples/`, and at `literature/` at the repository root (git-ignored;
+drop papers there). Its workspace is `.devnet/agent`.
 
 In the lab it runs on **`central_server_pc`**, next to Central and Caddy:
 - **Central over loopback:** it reaches Central at `http://127.0.0.1:8008` on
@@ -588,6 +729,18 @@ later never sends keys in clear text.
 | `LABNET_CA_FILE` | system trust | Only needed if it ever runs on a different computer and reaches Central over HTTPS |
 | `LABNET_CONTROL_CENTER_HOST` / `_PORT` | `127.0.0.1` / `8080` | Built-in HTTP listener; loopback only |
 | `LABNET_CONTROL_CENTER_REFRESH_SECONDS` | `3` | How often the network picture is refreshed |
+| `LABNET_CONTROL_CENTER_MAX_HOLD_MINUTES` | `30` | Play stops itself and releases the device after this long |
+| `LABNET_CONTROL_CENTER_IDLE_RELEASE_SECONDS` | `15` | A device page releases its device this long after the last viewer leaves |
+| `LABNET_CONTROL_CENTER_SCRIPT_TIMEOUT_SECONDS` | `600` | A script is stopped after this long |
+| `LABNET_AGENT_COMMAND` | `claude` on `PATH`, then `~\.local\bin\claude.exe` | Claude Code for Photo-Agent; if it can't be found, the chat says so |
+| `LABNET_AGENT_WORKSPACE` | `agent` next to the env file | Photo-Agent's folder: `briefing.md`, `home/` (where it runs) and `uploads/` |
+| `LABNET_AGENT_SOURCES` | the installed `labnet` package | Folders it may read, separated by `;` on Windows. In the lab, list the package folder plus any folder where you unpacked the examples (`client-examples.zip`) or lab notes |
+| `LABNET_AGENT_LITERATURE_DIR` | none | Folder of papers it may read |
+| `LABNET_AGENT_MODELS` | `fable,opus,sonnet,haiku` | The chat's model menu: aliases for the latest of each model, or full ids such as `claude-opus-5-5`. List only models your plan includes |
+| `LABNET_AGENT_MODEL` | `sonnet` | The model selected at first; one of `LABNET_AGENT_MODELS` |
+| `LABNET_AGENT_EFFORT` | `high` | The effort selected at first: `low`, `medium`, `high`, `xhigh` or `max` |
+| `LABNET_AGENT_TIMEOUT_SECONDS` | `300` | An answer is stopped after this long |
+| `LABNET_AGENT_MAX_CONCURRENT` | `2` | Answers in progress at once; later messages wait their turn |
 
 ## Lease and streaming behavior
 

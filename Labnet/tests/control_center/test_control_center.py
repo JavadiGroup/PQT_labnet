@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import labnet
 from labnet.client import LabPCInfo, ServerConnectionError
 from labnet.client.core.models import DeviceInfo, EndpointDescriptor
 from labnet.control_center.app import create_app
@@ -121,6 +122,33 @@ def test_settings_come_from_one_env_file(tmp_path: Path) -> None:
     assert settings.ca_file == (tmp_path / "ca.pem").resolve()
     assert settings.port == 8090
     assert settings.bind_host == "127.0.0.1"
+    # Photo-Agent: workspace next to the env file, reads the installed package.
+    assert settings.agent_workspace == tmp_path / "agent"
+    assert settings.agent_sources == (Path(labnet.__file__).resolve().parent,)
+    assert settings.agent_literature_dir is None and settings.agent_model == "sonnet"
+
+
+def test_agent_folders_resolve_against_the_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for folder in ("code", "examples", "papers"):
+        (tmp_path / folder).mkdir()
+    env_file = tmp_path / "control-center.env"
+    env_file.write_text(
+        f"LABNET_API_KEY=secret\nLABNET_AGENT_SOURCES=code{os.pathsep}examples\n"
+        "LABNET_AGENT_LITERATURE_DIR=papers\nLABNET_AGENT_MODEL=opus\n",
+        encoding="utf-8",
+    )
+
+    settings = ControlCenterSettings.from_env(env_file)
+
+    assert settings.agent_sources == ((tmp_path / "code").resolve(), (tmp_path / "examples").resolve())
+    assert settings.agent_literature_dir == (tmp_path / "papers").resolve()
+    assert settings.agent_model == "opus"
+
+    # The process environment wins over the file, so drop what the first load set.
+    monkeypatch.delenv("LABNET_AGENT_LITERATURE_DIR")
+    env_file.write_text("LABNET_API_KEY=secret\nLABNET_AGENT_LITERATURE_DIR=missing\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="LABNET_AGENT_LITERATURE_DIR is not a folder"):
+        ControlCenterSettings.from_env(env_file)
 
 
 def test_settings_require_a_key_and_a_loopback_bind(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,10 +196,33 @@ def test_pages_are_served_and_the_root_opens_status() -> None:
         home = client.get("/", follow_redirects=False)
         assert home.status_code == 307 and home.headers["location"] == "/status"
         assert 'data-page="network"' in client.get("/status").text
-        assert 'data-page="devices"' in client.get("/devices").text
-        assert 'data-page="devices"' in client.get("/devices/free-dummy").text
-        for asset in ("/static/css/app.css", "/static/js/shell.js", "/static/js/status.js"):
+        devices = client.get("/devices").text
+        assert 'data-page="devices"' in devices and 'id="devices"' in devices
+        for asset in (
+            "/static/css/app.css",
+            "/static/js/shell.js",
+            "/static/js/live.js",
+            "/static/js/status.js",
+            "/static/js/devices.js",
+            "/static/js/device.js",
+        ):
             assert client.get(asset).status_code == 200
+
+
+def test_each_device_has_a_control_page_at_its_id() -> None:
+    with _app(FakeCentral()) as client:
+        page = client.get("/free-dummy")
+        assert page.status_code == 200
+        assert "/static/js/device.js" in page.text
+        # Device ids may contain '.', ':' and '-'.
+        assert client.get("/rack-2.bench:a").status_code == 200
+        # The app's own paths are never mistaken for a device.
+        assert client.get("/favicon.ico").status_code == 204
+        for reserved in ("/api", "/health", "/static"):
+            assert client.get(reserved).status_code == 404
+        # Not a LabNet identifier (and the old /devices/<id> address is gone).
+        assert client.get("/-bad").status_code == 404
+        assert client.get("/devices/free-dummy").status_code == 404
 
 
 def test_status_reports_lab_pcs_and_device_states() -> None:
@@ -193,7 +244,7 @@ def test_status_reports_lab_pcs_and_device_states() -> None:
     }
     mystery = first["devices"][3]
     assert mystery["known_contract"] is False and mystery["methods"] == []
-    assert first["devices"][0]["control_url"] == "/devices/free-dummy"
+    assert first["devices"][0]["control_url"] == "/free-dummy"
     assert second["online"] is False
     assert second["devices"][0] == {
         **second["devices"][0], "state": "unavailable", "detail": "Lab PC is offline",
@@ -224,12 +275,14 @@ def test_central_outage_keeps_the_last_known_network() -> None:
     assert ready.status_code == 503
 
 
-def test_agent_chat_answers_without_an_agent() -> None:
+def test_agent_chat_explains_when_claude_code_is_missing() -> None:
     with _app(FakeCentral()) as client:
+        info = client.get("/api/agent").json()
         reply = client.post("/api/agent/messages", json={"message": "Plan a scan"})
         empty = client.post("/api/agent/messages", json={"message": ""})
 
+    assert info["enabled"] is False and "not found" in info["reason"]
     assert reply.status_code == 200
     assert reply.json()["connected"] is False
-    assert "isn't connected yet" in reply.json()["reply"]
+    assert "Claude Code (claude) was not found" in reply.json()["reply"]
     assert empty.status_code == 422

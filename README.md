@@ -238,9 +238,16 @@ To change the topology (more Lab PCs, other ports), edit
 `up.sh` also starts the web interface at
 **http://127.0.0.1:8080/status**: every Lab PC, its devices, their state
 (available, leased, unavailable), and each device's callable methods. The
-**Network** tab is that status page, and **Devices** is a placeholder for the
-device control pages. The Photo-Agent sidebar is a working chat box; the
-agent behind it is not connected yet.
+**Network** tab is that status page, grouped by Lab PC. The **Devices** tab
+lists every device in one list. On both, "Device control" opens the device's
+own page at `/<device-id>` (e.g. `http://127.0.0.1:8080/dev02-wavemeter`).
+
+The wavemeter's page has a live graph with Play/Pause, a time window, and
+CSV export; parameters that are sent when Play is pressed; and a script box.
+Other device types get a script box until they have their own panel (see
+[Device control pages](Labnet/README.md#device-control-pages)). The
+Photo-Agent sidebar is a working chat box; the agent behind it is not
+connected yet.
 
 The Control Center is just another LabNet client with its own Central user,
 so the browser never sees an API key. In both development and the lab it
@@ -286,6 +293,17 @@ scripts/dev/smoke.sh                 # 5. prove every device still answers
 `scripts/dev/redeploy.sh` runs steps 1, 3, 4, and 5 in order and stops at the
 first failure. Use `redeploy.sh --skip-tests` for a faster loop when you only
 changed an inventory.
+
+When the change touches only one component, restart just that one and leave
+the rest running:
+
+```bash
+scripts/dev/restart.sh control-center      # Control Center Python or its .env
+scripts/dev/restart.sh lab-pc-dev-02       # that Lab PC's inventory or .env
+scripts/dev/restart.sh central             # Central code or central.env
+```
+
+Control Center page files (HTML, CSS, JS) need no restart: refresh the browser.
 
 ### Adding or removing instruments of an existing family
 
@@ -428,6 +446,7 @@ backup if you need to.
 | `scripts/dev/down.sh` | dev machine | Stop Lab PCs, then Central (found by port; only Python processes) |
 | `scripts/dev/codegen.sh [--skip-tests]` | dev machine | Generate protos, `--check`, run pytest |
 | `scripts/dev/redeploy.sh [--skip-tests]` | dev machine | `down` → `codegen` → `up` → `smoke` |
+| `scripts/dev/restart.sh COMPONENT...` | dev machine | Restart only `central`, `control-center`, or a Lab PC id, leaving the rest running |
 | `scripts/dev/config.sh` | — | Dev topology: Lab-PC ids, ports, inventories |
 | `scripts/release/build.sh [--wheelhouse] [--output DIR]` | development PC | Build and stage a hash-recorded release |
 | `update_host.sh <central\|lab-pc\|client\|control-center>` | each runtime computer | Verify, install, migrate or install site/examples, record |

@@ -47,7 +47,29 @@ def test_driver_satisfies_its_generated_contract() -> None:
     contract = DEVICE_CONTRACT_BY_TYPE["simulated_wavemeter"]
 
     validate_implementation(PhysicalSimulatedWavemeter, contract)
-    assert contract.allowed_physical_methods == ("read_wavelength",)
+    assert contract.allowed_physical_methods == ("read_wavelength", "set_exposure")
+
+
+def test_longer_exposure_is_quieter_and_slower() -> None:
+    import statistics
+    import time
+
+    meter = PhysicalSimulatedWavemeter("exposure-test", noise_nm=0.01, drift_nm_per_hour=0.0)
+    meter.connect()
+    try:
+        short = [meter.read_wavelength() for _ in range(60)]
+        assert meter.set_exposure(100.0) == 100.0
+        started = time.monotonic()
+        long = [meter.read_wavelength() for _ in range(5)]
+        assert time.monotonic() - started >= 0.5  # 5 readings x 100 ms
+        long += [meter.read_wavelength() for _ in range(55)]
+    finally:
+        meter.disconnect()
+
+    # Ten times the exposure gives about sqrt(10) ~ 3.2 times less noise.
+    assert statistics.stdev(long) < statistics.stdev(short) / 2
+    with pytest.raises(ValueError, match="Exposure must be between"):
+        meter.set_exposure(0)
 
 
 @pytest.mark.asyncio

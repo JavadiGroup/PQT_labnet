@@ -29,3 +29,6 @@ dist/
 
 # Output of examples/04_scan_two_devices.py
 scan.csv
+
+# Papers for Photo-Agent in development (LABNET_AGENT_LITERATURE_DIR)
+literature/

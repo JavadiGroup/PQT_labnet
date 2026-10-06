@@ -17,6 +17,21 @@ message ReadWavelengthResponse {
   ScalarMeasurement measurement = 2;
 }
 
+message SetExposureRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+
+  // Exposure time per reading, in milliseconds (an absolute setting).
+  double value = 4;
+  optional string unit = 5;
+}
+
+message SetExposureResponse {
+  string operation_id = 1;
+  ScalarMeasurement measurement = 2;
+}
+
 // A read-only simulated wavemeter: a noisy, slowly drifting wavelength. It
 // shows a second device family next to DummyDevice and gives the example
 // experiments a meaningful measurement to average.
@@ -26,6 +41,15 @@ service SimulatedWavemeterService {
       pattern: RPC_PATTERN_SCALAR_READ
       physical_method: "read_wavelength"
       default_unit: "nm"
+    };
+  }
+
+  // Longer exposure means less noise per reading, but each reading takes longer.
+  rpc SetExposure(SetExposureRequest) returns (SetExposureResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_exposure"
+      default_unit: "ms"
     };
   }
 

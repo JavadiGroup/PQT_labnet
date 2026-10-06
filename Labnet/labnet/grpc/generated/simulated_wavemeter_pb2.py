@@ -27,7 +27,7 @@ from . import rpc_options_pb2 as rpc__options__pb2
 from . import transfer_pb2 as transfer__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19simulated_wavemeter.proto\x12\x11labnet.devices.v1\x1a\x0c\x63ommon.proto\x1a\x11rpc_options.proto\x1a\x0etransfer.proto\"b\n\x15ReadWavelengthRequest\x12\x11\n\tdevice_id\x18\x01 \x01(\t\x12\x14\n\x0coperation_id\x18\x02 \x01(\t\x12\x14\n\x07\x63hannel\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_channel\"i\n\x16ReadWavelengthResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x39\n\x0bmeasurement\x18\x02 \x01(\x0b\x32$.labnet.devices.v1.ScalarMeasurement2\xa0\x02\n\x19SimulatedWavemeterService\x12\x82\x01\n\x0eReadWavelength\x12(.labnet.devices.v1.ReadWavelengthRequest\x1a).labnet.devices.v1.ReadWavelengthResponse\"\x1b\x8a\xb5\x18\x17\x08\x01\x12\x0fread_wavelength\x1a\x02nm\x12~\n\x10StreamWavelength\x12$.labnet.devices.v1.StreamDataRequest\x1a%.labnet.devices.v1.StreamDataResponse\"\x1b\x8a\xb5\x18\x17\x08\x06\x12\x0fread_wavelength\x1a\x02nm0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19simulated_wavemeter.proto\x12\x11labnet.devices.v1\x1a\x0c\x63ommon.proto\x1a\x11rpc_options.proto\x1a\x0etransfer.proto\"b\n\x15ReadWavelengthRequest\x12\x11\n\tdevice_id\x18\x01 \x01(\t\x12\x14\n\x0coperation_id\x18\x02 \x01(\t\x12\x14\n\x07\x63hannel\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_channel\"i\n\x16ReadWavelengthResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x39\n\x0bmeasurement\x18\x02 \x01(\x0b\x32$.labnet.devices.v1.ScalarMeasurement\"\x8a\x01\n\x12SetExposureRequest\x12\x11\n\tdevice_id\x18\x01 \x01(\t\x12\x14\n\x0coperation_id\x18\x02 \x01(\t\x12\x14\n\x07\x63hannel\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\r\n\x05value\x18\x04 \x01(\x01\x12\x11\n\x04unit\x18\x05 \x01(\tH\x01\x88\x01\x01\x42\n\n\x08_channelB\x07\n\x05_unit\"f\n\x13SetExposureResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x39\n\x0bmeasurement\x18\x02 \x01(\x0b\x32$.labnet.devices.v1.ScalarMeasurement2\x98\x03\n\x19SimulatedWavemeterService\x12\x82\x01\n\x0eReadWavelength\x12(.labnet.devices.v1.ReadWavelengthRequest\x1a).labnet.devices.v1.ReadWavelengthResponse\"\x1b\x8a\xb5\x18\x17\x08\x01\x12\x0fread_wavelength\x1a\x02nm\x12v\n\x0bSetExposure\x12%.labnet.devices.v1.SetExposureRequest\x1a&.labnet.devices.v1.SetExposureResponse\"\x18\x8a\xb5\x18\x14\x08\x02\x12\x0cset_exposure\x1a\x02ms\x12~\n\x10StreamWavelength\x12$.labnet.devices.v1.StreamDataRequest\x1a%.labnet.devices.v1.StreamDataResponse\"\x1b\x8a\xb5\x18\x17\x08\x06\x12\x0fread_wavelength\x1a\x02nm0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,12 +36,18 @@ if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_SIMULATEDWAVEMETERSERVICE'].methods_by_name['ReadWavelength']._loaded_options = None
   _globals['_SIMULATEDWAVEMETERSERVICE'].methods_by_name['ReadWavelength']._serialized_options = b'\212\265\030\027\010\001\022\017read_wavelength\032\002nm'
+  _globals['_SIMULATEDWAVEMETERSERVICE'].methods_by_name['SetExposure']._loaded_options = None
+  _globals['_SIMULATEDWAVEMETERSERVICE'].methods_by_name['SetExposure']._serialized_options = b'\212\265\030\024\010\002\022\014set_exposure\032\002ms'
   _globals['_SIMULATEDWAVEMETERSERVICE'].methods_by_name['StreamWavelength']._loaded_options = None
   _globals['_SIMULATEDWAVEMETERSERVICE'].methods_by_name['StreamWavelength']._serialized_options = b'\212\265\030\027\010\006\022\017read_wavelength\032\002nm'
   _globals['_READWAVELENGTHREQUEST']._serialized_start=97
   _globals['_READWAVELENGTHREQUEST']._serialized_end=195
   _globals['_READWAVELENGTHRESPONSE']._serialized_start=197
   _globals['_READWAVELENGTHRESPONSE']._serialized_end=302
-  _globals['_SIMULATEDWAVEMETERSERVICE']._serialized_start=305
-  _globals['_SIMULATEDWAVEMETERSERVICE']._serialized_end=593
+  _globals['_SETEXPOSUREREQUEST']._serialized_start=305
+  _globals['_SETEXPOSUREREQUEST']._serialized_end=443
+  _globals['_SETEXPOSURERESPONSE']._serialized_start=445
+  _globals['_SETEXPOSURERESPONSE']._serialized_end=547
+  _globals['_SIMULATEDWAVEMETERSERVICE']._serialized_start=550
+  _globals['_SIMULATEDWAVEMETERSERVICE']._serialized_end=958
 # @@protoc_insertion_point(module_scope)

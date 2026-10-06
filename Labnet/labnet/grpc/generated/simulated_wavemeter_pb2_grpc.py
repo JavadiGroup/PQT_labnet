@@ -43,6 +43,11 @@ class SimulatedWavemeterServiceStub:
                 request_serializer=simulated__wavemeter__pb2.ReadWavelengthRequest.SerializeToString,
                 response_deserializer=simulated__wavemeter__pb2.ReadWavelengthResponse.FromString,
                 _registered_method=True)
+        self.SetExposure = channel.unary_unary(
+                '/labnet.devices.v1.SimulatedWavemeterService/SetExposure',
+                request_serializer=simulated__wavemeter__pb2.SetExposureRequest.SerializeToString,
+                response_deserializer=simulated__wavemeter__pb2.SetExposureResponse.FromString,
+                _registered_method=True)
         self.StreamWavelength = channel.unary_stream(
                 '/labnet.devices.v1.SimulatedWavemeterService/StreamWavelength',
                 request_serializer=transfer__pb2.StreamDataRequest.SerializeToString,
@@ -62,6 +67,13 @@ class SimulatedWavemeterServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetExposure(self, request, context):
+        """Longer exposure means less noise per reading, but each reading takes longer.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def StreamWavelength(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -75,6 +87,11 @@ def add_SimulatedWavemeterServiceServicer_to_server(servicer, server):
                     servicer.ReadWavelength,
                     request_deserializer=simulated__wavemeter__pb2.ReadWavelengthRequest.FromString,
                     response_serializer=simulated__wavemeter__pb2.ReadWavelengthResponse.SerializeToString,
+            ),
+            'SetExposure': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetExposure,
+                    request_deserializer=simulated__wavemeter__pb2.SetExposureRequest.FromString,
+                    response_serializer=simulated__wavemeter__pb2.SetExposureResponse.SerializeToString,
             ),
             'StreamWavelength': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamWavelength,
@@ -112,6 +129,33 @@ class SimulatedWavemeterService:
             '/labnet.devices.v1.SimulatedWavemeterService/ReadWavelength',
             simulated__wavemeter__pb2.ReadWavelengthRequest.SerializeToString,
             simulated__wavemeter__pb2.ReadWavelengthResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetExposure(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/labnet.devices.v1.SimulatedWavemeterService/SetExposure',
+            simulated__wavemeter__pb2.SetExposureRequest.SerializeToString,
+            simulated__wavemeter__pb2.SetExposureResponse.FromString,
             options,
             channel_credentials,
             insecure,

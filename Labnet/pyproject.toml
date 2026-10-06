@@ -65,7 +65,13 @@ namespaces = false
 [tool.setuptools.package-data]
 labnet = ["py.typed"]
 "labnet.grpc.generated" = ["*.pyi"]
-"labnet.control_center" = ["static/*.html", "static/css/*.css", "static/js/*.js"]
+"labnet.control_center" = [
+    "agent_briefing.md",
+    "static/*.html",
+    "static/css/*.css",
+    "static/js/*.js",
+    "static/js/panels/*.js",
+]
 "labnet.devices.SacherLaser" = ["DLLs/*.dll"]
 "labnet.central" = [
     "alembic.ini",

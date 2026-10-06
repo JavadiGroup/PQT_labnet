@@ -62,9 +62,17 @@ EOF
     ok "$lab_pc_id -> gRPC :$grpc_port, health :$http_port, $inventory"
 done
 
-# setup wrote the Control Center's Central URL and key; add where it listens.
-echo "LABNET_CONTROL_CENTER_PORT=$CONTROL_CENTER_PORT" >> "$DEVNET_DIR/$CONTROL_CENTER_USER.env"
-ok "$CONTROL_CENTER_USER -> http://127.0.0.1:$CONTROL_CENTER_PORT/status"
+# setup wrote the Control Center's Central URL and key; add where it listens,
+# and what Photo-Agent may read: this checkout's code and docs, and the
+# papers in literature/ (git-ignored). Its workspace is .devnet/agent.
+case "$OSTYPE" in msys*|cygwin*) path_sep=";" ;; *) path_sep=":" ;; esac
+mkdir -p "$REPO_ROOT/literature"
+cat >> "$DEVNET_DIR/$CONTROL_CENTER_USER.env" << EOF
+LABNET_CONTROL_CENTER_PORT=$CONTROL_CENTER_PORT
+LABNET_AGENT_SOURCES=$(native_path "$REPO_ROOT/Labnet")$path_sep$(native_path "$REPO_ROOT/examples")
+LABNET_AGENT_LITERATURE_DIR=$(native_path "$REPO_ROOT/literature")
+EOF
+ok "$CONTROL_CENTER_USER -> http://127.0.0.1:$CONTROL_CENTER_PORT/status (Photo-Agent reads Labnet/, examples/, literature/)"
 
 ok "Seeded. Keys and settings are in $DEVNET_DIR (git-ignored)."
 echo "Next: scripts/dev/up.sh"

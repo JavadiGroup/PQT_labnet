@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device · PQT Lab Control Center</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-page="devices">
+  <main id="page" class="workspace">
+    <div class="page-head">
+      <div>
+        <a class="crumb" href="/devices">← All devices</a>
+        <h1 id="device-title">Device</h1>
+        <p class="subtle device-summary" id="summary">Loading…</p>
+      </div>
+      <div class="refresh"><span class="pulse" id="pulse"></span><span id="updated"></span></div>
+    </div>
+    <div id="banner" class="banner" role="status" hidden></div>
+    <!-- Filled by the control panel for this device's type (js/panels/). -->
+    <div class="placeholder control-panels" id="control" aria-label="Device control"></div>
+  </main>
+  <script src="/static/js/markdown.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/live.js"></script>
+  <script src="/static/js/chart.js"></script>
+  <script src="/static/js/session.js"></script>
+  <script src="/static/js/script-box.js"></script>
+  <script src="/static/js/device.js"></script>
+</body>
+</html>

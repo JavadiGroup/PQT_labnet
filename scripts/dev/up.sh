@@ -16,7 +16,7 @@ require_dev_python
 export PYTHONUNBUFFERED=1
 
 if port_in_use "$CENTRAL_PORT"; then
-    ok "Central already running (run down.sh first to load code changes)"
+    ok "Central already running (restart.sh reloads code changes)"
 else
     log "Starting Central on $CENTRAL_URL"
     start_process central "$CENTRAL_PORT" "$DEVNET_DIR/logs/central.log" \
@@ -30,7 +30,7 @@ for entry in "${LAB_PCS[@]}"; do
     read -r lab_pc_id grpc_port http_port _inventory <<< "$entry"
     log_file="$DEVNET_DIR/logs/$lab_pc_id.log"
     if port_in_use "$http_port"; then
-        ok "$lab_pc_id already running (run down.sh first to load code changes)"
+        ok "$lab_pc_id already running (restart.sh reloads code changes)"
     else
         [[ -f "$DEVNET_DIR/$lab_pc_id.env" ]] || die "$lab_pc_id has no settings file. Re-run scripts/dev/seed.sh."
         port_in_use "$grpc_port" && die "gRPC port $grpc_port (for $lab_pc_id) is already in use."
@@ -46,7 +46,7 @@ done
 
 log_file="$DEVNET_DIR/logs/control-center.log"
 if port_in_use "$CONTROL_CENTER_PORT"; then
-    ok "Control Center already running (run down.sh first to load code changes)"
+    ok "Control Center already running (restart.sh reloads code changes)"
 else
     [[ -f "$DEVNET_DIR/$CONTROL_CENTER_USER.env" ]] || die "No Control Center settings. Re-run scripts/dev/seed.sh."
     log "Starting the Control Center"
