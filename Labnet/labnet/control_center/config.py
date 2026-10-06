@@ -54,6 +54,8 @@ class ControlCenterSettings:
     idle_release_seconds: float = 15.0
     # and a script is stopped after this long.
     script_timeout_seconds: float = 600.0
+    # Experiments tab: one JSON file per experiment (created on the first save).
+    experiments_dir: Path = Path("experiments")
     # Photo-Agent: the `claude` command (found on PATH when unset), its working
     # folder, the folders it may read, and limits.
     agent_command: Path | None = None
@@ -108,6 +110,8 @@ class ControlCenterSettings:
             max_hold_minutes=float(os.getenv("LABNET_CONTROL_CENTER_MAX_HOLD_MINUTES", "30")),
             idle_release_seconds=float(os.getenv("LABNET_CONTROL_CENTER_IDLE_RELEASE_SECONDS", "15")),
             script_timeout_seconds=float(os.getenv("LABNET_CONTROL_CENTER_SCRIPT_TIMEOUT_SECONDS", "600")),
+            # Next to the env file unless set; worth backing up in the lab.
+            experiments_dir=optional_path("LABNET_CONTROL_CENTER_EXPERIMENTS_DIR") or base_directory / "experiments",
             agent_command=optional_path("LABNET_AGENT_COMMAND"),
             # Next to the env file unless set: .devnet/agent, C:\ProgramData\LabNet\agent.
             agent_workspace=optional_path("LABNET_AGENT_WORKSPACE") or base_directory / "agent",
@@ -151,6 +155,8 @@ class ControlCenterSettings:
         for source in self.agent_sources:
             if not source.is_dir():
                 raise ValueError(f"LABNET_AGENT_SOURCES: not a folder: {source}")
+        if self.experiments_dir.exists() and not self.experiments_dir.is_dir():
+            raise ValueError(f"LABNET_CONTROL_CENTER_EXPERIMENTS_DIR is not a folder: {self.experiments_dir}")
         if self.agent_literature_dir is not None and not self.agent_literature_dir.is_dir():
             raise ValueError(f"LABNET_AGENT_LITERATURE_DIR is not a folder: {self.agent_literature_dir}")
         if not self.agent_models:

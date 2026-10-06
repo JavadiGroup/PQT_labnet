@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiments · PQT Lab Control Center</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-page="experiments">
+  <main id="page" class="workspace">
+    <div class="page-head">
+      <div>
+        <h1>Experiments</h1>
+        <p class="subtle" id="summary">Loading experiments…</p>
+      </div>
+      <div class="page-actions">
+        <div class="refresh"><span class="pulse" id="pulse"></span><span id="updated"></span></div>
+        <button class="button primary" type="button" id="new-experiment">New experiment</button>
+      </div>
+    </div>
+    <div id="banner" class="banner" role="status" hidden></div>
+    <div id="notice" class="banner" role="status" hidden></div>
+    <div class="lab-pcs">
+      <section class="lab-pc">
+        <header class="lab-pc-head">
+          <h2>All experiments</h2>
+          <span class="lab-pc-count" id="experiment-count"></span>
+        </header>
+        <ul class="devices experiments" id="experiments"></ul>
+      </section>
+    </div>
+  </main>
+  <script src="/static/js/markdown.js"></script>
+  <script src="/static/js/experiment-model.js"></script>
+  <script src="/static/js/experiment-card.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/live.js"></script>
+  <script src="/static/js/experiments.js"></script>
+</body>
+</html>

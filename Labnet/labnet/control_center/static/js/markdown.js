@@ -3,6 +3,7 @@
 // Supported: paragraphs, headings, lists, quotes, tables, rules, fenced code
 // (with a Copy button), `code`, **bold**, and http(s) links. An unclosed code
 // fence renders as code, so a streaming answer looks right while it arrives.
+// register(language, fn) renders a fenced block another way (e.g. a card).
 
 (function () {
   "use strict";
@@ -87,13 +88,45 @@
   const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
   const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
-  function render(markdown) {
-    const fragment = document.createDocumentFragment();
+  // Renderers for fenced blocks by language, e.g. "pqt-experiment" cards.
+  // fn(source, {closed}) returns a Node; closed is false while the fence is
+  // still streaming in. A renderer that throws falls back to a code block.
+  const renderers = Object.create(null);
+
+  function register(language, renderer) {
+    renderers[language] = renderer;
+  }
+
+  function fencedBlock(language, lines, closed) {
+    const renderer = renderers[language];
+    if (renderer) {
+      try {
+        const rendered = renderer(lines.join("\n"), { closed });
+        if (rendered instanceof Node) return rendered;
+      } catch (error) {
+        console.error("Rendering a " + language + " block failed:", error);
+      }
+    }
+    return codeBlock(language, lines);
+  }
+
+  // Splits Markdown into top-level blocks. Each has a key (its kind and exact
+  // source) and a build() that makes its element, so renderInto() can keep
+  // blocks whose source hasn't changed.
+  function parse(markdown) {
+    const blocks = [];
     const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
     let paragraph = [];
 
+    function add(kind, source, build) {
+      blocks.push({ key: kind + "\u0000" + source, build });
+    }
+
     function flush() {
-      if (paragraph.length) fragment.append(node("p", "", withBreaks(paragraph)));
+      if (paragraph.length) {
+        const text = paragraph;
+        add("p", text.join("\n"), () => node("p", "", withBreaks(text)));
+      }
       paragraph = [];
     }
 
@@ -104,7 +137,10 @@
         flush();
         const body = [];
         for (i++; i < lines.length && !lines[i].trim().startsWith(fence[1]); i++) body.push(lines[i]);
-        fragment.append(codeBlock(fence[2], body));
+        const closed = i < lines.length;
+        add("fence:" + (closed ? "closed" : "open"), line + "\n" + body.join("\n"), () =>
+          fencedBlock(fence[2], body, closed)
+        );
         continue;
       }
       if (!line.trim()) {
@@ -114,41 +150,51 @@
       const heading = line.match(HEADING);
       if (heading) {
         flush();
-        fragment.append(node("h" + Math.min(6, heading[1].length + 2), "md-heading", inline(heading[2])));
+        add("h", line, () => node("h" + Math.min(6, heading[1].length + 2), "md-heading", inline(heading[2])));
         continue;
       }
       if (RULE.test(line)) {
         flush();
-        fragment.append(node("hr"));
+        add("hr", line, () => node("hr"));
         continue;
       }
       if (line.trim().startsWith("|") && i + 1 < lines.length && TABLE_DIVIDER.test(lines[i + 1])) {
         flush();
-        const head = node("thead", "", [tableRow(line, "th")]);
-        const body = node("tbody");
-        for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) body.append(tableRow(lines[i], "td"));
+        const rows = [];
+        for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) rows.push(lines[i]);
         i--;
-        fragment.append(node("div", "md-table", [node("table", "", [head, body])]));
+        add("table", line + "\n" + rows.join("\n"), () =>
+          node("div", "md-table", [
+            node("table", "", [
+              node("thead", "", [tableRow(line, "th")]),
+              node("tbody", "", rows.map((row) => tableRow(row, "td"))),
+            ]),
+          ])
+        );
         continue;
       }
       const item = line.match(LIST_ITEM);
       if (item) {
         flush();
         const ordered = /\d/.test(item[2]);
-        const list = node(ordered ? "ol" : "ul");
+        const source = [];
         for (; i < lines.length; i++) {
-          const next = lines[i].match(LIST_ITEM);
-          if (next) {
-            const entry = node("li", next[1].length >= 2 ? "md-nested" : "", inline(next[3]));
-            list.append(entry);
-          } else if (lines[i].trim() && /^\s{2,}/.test(lines[i]) && list.lastChild) {
-            list.lastChild.append(" ", ...inline(lines[i].trim())); // a wrapped item continues
+          if (lines[i].match(LIST_ITEM) || (lines[i].trim() && /^\s{2,}/.test(lines[i]) && source.length)) {
+            source.push(lines[i]);
           } else {
             break;
           }
         }
         i--;
-        fragment.append(list);
+        add(ordered ? "ol" : "ul", source.join("\n"), () => {
+          const list = node(ordered ? "ol" : "ul");
+          for (const entry of source) {
+            const next = entry.match(LIST_ITEM);
+            if (next) list.append(node("li", next[1].length >= 2 ? "md-nested" : "", inline(next[3])));
+            else list.lastChild.append(" ", ...inline(entry.trim())); // a wrapped item continues
+          }
+          return list;
+        });
         continue;
       }
       if (line.startsWith(">")) {
@@ -156,14 +202,41 @@
         const quoted = [];
         for (; i < lines.length && lines[i].startsWith(">"); i++) quoted.push(lines[i].replace(/^>\s?/, ""));
         i--;
-        fragment.append(node("blockquote", "", withBreaks(quoted)));
+        add("quote", quoted.join("\n"), () => node("blockquote", "", withBreaks(quoted)));
         continue;
       }
       paragraph.push(line);
     }
     flush();
+    return blocks;
+  }
+
+  function render(markdown) {
+    const fragment = document.createDocumentFragment();
+    for (const block of parse(markdown)) fragment.append(block.build());
     return fragment;
   }
 
-  window.PQTMarkdown = { render };
+  // Updates `container` to show `markdown`, keeping every leading block whose
+  // source is unchanged. A streaming answer only grows at the end, so buttons
+  // and open details in earlier blocks stay put (and stay clickable).
+  const blockKeys = new WeakMap();
+
+  function renderInto(container, markdown) {
+    const blocks = parse(markdown);
+    const existing = [...container.children];
+    let kept = 0;
+    while (kept < blocks.length && kept < existing.length && blockKeys.get(existing[kept]) === blocks[kept].key) {
+      kept++;
+    }
+    for (let index = existing.length - 1; index >= kept; index--) existing[index].remove();
+    for (const block of blocks.slice(kept)) {
+      let element = block.build();
+      if (!(element instanceof Element)) element = node("div", "", [element]);
+      blockKeys.set(element, block.key);
+      container.append(element);
+    }
+  }
+
+  window.PQTMarkdown = { codeBlock, copyText, register, render, renderInto };
 })();

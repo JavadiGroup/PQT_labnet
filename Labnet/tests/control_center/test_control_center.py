@@ -12,7 +12,7 @@ from labnet.client import LabPCInfo, ServerConnectionError
 from labnet.client.core.models import DeviceInfo, EndpointDescriptor
 from labnet.control_center.app import create_app
 from labnet.control_center.config import ControlCenterSettings
-from labnet.control_center.contracts import describe_device_type, type_label
+from labnet.control_center.contracts import describe_device_type, facade_class_name, type_label
 from labnet.grpc.generated.device_contracts import DEVICE_CONTRACTS
 
 
@@ -172,20 +172,44 @@ def test_every_generated_contract_can_be_described() -> None:
         ]
 
 
+def test_every_family_has_a_client_class() -> None:
+    """Generated scripts import <Service minus "Service"> from labnet."""
+
+    for contract in DEVICE_CONTRACTS:
+        name = facade_class_name(contract)
+        assert name is not None, contract.service_name
+        assert getattr(labnet, name).contract is contract
+
+
 def test_methods_show_the_python_client_signature() -> None:
     methods = {method["name"]: method for method in describe_device_type("dummy_device")}
 
     assert methods["read_value"]["parameters"] == ["channel: str | None = None"]
-    assert methods["read_value"]["returns"] == "Measurement"
+    assert methods["read_value"]["returns"] == "float"  # what the sync facades return
+    assert methods["read_value"]["role"] == "record"
     assert methods["write_value"]["parameters"] == [
         "value: float",
         "channel: str | None = None",
         "unit: str | None = None",
     ]
+    assert methods["write_value"]["fields"] == [
+        {"name": "value", "type": "float", "optional": False},
+        {"name": "channel", "type": "str | None", "optional": True},
+    ]
+    assert methods["write_value"]["role"] == "setting" and methods["write_value"]["sweep_field"] == "value"
     assert methods["stream_data"]["kind"] == "stream"
     assert methods["stream_data"]["parameters"][0] == "sample_rate_hz: float"
     assert describe_device_type("not_in_this_build") is None
     assert type_label("simulated_wavemeter") == "Simulated Wavemeter"
+    assert type_label("sacher_laser") == "Sacher Laser"
+    assert type_label("not_in_this_build") == "Not In This Build"
+
+
+def test_a_command_with_one_number_can_be_swept() -> None:
+    laser = {method["name"]: method for method in describe_device_type("sacher_laser")}
+    assert laser["go_to_wavelength_nm"]["role"] == "command"
+    assert laser["go_to_wavelength_nm"]["sweep_field"] == "wavelength_nm"
+    assert laser["stop"]["sweep_field"] is None
 
 
 # ---- pages and API ----------------------------------------------------------------
@@ -286,3 +310,19 @@ def test_agent_chat_explains_when_claude_code_is_missing() -> None:
     assert reply.json()["connected"] is False
     assert "Claude Code (claude) was not found" in reply.json()["reply"]
     assert empty.status_code == 422
+
+
+def test_every_static_file_is_packaged() -> None:
+    """Each file the Control Center serves must match a package-data glob."""
+
+    import fnmatch
+    import tomllib
+
+    package = Path(__file__).resolve().parents[2] / "labnet" / "control_center"
+    globs = tomllib.loads((package.parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = globs["tool"]["setuptools"]["package-data"]["labnet.control_center"]
+    for path in (package / "static").rglob("*"):
+        if path.is_file():
+            relative = path.relative_to(package).as_posix()
+            assert any(fnmatch.fnmatch(relative, pattern) for pattern in patterns), relative
+    assert "agent_briefing.md" in patterns

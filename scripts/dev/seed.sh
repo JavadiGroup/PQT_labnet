@@ -65,10 +65,13 @@ done
 # setup wrote the Control Center's Central URL and key; add where it listens,
 # and what Photo-Agent may read: this checkout's code and docs, and the
 # papers in literature/ (git-ignored). Its workspace is .devnet/agent.
+# Experiments are saved in experiments/ at the repository root (git-ignored),
+# not in .devnet, so re-seeding keeps them.
 case "$OSTYPE" in msys*|cygwin*) path_sep=";" ;; *) path_sep=":" ;; esac
-mkdir -p "$REPO_ROOT/literature"
+mkdir -p "$REPO_ROOT/literature" "$REPO_ROOT/experiments"
 cat >> "$DEVNET_DIR/$CONTROL_CENTER_USER.env" << EOF
 LABNET_CONTROL_CENTER_PORT=$CONTROL_CENTER_PORT
+LABNET_CONTROL_CENTER_EXPERIMENTS_DIR=$(native_path "$REPO_ROOT/experiments")
 LABNET_AGENT_SOURCES=$(native_path "$REPO_ROOT/Labnet")$path_sep$(native_path "$REPO_ROOT/examples")
 LABNET_AGENT_LITERATURE_DIR=$(native_path "$REPO_ROOT/literature")
 EOF

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiment · PQT Lab Control Center</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-page="experiments">
+  <main id="page" class="workspace editor-page">
+    <div class="editor-head">
+      <div class="editor-title">
+        <a class="crumb" href="/experiments">← All experiments</a>
+        <h1 id="experiment-name">Loading…</h1>
+        <p class="subtle" id="experiment-meta"></p>
+      </div>
+      <div class="editor-toolbar" role="toolbar" aria-label="Experiment">
+        <span class="save-status" id="save-status" role="status"></span>
+        <button class="tool" type="button" id="undo" disabled>Undo</button>
+        <button class="tool" type="button" id="redo" disabled>Redo</button>
+        <button class="tool" type="button" id="auto-layout" title="Arrange the blocks along the beams">Auto-layout</button>
+        <button class="tool" type="button" id="fit" title="Show the whole diagram">Fit</button>
+        <button class="tool" type="button" id="focus-mode" aria-pressed="false" title="Hide the Photo-Agent sidebar">Focus</button>
+        <button class="button primary" type="button" id="export-script">Export script</button>
+      </div>
+    </div>
+    <div id="banner" class="banner" role="status" hidden></div>
+    <div id="save-banner" class="banner warning" role="alert" hidden></div>
+    <div class="editor">
+      <aside class="palette" id="palette" aria-label="Components"></aside>
+      <div class="canvas-host" id="canvas"></div>
+      <aside class="inspector" id="inspector" aria-label="Inspector"></aside>
+    </div>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <span id="pulse" hidden></span><span id="updated" hidden></span>
+  </main>
+  <script src="/static/js/markdown.js"></script>
+  <script src="/static/js/experiment-model.js"></script>
+  <script src="/static/js/experiment-card.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/live.js"></script>
+  <script src="/static/js/optics.js"></script>
+  <script src="/static/js/diagram.js"></script>
+  <script src="/static/js/palette.js"></script>
+  <script src="/static/js/inspector.js"></script>
+  <script src="/static/js/experiment.js"></script>
+</body>
+</html>

@@ -60,6 +60,10 @@
     return svg;
   }
 
+  // Shared helpers for page scripts. Assigned before anything renders, and
+  // merged (not replaced), so scripts loaded earlier keep what they added.
+  window.PQT = Object.assign(window.PQT || {}, { el, chevronIcon, store });
+
   // ---- Top bar --------------------------------------------------------------
 
   const current = document.body.dataset.page;
@@ -74,6 +78,7 @@
     el("nav", { class: "tabs", "aria-label": "Sections" }, [
       tab("Network", "/status", "network"),
       tab("Devices", "/devices", "devices"),
+      tab("Experiments", "/experiments", "experiments"),
     ]),
   ]);
 
@@ -119,6 +124,7 @@
     placeholder: "Ask " + AGENT + "… (Shift+Enter for a new line)",
     "aria-label": "Message " + AGENT,
   });
+  const contextChip = el("div", { class: "context-chip", hidden: true });
   const chips = el("ul", { class: "attachments", "aria-label": "Files to send", hidden: true });
   const attachError = el("p", { class: "attach-error", role: "status", hidden: true });
   const fileInput = el("input", { type: "file", multiple: true, hidden: true, tabindex: "-1" });
@@ -138,6 +144,7 @@
   const effortPill = el("label", { class: "pill" }, [el("span", { class: "pill-label", text: "Effort" }), effortSelect]);
   const send = el("button", { class: "send", type: "submit" });
   const composer = el("form", { class: "composer" }, [
+    contextChip,
     chips,
     input,
     attachError,
@@ -367,62 +374,92 @@
     renderChat();
   }
 
-  function sources(message) {
-    const items = message.activity || [];
-    if (!items.length) return null;
+  // Each message keeps its own elements (a WeakMap), so re-rendering while an
+  // answer streams only patches what changed. Buttons in earlier answers stay
+  // clickable, and an opened "Looked at" list stays open.
+  const views = new WeakMap();
+  const hintItem = el("li", { class: "hint" });
+
+  function sourcesList(items) {
     return el("details", { class: "sources" }, [
       el("summary", { text: "Looked at " + items.length + (items.length === 1 ? " thing" : " things") }),
       el("ul", {}, items.map((text) => el("li", { text }))),
     ]);
   }
 
-  function bubble(message) {
+  function userView(message) {
+    const item = el("li", { class: "bubble bubble-user" });
+    if (message.attachments && message.attachments.length) {
+      item.append(
+        el(
+          "ul",
+          { class: "sent-files" },
+          message.attachments.map((file) => el("li", { title: sizeText(file.size), text: file.name }))
+        )
+      );
+    }
+    if (message.text) item.append(document.createTextNode(message.text));
+    return { item, update() {} }; // a sent message never changes
+  }
+
+  function agentView() {
     // "bubble-agent", not "agent": that class name belongs to the sidebar.
-    const classes = ["bubble", "bubble-" + message.role];
-    if (message.pending) classes.push("pending");
-    if (message.error) classes.push("error");
-    const item = el("li", { class: classes.join(" ") });
-    if (message.role !== "agent") {
-      if (message.attachments && message.attachments.length) {
-        item.append(
-          el(
-            "ul",
-            { class: "sent-files" },
-            message.attachments.map((file) => el("li", { title: sizeText(file.size), text: file.name }))
-          )
-        );
-      }
-      if (message.text) item.append(document.createTextNode(message.text));
-      return item;
+    const item = el("li", { class: "bubble bubble-agent" });
+    const from = el("span", { class: "from" });
+    const body = el("div", { class: "md" });
+    const tail = el("div", { class: "bubble-tail" });
+    item.append(from, body, tail);
+    let tailKey = null;
+    return {
+      item,
+      update(message) {
+        item.classList.toggle("pending", Boolean(message.pending));
+        item.classList.toggle("error", Boolean(message.error));
+        from.textContent = AGENT + (message.model ? " · " + message.model : "");
+        window.PQTMarkdown.renderInto(body, message.text || "");
+        const activity = message.activity || [];
+        const latest = activity[activity.length - 1];
+        const key = message.pending ? "pending:" + (message.status || "") + ":" + (latest || "") : "done:" + activity.length;
+        if (key === tailKey) return;
+        tailKey = key;
+        if (message.pending) {
+          tail.replaceChildren(
+            el("span", { class: "activity", text: message.status || (latest ? latest + "…" : "Thinking…") })
+          );
+        } else {
+          tail.replaceChildren(...(activity.length ? [sourcesList(activity)] : []));
+        }
+      },
+    };
+  }
+
+  function viewFor(message) {
+    let view = views.get(message);
+    if (!view) {
+      view = message.role === "agent" ? agentView() : userView(message);
+      views.set(message, view);
     }
-    item.append(el("span", { class: "from", text: AGENT + (message.model ? " · " + message.model : "") }));
-    if (message.text) {
-      const body = el("div", { class: "md" });
-      body.append(window.PQTMarkdown.render(message.text));
-      item.append(body);
-    }
-    if (message.pending) {
-      const latest = (message.activity || []).slice(-1)[0];
-      item.append(el("span", { class: "activity", text: message.status || (latest ? latest + "…" : "Thinking…") }));
-    } else {
-      const details = sources(message);
-      if (details) item.append(details);
-    }
-    return item;
+    view.update(message);
+    return view.item;
   }
 
   function renderChat() {
     const nearBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 80;
-    transcript.replaceChildren();
+    let wanted;
     if (chat.messages.length === 0) {
-      const hint =
+      hintItem.textContent =
         agentInfo && !agentInfo.ready && agentInfo.reason
           ? AGENT + " isn't available: " + agentInfo.reason
           : "Ask " + AGENT + " how LabNet works, what is online, or to help plan an experiment " +
             "and write its script. Attach data, plots or papers with the paperclip.";
-      transcript.append(el("li", { class: "hint", text: hint }));
+      wanted = [hintItem];
+    } else {
+      wanted = chat.messages.map(viewFor);
     }
-    for (const message of chat.messages) transcript.append(bubble(message));
+    wanted.forEach((item, index) => {
+      if (transcript.children[index] !== item) transcript.insertBefore(item, transcript.children[index] || null);
+    });
+    while (transcript.children.length > wanted.length) transcript.lastElementChild.remove();
     if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
   }
 
@@ -518,6 +555,7 @@
     renderChat();
     try {
       const attachments = await Promise.all(sending.map(readFile));
+      const context = await contextFields();
       const response = await fetch("/api/agent/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -527,6 +565,7 @@
           model: modelSelect.value || null,
           effort: effortSelect.disabled ? null : effortSelect.value || null,
           attachments,
+          ...context,
         }),
         signal: controller.signal,
       });
@@ -591,6 +630,99 @@
   renderChat();
   refreshAgent();
 
-  // Shared helpers for page scripts.
-  window.PQT = { el, chevronIcon, store };
+  // ---- Page context ---------------------------------------------------------
+  // A page can tell Photo-Agent what the person is looking at, e.g. the
+  // experiment on the canvas: setAgentContext({label, fields, prepare}).
+  // `fields` are added to each message; prepare() runs first (at most 2 s),
+  // e.g. to save pending edits so the agent reads what is on screen.
+
+  let agentContext = null;
+
+  function setAgentContext(context) {
+    agentContext = context || null;
+    contextChip.hidden = !agentContext;
+    if (!agentContext) {
+      contextChip.replaceChildren();
+      return;
+    }
+    const dismiss = el(
+      "button",
+      { class: "chip-remove", type: "button", title: "Don't share this", "aria-label": "Don't share this with " + AGENT },
+      ["×"]
+    );
+    dismiss.addEventListener("click", () => setAgentContext(null));
+    contextChip.replaceChildren(
+      el("span", { class: "context-label", text: AGENT + " sees:" }),
+      el("b", { text: agentContext.label || "this page" }),
+      dismiss
+    );
+  }
+
+  async function contextFields() {
+    if (!agentContext) return {};
+    if (agentContext.prepare) {
+      try {
+        await Promise.race([
+          Promise.resolve(agentContext.prepare()),
+          new Promise((resolve) => window.setTimeout(resolve, 2000)),
+        ]);
+      } catch (_ignored) {
+        /* send anyway */
+      }
+    }
+    return agentContext ? agentContext.fields || {} : {};
+  }
+
+  // ---- Dialogs --------------------------------------------------------------
+  // dialog({title, body, actions: [{label, value, primary, danger}], validate})
+  // resolves with the chosen action's value, or null when cancelled (Esc,
+  // Cancel, a click outside). validate(value) may return an error to keep it open.
+
+  function dialog({ title, body, actions, validate, wide }) {
+    return new Promise((resolve) => {
+      const error = el("p", { class: "dialog-error", role: "alert", hidden: true });
+      const buttons = (actions || [{ label: "OK", value: "ok", primary: true }]).map((action, index) =>
+        el("button", {
+          class: "button" + (action.primary ? " primary" : "") + (action.danger ? " danger" : ""),
+          type: "submit",
+          value: String(index),
+          text: action.label,
+        })
+      );
+      const cancel = el("button", { class: "button", type: "button", text: "Cancel" });
+      const form = el("form", { method: "dialog" }, [
+        el("h2", { text: title }),
+        el("div", { class: "dialog-body" }, body ? [body] : []),
+        error,
+        el("div", { class: "dialog-actions" }, [cancel, ...buttons]),
+      ]);
+      const box = el("dialog", { class: "pqt-dialog" + (wide ? " wide" : "") }, [form]);
+      let result = null;
+      form.addEventListener("submit", (event) => {
+        const chosen = actions ? actions[Number(event.submitter && event.submitter.value)] : { value: "ok" };
+        const problem = chosen && validate ? validate(chosen.value) : null;
+        if (problem) {
+          event.preventDefault();
+          error.textContent = problem;
+          error.hidden = false;
+          return;
+        }
+        result = chosen ? chosen.value : null;
+      });
+      cancel.addEventListener("click", () => box.close());
+      box.addEventListener("click", (event) => {
+        if (event.target === box) box.close(); // the backdrop
+      });
+      box.addEventListener("close", () => {
+        box.remove();
+        resolve(result);
+      });
+      document.body.append(box);
+      box.showModal();
+      const first = form.querySelector("input, textarea, select");
+      if (first) first.focus();
+    });
+  }
+
+  Object.assign(window.PQT, { icon, dialog, setAgentContext, setAgentCollapsed: setCollapsed });
 })();

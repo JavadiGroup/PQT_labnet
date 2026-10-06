@@ -71,8 +71,9 @@ expires a lease after 15 minutes with no device commands.
 
 ## From physical device to network call
 
-Every device family (today `DummyDevice` and `SimulatedWavemeter`) passes
-through the same layers. You write three small pieces; the rest is generated
+Every device family passes through the same layers. Today's families are
+`DummyDevice`, `SimulatedWavemeter`, and a simulated optics bench:
+`DummyLaser`, `DummyAOM`, `DummyEOM` and `DummyAWG`. You write three small pieces; the rest is generated
 or shared framework code.
 
 | Layer | File | Who writes it |
@@ -181,9 +182,12 @@ the lease with Central again every few seconds.
 ## Local development network
 
 The scripts run a complete network on one machine: Central, **two Lab
-PCs**, and the **Control Center** web interface. One Lab PC serves two
-DummyDevices; the other serves a DummyDevice and a SimulatedWavemeter.
-Everything binds to `127.0.0.1`.
+PCs**, and the **Control Center** web interface. Everything binds to
+`127.0.0.1`.
+- The first Lab PC serves two DummyDevices and a simulated optics bench: a
+  laser, an AOM and an EOM.
+- The second serves a DummyDevice, the SimulatedWavemeter and a two-channel
+  AWG.
 
 **Prerequisites:** Python 3.11+ and bash. On Windows, use **Git Bash** (it
 comes with Git for Windows). From PowerShell, call it explicitly with
@@ -203,8 +207,12 @@ scripts/dev/down.sh     # stop everything (data in .devnet/ is kept)
 
 ```text
 DEVICE           TYPE                 LAB PC         gRPC TARGET      STATE  LEASABLE
+dev01-aom        dummy_aom            lab-pc-dev-01  127.0.0.1:50051  ready  yes
 dev01-dummy-a    dummy_device         lab-pc-dev-01  127.0.0.1:50051  ready  yes
 dev01-dummy-b    dummy_device         lab-pc-dev-01  127.0.0.1:50051  ready  yes
+dev01-eom        dummy_eom            lab-pc-dev-01  127.0.0.1:50051  ready  yes
+dev01-laser      dummy_laser          lab-pc-dev-01  127.0.0.1:50051  ready  yes
+dev02-awg        dummy_awg            lab-pc-dev-02  127.0.0.1:50052  ready  yes
 dev02-dummy-a    dummy_device         lab-pc-dev-02  127.0.0.1:50052  ready  yes
 dev02-wavemeter  simulated_wavemeter  lab-pc-dev-02  127.0.0.1:50052  ready  yes
 ```
@@ -222,7 +230,7 @@ own settings file:
 | `dev-admin.env` | Central URL + the admin key |
 | `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `scripts/dev/inventories/dev_lab_pc_01.py` |
 | `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `scripts/dev/inventories/dev_lab_pc_02.py` |
-| `control-center.env` | Central URL + the `control-center` key, port 8080 |
+| `control-center.env` | Central URL + the `control-center` key, port 8080, the experiments folder (`experiments/` at the repository root, git-ignored, so re-seeding keeps your experiments) and Photo-Agent's folders |
 | `logs/` | One log per process; `up.sh` prints the tail if a start fails |
 
 A dev Lab PC file is six lines. Having an API key turns on Central
@@ -245,9 +253,22 @@ own page at `/<device-id>` (e.g. `http://127.0.0.1:8080/dev02-wavemeter`).
 The wavemeter's page has a live graph with Play/Pause, a time window, and
 CSV export; parameters that are sent when Play is pressed; and a script box.
 Other device types get a script box until they have their own panel (see
-[Device control pages](Labnet/README.md#device-control-pages)). The
-Photo-Agent sidebar is a working chat box; the agent behind it is not
-connected yet.
+[Device control pages](Labnet/README.md#device-control-pages)).
+
+The **Experiments** tab lists the lab's setup diagrams. **View Experiment**
+opens one on a canvas:
+- Drag devices and passive optics (mirrors, beamsplitters, filters…) onto the
+  canvas, and connect them with beams or signal cables.
+- Click a device to set each setting to a fixed value or a sweep, and to
+  choose which readings to record.
+- **Export script** turns the diagram into a Python script that runs it and
+  writes a CSV.
+
+The **Photo-Agent** sidebar is Claude Code: ask it about LabNet, attach data
+or papers, or ask it to set up an experiment. It proposes a diagram you can
+apply to the canvas. See
+[Experiments](Labnet/README.md#experiments) and
+[Photo-Agent](Labnet/README.md#photo-agent).
 
 The Control Center is just another LabNet client with its own Central user,
 so the browser never sees an API key. In both development and the lab it

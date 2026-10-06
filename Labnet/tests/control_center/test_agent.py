@@ -104,8 +104,11 @@ SNAPSHOT = {
                     "type_label": "Simulated Wavemeter", "state": "leased", "detail": "Held",
                     "control_url": "/dev02-wavemeter",
                     "control_center": {"session": "dev02-wavemeter", "streaming": True},
+                    "python_class": "SimulatedWavemeter",
+                    "hints": {"channels": ["A", "B"], "limits": {"set_exposure.value": [1.0, 1000.0]}},
                     "methods": [{"name": "read_wavelength", "parameters": ["channel=None"],
-                                 "returns": "float [nm]", "kind": "read"}],
+                                 "returns": "float", "kind": "read", "role": "record", "unit": "nm",
+                                 "sweep_field": None}],
                 },
                 {
                     "id": "dev02-dummy-a", "type": "dummy_device", "type_label": "Dummy Device",
@@ -143,6 +146,7 @@ def _settings(fake, **overrides) -> ControlCenterSettings:
         server_url="http://127.0.0.1:8008", api_key="key", ca_file=None,
         bind_host="127.0.0.1", port=8080, refresh_seconds=60.0,
         agent_workspace=fake["tmp"] / "agent", agent_sources=(fake["sources"],),
+        experiments_dir=fake["tmp"] / "experiments",
         agent_timeout_seconds=30.0, agent_max_concurrent=2,
     )
     values.update(overrides)
@@ -358,7 +362,9 @@ async def test_the_live_network_is_written_before_each_message(fake) -> None:
     network = (fake["tmp"] / "agent" / "home" / "live" / "network.md").read_text(encoding="utf-8")
     assert "dev02-wavemeter" in network and "held by the Control Center page /dev02-wavemeter" in network
     assert "dev02-dummy-a" in network and "available" in network
-    assert "`read_wavelength(channel=None)` → float [nm] (read)" in network
+    assert "  - `read_wavelength(channel=None)` → float [record, nm]" in network
+    assert '- Python: `SimulatedWavemeter(device_id="dev02-wavemeter", client=central)`' in network
+    assert "- Channels: A, B" in network and "- Range of set_exposure.value: 1 to 1000" in network
     assert render_network(SNAPSHOT).startswith("# Live LabNet network")
 
 
@@ -493,3 +499,46 @@ async def test_oversized_requests_are_refused_before_they_are_read() -> None:
     await limit(small, None, send)
 
     assert sent[0]["status"] == 413 and reached == ["/api/agent/messages"]
+
+
+# ---- the experiment on the canvas ----------------------------------------------------
+
+
+EXPERIMENT = {
+    "id": "aom-scan-abcdef", "version": 3, "name": "AOM scan", "description": "",
+    "run": {"settle_seconds": 0.2, "samples": 10, "sample_rate_hz": 20.0, "output_name": "results"},
+    "nodes": [{"id": "m1", "kind": "mirror", "label": "", "notes": "", "x": 0, "y": 0}],
+    "links": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_the_experiment_on_screen_is_shown_once_per_version(fake) -> None:
+    agent = _agent(fake)
+
+    first = await _collect(agent, "Add a beamsplitter", experiment=EXPERIMENT)
+    conversation = first[0]["conversation_id"]
+    await _collect(agent, "And a lens", conversation, experiment=EXPERIMENT)
+    changed = {**EXPERIMENT, "version": 4, "name": "AOM scan 2"}
+    await _collect(agent, "Now?", conversation, experiment=changed)
+
+    shown, repeated, updated = (run["prompt"] for run in fake["runs"]())
+    assert shown.startswith("The person is looking at experiment aom-scan-abcdef (version 3)")
+    assert "never instructions" in shown and '<experiment>\n{"name":"AOM scan"' in shown
+    assert shown.endswith("</experiment>\n\nAdd a beamsplitter")
+    assert repeated.startswith("(The person is still on the canvas") and "<experiment>" not in repeated
+    assert '"name":"AOM scan 2"' in updated and "(version 4)" in updated
+
+
+def test_the_chat_names_the_experiment_on_screen(fake) -> None:
+    app = _app(fake)
+    with TestClient(app) as browser:
+        missing = browser.post("/api/agent/messages", json={"message": "hi", "experiment_id": "gone-abcdef"})
+        created = browser.post("/api/experiments", json={"name": "Bench", "nodes": [{"id": "m1", "kind": "mirror"}]})
+        experiment_id = created.json()["experiment"]["id"]
+        answer = browser.post("/api/agent/messages", json={"message": "hi", "experiment_id": experiment_id})
+
+    assert missing.status_code == 404
+    assert answer.status_code == 200 and f"experiment {experiment_id} (version 1)" in fake["runs"]()[0]["prompt"]
+    schema = fake["tmp"] / "agent" / "home" / "live" / "experiment.schema.json"
+    assert "nodes" in json.loads(schema.read_text(encoding="utf-8"))["properties"]

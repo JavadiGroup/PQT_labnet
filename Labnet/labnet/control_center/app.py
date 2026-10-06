@@ -29,11 +29,15 @@ from pydantic import BaseModel, Field
 
 from labnet.client import AsyncLabClient, LabPCInfo
 from labnet.client.core.models import DeviceInfo
+from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
 from labnet.identifiers import LABNET_IDENTIFIER_REGEX
 
 from .agent import MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, AgentRequestError, PhotoAgent
 from .config import ControlCenterSettings
-from .contracts import describe_device_type, type_label
+from .contracts import clean_hints, describe_device_type, facade_class_name, type_label
+from .experiment_api import create_experiment_router
+from .experiment_schema import EXPERIMENT_ID
+from .experiment_store import ExperimentError, ExperimentStore
 from .scripting import MAX_SCRIPT_CHARACTERS
 from .sessions import SessionError, SessionManager
 
@@ -43,7 +47,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 AGENT_NAME = "Photo-Agent"
 # First path segments the app itself uses; a device with one of these ids
 # could not have a control page at /<device-id>.
-RESERVED_PATHS = frozenset({"api", "devices", "favicon.ico", "health", "static", "status"})
+RESERVED_PATHS = frozenset({"api", "devices", "experiments", "favicon.ico", "health", "static", "status"})
 ClientFactory = Callable[[ControlCenterSettings], AsyncLabClient]
 AgentFactory = Callable[..., PhotoAgent]
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -150,6 +154,7 @@ def _device(device: DeviceInfo, *, lab_pc_online: bool) -> dict[str, Any]:
         state = "unavailable"
         detail = device.status_text or f"{device.runtime_state}, {device.availability}"
     methods = describe_device_type(device.device_type)
+    contract = DEVICE_CONTRACT_BY_TYPE.get(device.device_type)
     return {
         # Which control panel the device page loads (static/js/panels/<panel>.js).
         "panel": _panel_for(device.device_type),
@@ -163,6 +168,10 @@ def _device(device: DeviceInfo, *, lab_pc_online: bool) -> dict[str, Any]:
         "control_url": f"/{device.device_id}",
         "known_contract": methods is not None,
         "methods": methods or [],
+        # The class a Python client uses for it, e.g. DummyAOM.
+        "python_class": facade_class_name(contract) if contract is not None else None,
+        # Channels, ranges and choices the driver publishes (contracts don't say).
+        "hints": clean_hints(device.metadata),
     }
 
 
@@ -214,22 +223,37 @@ class AgentMessage(BaseModel):
     model: str | None = Field(default=None, max_length=100)
     effort: str | None = Field(default=None, max_length=20)
     attachments: list[AgentAttachment] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
+    # The experiment on the person's canvas: Photo-Agent sees it (as saved).
+    experiment_id: str | None = Field(default=None, pattern=rf"^{EXPERIMENT_ID.pattern}$")
 
 
 class _BodyLimit:
     """Refuse an oversized request before it is read (pure ASGI, so streamed
     responses and disconnects pass through untouched)."""
 
-    def __init__(self, app: Any, *, path: str, limit: int) -> None:
+    def __init__(
+        self,
+        app: Any,
+        *,
+        path: str,
+        limit: int,
+        prefix: bool = False,
+        message: str = "The attached files are too large.",
+    ) -> None:
         self.app = app
         self.path = path
         self.limit = limit
+        self.prefix = prefix
+        self.message = message
+
+    def _applies(self, path: str) -> bool:
+        return path == self.path or (self.prefix and path.startswith(self.path + "/"))
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
-        if scope["type"] == "http" and scope["path"] == self.path:
+        if scope["type"] == "http" and self._applies(scope["path"]):
             length = dict(scope["headers"]).get(b"content-length", b"0")
             if length.isdigit() and int(length) > self.limit:
-                response = JSONResponse({"detail": "The attached files are too large."}, status_code=413)
+                response = JSONResponse({"detail": self.message}, status_code=413)
                 await response(scope, receive, send)
                 return
         await self.app(scope, receive, send)
@@ -288,6 +312,7 @@ def create_app(
         app.state.status = NetworkStatus(client, settings)
         app.state.sessions = SessionManager(client, settings)
         app.state.agent = agent_factory(settings, network_with_activity)
+        app.state.experiments = ExperimentStore(settings.experiments_dir)
         try:
             yield
         finally:
@@ -305,10 +330,19 @@ def create_app(
     app.add_middleware(
         _BodyLimit, path="/api/agent/messages", limit=MAX_ATTACHMENTS * _MAX_ATTACHMENT_BASE64 + 64 * 1024
     )
+    app.add_middleware(
+        _BodyLimit, path="/api/experiments", prefix=True, limit=512 * 1024,
+        message="This experiment is too large to save.",
+    )
+    app.include_router(create_experiment_router(network_with_activity))
 
     @app.exception_handler(SessionError)
     async def session_error(_request: Request, exc: SessionError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+
+    @app.exception_handler(ExperimentError)
+    async def experiment_error(_request: Request, exc: ExperimentError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc), **exc.extra}, status_code=exc.status_code)
 
     def session_for(device_id: str):
         if LABNET_IDENTIFIER_REGEX.fullmatch(device_id) is None:
@@ -329,6 +363,18 @@ def create_app(
     @app.get("/devices", include_in_schema=False)
     async def devices_page() -> FileResponse:
         return page("devices.html")
+
+    @app.get("/experiments", include_in_schema=False)
+    async def experiments_page() -> FileResponse:
+        return page("experiments.html")
+
+    @app.get("/experiments/{experiment_id}", include_in_schema=False)
+    async def experiment_page(experiment_id: str) -> FileResponse:
+        """The canvas for one experiment, e.g. /experiments/aom-scan-k7q2mx."""
+
+        if EXPERIMENT_ID.fullmatch(experiment_id) is None:
+            raise HTTPException(status_code=404, detail="Not found.")
+        return page("experiment.html")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
@@ -368,6 +414,9 @@ def create_app(
             files = [(item.name, base64.b64decode(item.data, validate=True)) for item in body.attachments]
         except (binascii.Error, ValueError):
             raise HTTPException(status_code=422, detail="An attachment is not valid base64.") from None
+        experiment = None
+        if body.experiment_id:
+            experiment = await asyncio.to_thread(app.state.experiments.get, body.experiment_id)  # 404 if gone
         try:
             request = agent.prepare(
                 body.message,
@@ -375,6 +424,7 @@ def create_app(
                 model=body.model,
                 effort=body.effort,
                 attachments=files,
+                experiment=experiment,
             )
         except AgentRequestError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)

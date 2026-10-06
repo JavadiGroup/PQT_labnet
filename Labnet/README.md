@@ -519,6 +519,9 @@ Central for the network picture, so no API key ever reaches a browser.
 | `/api/status` | The same picture as JSON; refreshed from Central at most every `LABNET_CONTROL_CENTER_REFRESH_SECONDS` |
 | `/api/devices/<id>/events` | Live events for a device page: state, samples, script output |
 | `/api/devices/<id>/play`, `/pause`, `/script`, `/script/stop` | Device page controls |
+| `/experiments` | **Experiments** tab: every saved experiment, with its devices' live state |
+| `/experiments/<id>` | The experiment's canvas: setup diagram, settings, Export script (see below) |
+| `/api/experiments`, `/api/experiments/<id>`, `/validate`, `/meta`, `/<id>/script` | List, create, read, save (with the version it is based on), delete, check, describe the components, export |
 | `/api/agent`, `/api/agent/messages` | Photo-Agent status, and its chat (answers stream as server-sent events; see below) |
 
 In development `scripts/dev/up.sh` starts it at `http://127.0.0.1:8080/status`.
@@ -586,6 +589,83 @@ and register it as `PQT.panels["<device_type>"]`. The shared pieces are
 `createChart`, `createScriptBox`, and the session (`session.play`,
 `session.pause`, `session.runScript`). The page picks the new panel up
 automatically.
+
+### Experiments
+
+The **Experiments** tab holds the lab's setup diagrams, one per experiment:
+what is on the optical table, how it is connected, and how it runs.
+- **The list:** each row shows the name, who created it, when it was saved
+  and how many devices it uses. Expanding a row shows those devices with
+  their live state, the optics, and the run (sweeps, readings, points).
+- **New experiment** asks for a name. **View Experiment** opens the canvas.
+
+**The canvas** (`/experiments/<id>`) has three parts:
+- **Palette (left):** the network's devices and passive components (laser,
+  mirror, beamsplitter, polarizing beamsplitter, lens, filter, waveplate,
+  fiber, isolator, iris, sample, beam dump, photodetector, note).
+  - Drag one onto the canvas, or click it.
+  - A device can be on a diagram once; clicking a placed device shows it.
+- **Diagram (middle):**
+  - Drag blocks to move them; drag empty space to pan; scroll to zoom.
+  - To connect two blocks, drag from a block's round handle onto the other.
+    Device to device makes a **signal** cable (dashed blue); anything else
+    makes a **beam** (orange). Hold Alt to choose the other.
+  - Shift-drag selects several. Delete removes. Ctrl+Z / Ctrl+Y undo and redo.
+  - Auto-layout arranges the blocks along the beams.
+- **Inspector (right):** edits what is selected. For a device, the forms
+  come from its contract and the hints its driver publishes:
+  - **Settings** (writes) are Off, Fixed, or Sweep (start, stop, points and
+    a loop number). Loops nest outermost first; sweeps in the same loop
+    advance together.
+  - **Commands** get one input per argument, with drop-downs where the driver
+    lists choices (e.g. the AWG's waveform).
+  - **Record** ticks readings to save at every point, with samples (and a
+    rate for streams).
+  - Channels (e.g. the AWG's CH1/CH2) can be set separately.
+  - With nothing selected, it shows the experiment's name, description, run
+    options (settle time, samples, stream rate, output file) and any problems.
+
+**Saving and sharing.** The canvas saves itself about a second after each
+change, with the version it was based on.
+- If someone else saved in between, nothing is overwritten. A banner offers
+  to reload or to save your version as a copy.
+- Unsaved changes survive a closed tab: the canvas offers to restore them.
+- Experiments are JSON files, one each, in the experiments folder
+  (`LABNET_CONTROL_CENTER_EXPERIMENTS_DIR`). In development that is
+  `experiments/` at the repository root (git-ignored); in the lab,
+  `C:\ProgramData\LabNet\experiments`, which is worth backing up.
+- Deleting moves a file to `.trash/` there for 30 days.
+
+**Export script** generates a Python script from the saved experiment, in
+the style of `examples/04_scan_two_devices.py`:
+1. It leases every device it uses, so a busy device stops the run before
+   anything changes.
+2. It applies the fixed settings upstream first, following the beams and
+   cables.
+3. It steps through the sweeps, records each point to a CSV, and releases
+   everything in `finally`.
+
+Run it from any client with `LABNET_ENV_FILE` set. The generator follows
+fixed rules; no AI writes the code.
+- Method and argument names come from the device contracts.
+- Values are Python literals.
+- Free text (names, labels, descriptions) only appears in comments.
+
+So a diagram cannot inject code into the script. Problems that would make
+a bad script (a read used as a setting, a wrong argument type, a device
+that changed type) are listed in the inspector and stop the export until
+fixed.
+
+**Photo-Agent can set up experiments.** On a canvas, the chat shows
+"Photo-Agent sees: <experiment>" and sends it the saved experiment with
+each message.
+- Ask for an experiment in plain words. Photo-Agent answers with a proposal
+  card that summarizes the devices, optics, links, sweeps and readings.
+- **Apply to canvas** checks it, asks before replacing an existing diagram,
+  and applies it as one undo step.
+- Elsewhere, **Create experiment** saves it as a new one.
+- Proposals are checked by the Control Center like any edit; nothing with
+  errors is applied.
 
 ### Photo-Agent
 
@@ -732,6 +812,7 @@ later never sends keys in clear text.
 | `LABNET_CONTROL_CENTER_MAX_HOLD_MINUTES` | `30` | Play stops itself and releases the device after this long |
 | `LABNET_CONTROL_CENTER_IDLE_RELEASE_SECONDS` | `15` | A device page releases its device this long after the last viewer leaves |
 | `LABNET_CONTROL_CENTER_SCRIPT_TIMEOUT_SECONDS` | `600` | A script is stopped after this long |
+| `LABNET_CONTROL_CENTER_EXPERIMENTS_DIR` | `experiments` next to the env file | The Experiments tab's folder: one JSON file per experiment, created on the first save |
 | `LABNET_AGENT_COMMAND` | `claude` on `PATH`, then `~\.local\bin\claude.exe` | Claude Code for Photo-Agent; if it can't be found, the chat says so |
 | `LABNET_AGENT_WORKSPACE` | `agent` next to the env file | Photo-Agent's folder: `briefing.md`, `home/` (where it runs) and `uploads/` |
 | `LABNET_AGENT_SOURCES` | the installed `labnet` package | Folders it may read, separated by `;` on Windows. In the lab, list the package folder plus any folder where you unpacked the examples (`client-examples.zip`) or lab notes |
@@ -910,7 +991,25 @@ three-line facade, and exports. The steps are in the
    and export it from `labnet/__init__.py` and `labnet/devices/__init__.py`.
    Do not write family-specific gRPC or transport code; dispatch,
    authorization, errors, leases, and streams are shared.
-5. **Validate:** `python tools/generate_protos.py --check` and `python -m pytest`.
+   - Name the class after the service without "Service": `DummyAOMService` →
+     `DummyAOM`. Export Script imports it by that name, and a test checks
+     every family.
+5. **Optionally publish hints** in `metadata()`. The Control Center's
+   experiment forms and checks use them, and Photo-Agent sees them:
+
+   ```python
+   "hints": {"channels": ["CH1", "CH2"],
+             "limits": {"set_frequency.value": [60, 100]},          # <method>.<argument>
+             "choices": {"set_waveform.waveform": ["sine", "square"]}}
+   ```
+
+   Drivers must still check their own ranges. Hints only make the forms and
+   warnings helpful.
+6. **Validate:** `python tools/generate_protos.py --check` and `python -m pytest`.
+
+The four `Dummy*` optics-bench families (`labnet/devices/DummyLaser`,
+`DummyAOM`, `DummyEOM`, `DummyAWG`) are small, complete examples of channels,
+boolean and text commands, streams, hints and simple physics.
 
 Deploy Lab PCs that serve a new RPC before clients that call it.
 

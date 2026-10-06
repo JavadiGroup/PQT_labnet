@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package labnet.devices.v1;
+
+import "common.proto";
+import "rpc_options.proto";
+import "transfer.proto";
+
+message DummyLaserRequest {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message DummyLaserWriteRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double value = 3;
+  optional string unit = 4;
+}
+
+message DummyLaserEmissionRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  bool enabled = 3;
+}
+
+message DummyLaserMeasurementResponse {
+  string operation_id = 1;
+  ScalarMeasurement measurement = 2;
+}
+
+// A simulated tunable diode laser. Output power rises linearly above the
+// 40 mA threshold (0.8 mW/mA) while emission is on, and the wavelength is
+// pulled slightly by the current. Emission starts off.
+service DummyLaserService {
+  rpc ReadCurrent(DummyLaserRequest) returns (DummyLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_current"
+      default_unit: "mA"
+    };
+  }
+
+  rpc ReadPower(DummyLaserRequest) returns (DummyLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_power"
+      default_unit: "mW"
+    };
+  }
+
+  rpc ReadWavelength(DummyLaserRequest) returns (DummyLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // Diode current, 0 to 200 mA.
+  rpc SetCurrent(DummyLaserWriteRequest) returns (DummyLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_current"
+      default_unit: "mA"
+    };
+  }
+
+  // Switches emission on or off; returns the new state.
+  rpc SetEmissionEnabled(DummyLaserEmissionRequest) returns (CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_emission_enabled"
+      default_unit: "1"
+    };
+  }
+
+  // Wavelength setpoint, 765 to 795 nm.
+  rpc SetWavelength(DummyLaserWriteRequest) returns (DummyLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  rpc StreamPower(StreamDataRequest) returns (stream StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_power"
+      default_unit: "mW"
+    };
+  }
+}
