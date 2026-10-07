@@ -1,0 +1,49 @@
+# The agent image: Claude Code plus the labnet MCP server (labnet.automation_runner.mcp_server).
+#
+# One container per run, started by the supervisor on the internal agent network (its only way out
+# is the egress proxy), as uid 1000 with a read-only root, all capabilities dropped and no-new-privileges.
+# It holds no runner token: its tools reach the supervisor through a Unix socket in its run folder.
+# The Claude login lives in the labnet-automation-claude-login volume, mounted at /claude.
+#
+# Build context: the repository root (compose.yaml: context ../..).
+
+FROM node:22-bookworm-slim
+
+# Pinned 2.1.x (the version checked against the supervisor's command line); `--build-arg
+# CLAUDE_CODE_VERSION=…` to change it. The self-check reports the version and the flags the supervisor uses.
+ARG CLAUDE_CODE_VERSION=2.1.287
+
+# python3 is 3.11 on bookworm (labnet needs >= 3.11); ca-certificates for TLS through the proxy.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# The npm package installs the native Claude Code binary for this platform (postinstall).
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && npm cache clean --force
+
+# labnet without extras (no server dependencies), plus what the MCP server needs.
+COPY Labnet /src/Labnet
+RUN python3 -m venv /opt/labnet \
+ && /opt/labnet/bin/pip install --no-cache-dir --disable-pip-version-check \
+        /src/Labnet "mcp>=1.30,<2" "httpx>=0.27,<1" \
+ && rm -rf /src
+
+# Mount points. /claude is owned by node so a new login volume starts out writable by uid 1000
+# (Docker copies the image folder's ownership into an empty named volume on first mount).
+RUN mkdir -p /work /labnet /run/labnet /claude \
+ && chown node:node /work /run/labnet /claude
+
+# Claude Code: login and settings in /claude; no updates, telemetry, error reports or claude.ai connectors
+# (none of those hosts are on egress-allow.txt anyway). The supervisor sets HTTPS_PROXY per run.
+ENV CLAUDE_CONFIG_DIR=/claude \
+    DISABLE_AUTOUPDATER=1 \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    ENABLE_CLAUDEAI_MCP_SERVERS=false \
+    PYTHONDONTWRITEBYTECODE=1
+
+USER node
+WORKDIR /work
+# No entrypoint (the node image's would wrap the command): the supervisor passes `claude -p …`.
+ENTRYPOINT []
+CMD ["claude", "--version"]

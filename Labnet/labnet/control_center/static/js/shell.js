@@ -70,17 +70,42 @@
   const tab = (label, href, page) =>
     el("a", { class: "tab", href, "aria-current": current === page ? "page" : false, text: label });
 
+  const signedIn = el("span", { class: "signed-in", hidden: true });
   const topbar = el("header", { class: "topbar" }, [
     el("a", { class: "brand", href: "/status" }, [
       el("span", { class: "brand-mark", "aria-hidden": "true" }),
       "PQT Lab Control Center",
     ]),
-    el("nav", { class: "tabs", "aria-label": "Sections" }, [
-      tab("Network", "/status", "network"),
-      tab("Devices", "/devices", "devices"),
-      tab("Experiments", "/experiments", "experiments"),
+    el("div", { class: "topbar-end" }, [
+      el("nav", { class: "tabs", "aria-label": "Sections" }, [
+        tab("Network", "/status", "network"),
+        tab("Devices", "/devices", "devices"),
+        tab("Experiments", "/experiments", "experiments"),
+        tab("Automation", "/automation", "automation"),
+      ]),
+      signedIn,
     ]),
   ]);
+
+  // ---- Who is signed in -----------------------------------------------------
+  // In the lab, Caddy signs each person in and the Control Center records that
+  // name as the author of what they create. PQT.me resolves (once per page) to
+  // {user, logins}; user is null in development, where names are typed instead.
+
+  const me = fetch("/api/me", { cache: "no-store" })
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null)
+    .then((body) => ({
+      user: body && typeof body.user === "string" && body.user ? body.user : null,
+      logins: Boolean(body && body.logins),
+    }));
+  me.then(({ user }) => {
+    if (!user) return;
+    signedIn.replaceChildren(el("span", { class: "signed-in-label", text: "Signed in as " }), el("b", { text: user }));
+    signedIn.title = "Your lab login. Experiments and projects you create or change are recorded under this name.";
+    signedIn.hidden = false;
+  });
+  window.PQT.me = me;
 
   // ---- Photo-Agent sidebar --------------------------------------------------
 

@@ -176,18 +176,20 @@
     const description = el("textarea", { maxlength: "4000", placeholder: "What it measures, and why (optional)" });
     const author = el("input", { maxlength: "64", placeholder: "Your name (optional)" });
     author.value = store.get("localStorage", AUTHOR_KEY, "");
+    // Signed in (lab): the server records the login, so there is no name to type.
+    const { user } = await window.PQT.me;
     const choice = await dialog({
       title: "New experiment",
       body: el("div", { class: "dialog-fields" }, [
         el("label", {}, ["Name", name]),
         el("label", {}, ["Description", description]),
-        el("label", {}, ["Created by", author]),
+        el("label", { hidden: Boolean(user) }, ["Created by", author]),
       ]),
       actions: [{ label: "Create", value: "create", primary: true }],
       validate: () => (name.value.trim() ? null : "Give the experiment a name."),
     });
     if (choice !== "create") return;
-    store.set("localStorage", AUTHOR_KEY, author.value.trim());
+    if (!user) store.set("localStorage", AUTHOR_KEY, author.value.trim());
     try {
       const response = await fetch("/api/experiments", {
         method: "POST",

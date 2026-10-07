@@ -5,6 +5,13 @@ credential. A reader thread relays its device calls to the Control Center's
 event loop, where they run with the session's lease, and sends the results
 back. Stop or the time limit kills the process, so even a script stuck in a
 long calculation ends.
+
+The worker also starts with a cleaned environment (:func:`worker_environment`):
+only the variables Python itself needs, never the Control Center's settings
+(``LABNET_*``, with Central's key) or an Anthropic credential. Errors sent back
+to the script, and the outcome shown on the page, pass through
+:func:`~labnet.control_center.redaction.redact`, so a lease id quoted by a Lab PC
+never reaches the script or the browser.
 """
 
 from __future__ import annotations
@@ -15,9 +22,10 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
+from .redaction import redact
 from .scripting import contract_method_names
 
 
@@ -27,6 +35,34 @@ EventHandler = Callable[[dict[str, Any]], None]
 
 # One device call (including a short stream) may take this long.
 CALL_TIMEOUT_SECONDS = 300.0
+
+# What a Python process needs to start and run on Windows and POSIX: system
+# folders, temp folders, the search paths for interpreters and packages (the
+# user site lives under APPDATA / HOME), and the locale. Nothing else is passed.
+_WORKER_ENV_NAMES = frozenset(
+    {
+        "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT",
+        "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
+        "APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "HOME",
+        "TEMP", "TMP", "TMPDIR", "PATH",
+        "PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "PYTHONNOUSERSITE", "PYTHONUTF8",
+        "PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX",
+        "LANG", "LANGUAGE", "TZ",
+    }
+)
+
+
+def worker_environment(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The script worker's environment: an allow-list of ``environ`` (default: this process's)."""
+
+    source = os.environ if environ is None else environ
+    env = {
+        name: value
+        for name, value in source.items()
+        if name.upper() in _WORKER_ENV_NAMES or name.upper().startswith("LC_")
+    }
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
 
 
 class ScriptProcess:
@@ -68,6 +104,7 @@ class ScriptProcess:
             text=True,
             encoding="utf-8",
             bufsize=1,
+            env=worker_environment(),
             # No console window on Windows; the Control Center may have none.
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
         )
@@ -106,7 +143,7 @@ class ScriptProcess:
             return {"result": future.result(timeout=CALL_TIMEOUT_SECONDS)}
         except Exception as exc:  # the script sees any failure as an error
             future.cancel()
-            return {"error": f"{type(exc).__name__}: {exc}"}
+            return {"error": redact(f"{type(exc).__name__}: {exc}")}
 
     def _serve(self) -> None:
         process = self._process
@@ -146,7 +183,15 @@ class ScriptProcess:
                 stderr = (process.stderr.read() if process.stderr else "").strip()
                 if stderr:
                     outcome = f"{outcome} {stderr.splitlines()[-1]}"
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except OSError:
+                        pass
+            if outcome is not None:
+                outcome = redact(outcome)
             asyncio.run_coroutine_threadsafe(self._on_finished(outcome), self._loop)
 
 
-__all__ = ["ScriptProcess"]
+__all__ = ["ScriptProcess", "worker_environment"]

@@ -1,0 +1,8 @@
+# The analysis image (Dockerfile.run): what run_python scripts can import. Pinned, so a script that
+# worked keeps working; bump deliberately and rebuild. All have cp311 manylinux wheels (no compilers).
+# pandas stays on the 2.x line for now: 3.0 changed copy and string semantics that agent-written code
+# commonly relies on.
+numpy==2.3.5
+scipy==1.16.3
+pandas==2.3.3
+matplotlib==3.10.9

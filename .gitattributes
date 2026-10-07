@@ -4,3 +4,6 @@
 # tools/generate_protos.py writes LF and `--check` compares bytes, so a CRLF
 # checkout (core.autocrlf=true on Windows) would always report stale files.
 Labnet/labnet/grpc/generated/** text eol=lf
+
+# Dockerfiles, compose.yaml and the egress allow-list are read inside Linux containers.
+docker/** text eol=lf

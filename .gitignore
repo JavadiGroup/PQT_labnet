@@ -33,6 +33,7 @@ scan.csv
 # Papers for Photo-Agent in development (LABNET_AGENT_LITERATURE_DIR)
 literature/
 
-# Experiments saved by the development Control Center (anchored: only the
-# repository root's folder)
+# Experiments and Automation projects saved by the development Control Center
+# (anchored: only the repository root's folders)
 /experiments/
+/automation/

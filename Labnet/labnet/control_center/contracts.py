@@ -144,6 +144,31 @@ def clean_hints(metadata: Any) -> dict[str, Any]:
     return hints
 
 
+def method_line(method: dict[str, Any]) -> str:
+    """One method for an agent to read: ``name(params)`` → returns [role, unit]."""
+
+    role = method.get("role", method["kind"])
+    if method.get("sweep_field"):
+        role += f", sweepable ({method['sweep_field']})"
+    unit = method.get("unit")
+    if unit and unit != "1":
+        role += f", {unit}"
+    return f"`{method['name']}({', '.join(method['parameters'])})` → {method['returns']} [{role}]"
+
+
+def hint_lines(hints: dict[str, Any]) -> list[str]:
+    """A driver's channels, ranges and choices as Markdown list items."""
+
+    lines = []
+    if hints.get("channels"):
+        lines.append("- Channels: " + ", ".join(hints["channels"]))
+    for key, (low, high) in (hints.get("limits") or {}).items():
+        lines.append(f"- Range of {key}: {low:g} to {high:g}")
+    for key, options in (hints.get("choices") or {}).items():
+        lines.append(f"- Choices for {key}: " + ", ".join(options))
+    return lines
+
+
 def type_label(device_type: str) -> str:
     """``simulated_wavemeter`` -> ``Simulated Wavemeter``; ``dummy_aom`` -> ``Dummy AOM``.
 
@@ -163,6 +188,8 @@ __all__ = [
     "describe_device_type",
     "describe_method",
     "facade_class_name",
+    "hint_lines",
+    "method_line",
     "sweep_field",
     "type_label",
 ]

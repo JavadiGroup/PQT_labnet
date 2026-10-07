@@ -3,16 +3,20 @@
 Every reply that carries an experiment also carries its report (see
 ``experiment_checks.py``), so the canvas always shows what would stop an
 export. Saving needs only a well-formed experiment; export needs a clean one.
+
+Changes (create, check, save, delete) must come from the Control Center's own
+pages: a browser's ``Sec-Fetch-Site`` must not say cross-site, and bodies must
+be ``application/json``, which a form on another site cannot send (see
+``request_checks.py``).
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from labnet.grpc.generated.device_contracts import DEVICE_CONTRACTS
@@ -27,17 +31,19 @@ from .experiment_schema import (
     MAX_POINTS,
     OPTIC_KINDS,
     ExperimentContent,
-    clean_author,
     json_schema,
     parse_content,
 )
 from .experiment_script import ScriptError, generate_script
 from .experiment_store import ExperimentError, ExperimentStore, VersionConflict
+from .request_checks import author, read_json, same_origin
 
 
 NetworkSource = Callable[[], Awaitable[dict[str, Any]]]
 # Keys the server manages; a client may send them back, and they are ignored.
 _SERVER_FIELDS = {"schema_version", "id", "version", "created_at", "updated_at", "created_by", "updated_by"}
+MAX_BODY_BYTES = 512 * 1024
+_CHANGES = [Depends(same_origin)]
 
 
 def _devices(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -60,13 +66,7 @@ def _fill_device_types(data: dict[str, Any], devices: dict[str, dict[str, Any]])
 
 
 async def _body(request: Request) -> dict[str, Any]:
-    try:
-        data = json.loads(await request.body() or b"null")
-    except ValueError:
-        raise ExperimentError(422, "The request is not valid JSON.") from None
-    if not isinstance(data, dict):
-        raise ExperimentError(422, "Send an experiment as a JSON object.")
-    return data
+    return await read_json(request, limit=MAX_BODY_BYTES, not_object="Send an experiment as a JSON object.")
 
 
 def create_experiment_router(network: NetworkSource) -> APIRouter:
@@ -90,12 +90,6 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
             raise ExperimentError(422, problems[0]["message"] if len(problems) == 1 else
                                   f"The experiment has {len(problems)} problems.", errors=problems)
         return content
-
-    def author(data: dict[str, Any], key: str) -> str:
-        try:
-            return clean_author(data.get(key, ""))
-        except ValueError as exc:
-            raise ExperimentError(422, f"{key}: {exc}") from None
 
     def reply(experiment: dict[str, Any], live: dict[str, dict[str, Any]] | None) -> dict[str, Any]:
         content = ExperimentContent.model_validate(
@@ -132,7 +126,7 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
             "json_schema": json_schema(),
         }
 
-    @router.post("/validate")
+    @router.post("/validate", dependencies=_CHANGES)
     async def validate(request: Request) -> dict[str, Any]:
         """Check an experiment without saving it (Photo-Agent proposals). Always 200."""
 
@@ -149,12 +143,12 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
             }
         return {"experiment": content.model_dump(mode="json"), "report": check_experiment(content, live)}
 
-    @router.post("", status_code=201)
+    @router.post("", status_code=201, dependencies=_CHANGES)
     async def create(request: Request) -> JSONResponse:
         data = await _body(request)
         live = await devices()
         content = await content_or_422(data, live)
-        experiment = await asyncio.to_thread(store(request).create, content, author=author(data, "created_by"))
+        experiment = await asyncio.to_thread(store(request).create, content, author=author(request, data, "created_by"))
         return JSONResponse(
             reply(experiment, live), status_code=201, headers={"Location": f"/experiments/{experiment['id']}"}
         )
@@ -164,7 +158,7 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
         experiment = await asyncio.to_thread(store(request).get, experiment_id)
         return reply(experiment, await devices())
 
-    @router.put("/{experiment_id}")
+    @router.put("/{experiment_id}", dependencies=_CHANGES)
     async def save(request: Request, experiment_id: str) -> dict[str, Any]:
         data = await _body(request)
         version = data.get("version")
@@ -175,11 +169,11 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
         live = await devices()
         content = await content_or_422(data, live)
         experiment = await asyncio.to_thread(
-            store(request).update, experiment_id, content, base_version=version, author=author(data, "updated_by")
+            store(request).update, experiment_id, content, base_version=version, author=author(request, data, "updated_by")
         )
         return reply(experiment, live)
 
-    @router.delete("/{experiment_id}", status_code=204)
+    @router.delete("/{experiment_id}", status_code=204, dependencies=_CHANGES)
     async def delete(request: Request, experiment_id: str, version: int | None = None) -> Response:
         await asyncio.to_thread(store(request).delete, experiment_id, version=version)
         return Response(status_code=204)

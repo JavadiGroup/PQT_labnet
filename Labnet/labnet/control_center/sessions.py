@@ -11,6 +11,11 @@ Anyone using the Control Center may stop a session, from any computer: the
 Network and Devices pages list what the Control Center holds (see
 :meth:`SessionManager.activity`) with a Pause button that calls
 :meth:`DeviceSession.release`.
+
+Device errors can quote a lease id, which is enough to drive the device while
+the lease lasts. Everything a browser receives from a session passes through
+:func:`~labnet.control_center.redaction.redact`: :class:`SessionError`
+messages, state messages and every published event. The log keeps full text.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from labnet.client.core.models import Measurement
 from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
 
 from .config import ControlCenterSettings
+from .redaction import redact
 from .script_runner import ScriptProcess
 from .scripting import ScriptError, validate_script
 
@@ -44,7 +50,7 @@ class SessionError(Exception):
     """A request the session cannot carry out; ``status_code`` maps to HTTP."""
 
     def __init__(self, status_code: int, message: str) -> None:
-        super().__init__(message)
+        super().__init__(redact(message))
         self.status_code = status_code
 
 
@@ -117,6 +123,8 @@ class DeviceSession:
         return {**self.state_event(), "type": "snapshot", "samples": list(self._buffer)}
 
     def _publish(self, event: dict[str, Any]) -> None:
+        if event.get("type") != "samples":  # samples are numbers; everything else may quote an error
+            event = {key: redact(value) if isinstance(value, str) else value for key, value in event.items()}
         for subscriber in list(self._subscribers):
             try:
                 subscriber.queue.put_nowait(event)
@@ -126,7 +134,7 @@ class DeviceSession:
 
     def _set_state(self, state: str, message: str | None = None) -> None:
         self.state = state
-        self.message = message
+        self.message = redact(message) if message else message
         self._publish(self.state_event())
 
     def subscribe(self) -> Subscriber:

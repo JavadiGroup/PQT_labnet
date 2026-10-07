@@ -16,7 +16,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.datastructures import Headers
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from labnet.client import AsyncLabClient, LabPCInfo
 from labnet.client.core.models import DeviceInfo
@@ -33,11 +35,20 @@ from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
 from labnet.identifiers import LABNET_IDENTIFIER_REGEX
 
 from .agent import MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, AgentRequestError, PhotoAgent
+from .automation_api import create_automation_router
+from .automation_literature import Literature
+from .automation_runner_api import create_runner_router
+from .automation_runners import RunnerRegistry
+from .automation_runs import RunStore, sweep_forever
+from .automation_store import PROJECT_ID, AutomationStore
 from .config import ControlCenterSettings
 from .contracts import clean_hints, describe_device_type, facade_class_name, type_label
 from .experiment_api import create_experiment_router
 from .experiment_schema import EXPERIMENT_ID
 from .experiment_store import ExperimentError, ExperimentStore
+from .ingress import HumanIngress
+from .redaction import redact
+from .request_checks import request_user
 from .scripting import MAX_SCRIPT_CHARACTERS
 from .sessions import SessionError, SessionManager
 
@@ -47,7 +58,15 @@ STATIC = Path(__file__).resolve().parent / "static"
 AGENT_NAME = "Photo-Agent"
 # First path segments the app itself uses; a device with one of these ids
 # could not have a control page at /<device-id>.
-RESERVED_PATHS = frozenset({"api", "devices", "experiments", "favicon.ico", "health", "static", "status"})
+RESERVED_PATHS = frozenset(
+    {"api", "automation", "devices", "experiments", "favicon.ico", "health", "static", "status"}
+)
+# Pages: scripts and styles only from this server, no plugins, not framed by
+# other sites. (No page has inline scripts; inline styles are set from JS.)
+PAGE_POLICY = (
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+)
 ClientFactory = Callable[[ControlCenterSettings], AsyncLabClient]
 AgentFactory = Callable[..., PhotoAgent]
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -93,7 +112,7 @@ class NetworkStatus:
                     "central": {
                         "url": self._settings.server_url,
                         "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}",
+                        "error": redact(f"{type(exc).__name__}: {exc}"),
                     },
                 }
             else:
@@ -225,11 +244,45 @@ class AgentMessage(BaseModel):
     attachments: list[AgentAttachment] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
     # The experiment on the person's canvas: Photo-Agent sees it (as saved).
     experiment_id: str | None = Field(default=None, pattern=rf"^{EXPERIMENT_ID.pattern}$")
+    # The Automation project the person has open: Photo-Agent gets a copy of its text files.
+    project_id: str | None = Field(default=None, pattern=rf"^{PROJECT_ID.pattern}$")
+
+
+class _SecurityHeaders:
+    """nosniff on every response, and the page policy on HTML (pure ASGI)."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def with_headers(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                names = {name.lower() for name, _value in headers}
+                if b"x-content-type-options" not in names:
+                    headers.append((b"x-content-type-options", b"nosniff"))
+                content_type = dict(headers).get(b"content-type", b"")
+                if content_type.startswith(b"text/html") and b"content-security-policy" not in names:
+                    headers.append((b"content-security-policy", PAGE_POLICY.encode("ascii")))
+                    headers.append((b"referrer-policy", b"same-origin"))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, with_headers)
 
 
 class _BodyLimit:
-    """Refuse an oversized request before it is read (pure ASGI, so streamed
-    responses and disconnects pass through untouched)."""
+    """Refuse an oversized request (pure ASGI, so streamed responses and
+    disconnects pass through untouched).
+
+    A Content-Length over the limit is refused before anything is read. A body
+    sent without one (chunked) is counted as it arrives; past the limit,
+    reading it raises a 413 HTTPException, which FastAPI answers.
+    """
 
     def __init__(
         self,
@@ -250,13 +303,26 @@ class _BodyLimit:
         return path == self.path or (self.prefix and path.startswith(self.path + "/"))
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
-        if scope["type"] == "http" and self._applies(scope["path"]):
-            length = dict(scope["headers"]).get(b"content-length", b"0")
-            if length.isdigit() and int(length) > self.limit:
-                response = JSONResponse({"detail": self.message}, status_code=413)
-                await response(scope, receive, send)
-                return
-        await self.app(scope, receive, send)
+        if scope["type"] != "http" or not self._applies(scope["path"]):
+            await self.app(scope, receive, send)
+            return
+        length = Headers(scope=scope).get("content-length", "0")
+        if length.isdigit() and int(length) > self.limit:
+            response = JSONResponse({"detail": self.message}, status_code=413)
+            await response(scope, receive, send)
+            return
+        received = 0
+
+        async def counted() -> dict[str, Any]:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.limit:
+                    raise HTTPException(status_code=413, detail=self.message)
+            return message
+
+        await self.app(scope, counted, send)
 
 
 class SettingValue(BaseModel):
@@ -313,9 +379,23 @@ def create_app(
         app.state.sessions = SessionManager(client, settings)
         app.state.agent = agent_factory(settings, network_with_activity)
         app.state.experiments = ExperimentStore(settings.experiments_dir)
+        app.state.automation = AutomationStore(settings.automation_dir, settings.agent_literature_dir)
+        app.state.runners = RunnerRegistry(app.state.automation.state / "runners")
+        app.state.literature = Literature(app.state.automation)  # its indexing thread starts on first use
+        app.state.runs = RunStore(
+            app.state.automation, quota_bytes=int(settings.automation_run_quota_mb * 2**20),
+            stale_minutes=settings.automation_run_stale_minutes, models=settings.agent_models,
+            default_model=settings.agent_model, default_effort=settings.agent_effort,
+        )
+        # Fails runs whose runner went quiet, even when nobody is looking at them.
+        app.state.run_sweeper = asyncio.create_task(sweep_forever(app.state.runs), name="automation-run-sweeper")
         try:
             yield
         finally:
+            app.state.run_sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await app.state.run_sweeper
+            await asyncio.to_thread(app.state.literature.close)  # stops a running PDF extractor
             app.state.agent.close()
             await app.state.sessions.close()  # releases every lease
             await client.aclose()
@@ -334,11 +414,23 @@ def create_app(
         _BodyLimit, path="/api/experiments", prefix=True, limit=512 * 1024,
         message="This experiment is too large to save.",
     )
+    max_file_bytes = int(settings.automation_max_file_mb * 1024 * 1024)
+    app.add_middleware(
+        _BodyLimit, path="/api/automation", prefix=True, limit=max_file_bytes + 64 * 1024,
+        message=f"Files can be at most {settings.automation_max_file_mb:g} MB.",
+    )
+    # Outermost last: security headers on every reply, then the host check,
+    # then logins (see ingress.py), then the body limits above.
+    app.add_middleware(HumanIngress, secret=settings.proxy_secret)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts), www_redirect=False)
+    app.add_middleware(_SecurityHeaders)
     app.include_router(create_experiment_router(network_with_activity))
+    app.include_router(create_automation_router(network_with_activity, max_file_bytes=max_file_bytes))
+    app.include_router(create_runner_router(max_file_bytes=max_file_bytes))
 
     @app.exception_handler(SessionError)
     async def session_error(_request: Request, exc: SessionError) -> JSONResponse:
-        return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+        return JSONResponse({"detail": redact(str(exc))}, status_code=exc.status_code)
 
     @app.exception_handler(ExperimentError)
     async def experiment_error(_request: Request, exc: ExperimentError) -> JSONResponse:
@@ -376,6 +468,18 @@ def create_app(
             raise HTTPException(status_code=404, detail="Not found.")
         return page("experiment.html")
 
+    @app.get("/automation", include_in_schema=False)
+    async def automation_page() -> FileResponse:
+        return page("automation.html")
+
+    @app.get("/automation/{project_id}", include_in_schema=False)
+    async def automation_project_page(project_id: str) -> FileResponse:
+        """One project's files, linked experiments and tasks, e.g. /automation/aom-study-k7q2mx."""
+
+        if PROJECT_ID.fullmatch(project_id) is None:
+            raise HTTPException(status_code=404, detail="Not found.")
+        return page("automation-project.html")
+
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
         # Answer here so browsers' automatic request never reaches /{device_id}.
@@ -386,6 +490,16 @@ def create_app(
         snapshot = await network_with_activity()
         return JSONResponse(
             {**snapshot, "refresh_seconds": settings.refresh_seconds},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/api/me")
+    async def me(request: Request) -> JSONResponse:
+        """Who is signed in (through Caddy), and whether this Control Center has logins at all."""
+
+        user = request_user(request)
+        return JSONResponse(
+            {"user": user, "logins": settings.proxy_secret is not None},
             headers={"Cache-Control": "no-store"},
         )
 
@@ -417,6 +531,9 @@ def create_app(
         experiment = None
         if body.experiment_id:
             experiment = await asyncio.to_thread(app.state.experiments.get, body.experiment_id)  # 404 if gone
+        project = None
+        if body.project_id:
+            project = await asyncio.to_thread(app.state.automation.agent_snapshot, body.project_id)  # 404 if gone
         try:
             request = agent.prepare(
                 body.message,
@@ -425,6 +542,7 @@ def create_app(
                 effort=body.effort,
                 attachments=files,
                 experiment=experiment,
+                project=project,
             )
         except AgentRequestError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)

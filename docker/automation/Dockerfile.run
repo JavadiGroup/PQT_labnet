@@ -1,0 +1,27 @@
+# The run image: one disposable container per run_python call.
+#
+# The supervisor starts it with --network none, --read-only, --cap-drop ALL, no-new-privileges,
+# --user 1000:1000, CPU/memory/pid limits and only the run's working copy mounted at /work
+# (see labnet/automation_runner/docker_backend.py). It holds no labnet code and no credentials.
+#
+# Build context: the repository root (compose.yaml: context ../..).
+
+FROM python:3.11-slim-bookworm
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+COPY docker/automation/requirements-run.txt /tmp/requirements-run.txt
+RUN pip install --only-binary=:all: -r /tmp/requirements-run.txt \
+ && rm /tmp/requirements-run.txt \
+ && useradd --uid 1000 --user-group --no-create-home --home-dir /tmp --shell /usr/sbin/nologin runner
+
+# Figures are saved, never shown. The root file system is read-only at run time, so matplotlib's
+# cache and HOME live on the /tmp tmpfs. (`python -I` ignores PYTHON* variables, not these.)
+ENV MPLBACKEND=Agg \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    HOME=/tmp
+
+USER 1000:1000
+WORKDIR /work
+CMD ["python", "-I", "-c", "print('labnet run image: pass a script')"]

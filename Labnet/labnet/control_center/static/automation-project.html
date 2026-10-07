@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project · PQT Lab Control Center</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-page="automation">
+  <main id="page" class="workspace editor-page">
+    <div class="editor-head">
+      <div class="editor-title">
+        <a class="crumb" href="/automation">← All projects</a>
+        <h1 id="project-name">Loading…</h1>
+        <p class="subtle" id="project-meta"></p>
+      </div>
+      <div class="editor-toolbar" role="toolbar" aria-label="Project">
+        <button class="tool" type="button" id="overview">Overview</button>
+        <button class="tool" type="button" id="refresh" title="Read the folder again">Refresh</button>
+        <button class="tool" type="button" id="settings">Settings…</button>
+      </div>
+    </div>
+    <div id="notice" class="banner" role="status" hidden></div>
+    <section class="literature-search" id="literature-search" aria-label="Search the literature"></section>
+    <div class="editor automation-editor">
+      <aside class="file-tree" id="file-tree" aria-label="Project files"></aside>
+      <section class="viewer" id="viewer" aria-label="File"></section>
+      <aside class="inspector" id="project-panel" aria-label="Project"></aside>
+    </div>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </main>
+  <script src="/static/js/markdown.js"></script>
+  <script src="/static/js/experiment-model.js"></script>
+  <script src="/static/js/experiment-card.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/live.js"></script>
+  <script src="/static/js/file-tree.js"></script>
+  <script src="/static/js/file-viewer.js"></script>
+  <script src="/static/js/automation-project.js"></script>
+  <script src="/static/js/literature-search.js"></script>
+</body>
+</html>

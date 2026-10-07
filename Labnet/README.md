@@ -97,7 +97,7 @@ the additional dependencies:
 | `pip install "labnet[central]"` | FastAPI, SQLAlchemy, Alembic, Uvicorn | Central |
 | `pip install "labnet[central,postgres]"` | + psycopg | Central with PostgreSQL |
 | `pip install "labnet[certs]"` | cryptography | The computer that issues certificates |
-| `pip install "labnet[control-center]"` | FastAPI, Uvicorn | The Control Center (on the Central computer) |
+| `pip install "labnet[control-center]"` | FastAPI, Uvicorn, pypdf | The Control Center (on the Central computer) |
 | `pip install -e ".[dev,central,lab-pc]"` | Everything, plus protobuf tools and pytest | Development (`scripts/dev/setup.sh` does this) |
 
 Production hosts install a reviewed wheel, never an editable checkout. In
@@ -302,6 +302,9 @@ from the `--wheelhouse` folder).
    and forwards to Central with
    [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
    Central's private key never touches the Python process.
+   [`site/Caddyfile.example`](../site/Caddyfile.example) is the whole file,
+   with the Control Center's site and its logins added (see
+   [Control Center](#control-center)).
 
 7. **Firewall.** Allow inbound TCP 443 from the Lab PCs and approved clients.
    Never open port 8008.
@@ -515,14 +518,22 @@ Central for the network picture, so no API key ever reaches a browser.
 | `/` | Redirects to `/status` |
 | `/status` | **Network** tab: every Lab PC (online/offline, IP), its devices (available, leased, unavailable), and each device's callable methods from its generated contract |
 | `/devices` | **Devices** tab: every device on the network in one list, with its Lab PC, state, and callable methods |
-| `/<device-id>` | Device control page, e.g. `/dev02-wavemeter` (see below). The app's own paths (`status`, `devices`, `static`, `api`, `health`) can't be used as device ids for this page. |
+| `/<device-id>` | Device control page, e.g. `/dev02-wavemeter` (see below). The app's own paths (`status`, `devices`, `experiments`, `automation`, `static`, `api`, `health`) can't be used as device ids for this page. |
 | `/api/status` | The same picture as JSON; refreshed from Central at most every `LABNET_CONTROL_CENTER_REFRESH_SECONDS` |
 | `/api/devices/<id>/events` | Live events for a device page: state, samples, script output |
 | `/api/devices/<id>/play`, `/pause`, `/script`, `/script/stop` | Device page controls |
 | `/experiments` | **Experiments** tab: every saved experiment, with its devices' live state |
 | `/experiments/<id>` | The experiment's canvas: setup diagram, settings, Export script (see below) |
 | `/api/experiments`, `/api/experiments/<id>`, `/validate`, `/meta`, `/<id>/script` | List, create, read, save (with the version it is based on), delete, check, describe the components, export |
+| `/automation` | **Automation** tab: every project, the lab library, and what a project holds |
+| `/automation/<id>` | One project: its files, the open file, and its tasks, linked experiments, allowed devices and library scope (see [Automation](#automation)) |
+| `/api/automation/projects…` | Projects (list, create, read, save with the version it is based on, delete), their `tree`, `files/<path>` (read, PUT to upload or replace with `If-Match`, delete), `folders`, `move`, and linked `experiments` |
+| `/api/automation/projects/<id>/runs…` | A project's runs: list, queue a task (POST), one run with its last 500 events, `cancel` (see [Runs](#runs)) |
+| `/api/automation/library…` | The lab library's papers and reading lists, read-only |
+| `/api/automation/runner/…` | The [runner API](#the-runner-api), for Automation runners with a runner token, never browsers |
 | `/api/agent`, `/api/agent/messages` | Photo-Agent status, and its chat (answers stream as server-sent events; see below) |
+| `/api/me` | Who is signed in: `{"user": "alice", "logins": true}`, or `{"user": null, "logins": false}` without [logins](#logins) |
+| `/health/live`, `/health/ready` | Up, and up *and* reaching Central. No login needed |
 
 In development `scripts/dev/up.sh` starts it at `http://127.0.0.1:8080/status`.
 
@@ -578,8 +589,13 @@ forgotten tab on another computer can be stopped by whoever notices it.
 
 Imports, `def`, `while`, `with`, other attributes, and names starting with
 `_` are rejected. Each script runs in its own process, which holds no
-credentials. The Control Center performs each device call with its lease,
-and Stop or the 10-minute time limit kills the process. Stream methods
+credentials: it gets only a short list of environment variables (Windows'
+own, `PATH`, the temp and user folders, Python's), never a `LABNET_*` key or
+an Anthropic or other token. The Control Center performs each device call
+with its lease, and Stop or the 10-minute time limit kills the process.
+Lease ids, API keys and runner tokens are cut out of every error a script,
+a page or a runner sees (`lease_…`); the Control Center's own log keeps
+the full text. Stream methods
 inside a script need a `sample_count` (at most 10 000) and return a list of
 values.
 
@@ -630,6 +646,10 @@ change, with the version it was based on.
 - If someone else saved in between, nothing is overwritten. A banner offers
   to reload or to save your version as a copy.
 - Unsaved changes survive a closed tab: the canvas offers to restore them.
+- With [logins](#logins), the signed-in person is recorded as the author.
+  Without them (development), the name typed in *Created by* is.
+- Saves must be JSON from the Control Center's own pages; another web site
+  can't change an experiment through someone's open tab.
 - Experiments are JSON files, one each, in the experiments folder
   (`LABNET_CONTROL_CENTER_EXPERIMENTS_DIR`). In development that is
   `experiments/` at the repository root (git-ignored); in the lab,
@@ -666,6 +686,453 @@ each message.
 - Elsewhere, **Create experiment** saves it as a new one.
 - Proposals are checked by the Control Center like any edit; nothing with
   errors is applied.
+
+### Automation
+
+The **Automation** tab holds projects an agent works in. People collect the
+papers, data, setup and tasks; the agent's scripts, logs, data and analysis
+are kept beside them, so every step can be checked. Tasks are queued as
+[runs](#runs); the [Automation runner](#the-automation-runner) works through
+them in Docker.
+
+**A project is a folder** with fixed sections. Each section says whose it is:
+
+| Folder | Whose | Holds |
+| --- | --- | --- |
+| `Literature/` | yours | Papers only this project needs. The shared **lab library** is shown here too (read-only) |
+| `Data/example_data/` | yours | Example data: CSV, TSV, JSON, text and images |
+| `Data/new_data/` | agent | Data the agent produces, with `DATA_SUMMARY.md` |
+| `Experiment_layout/` | automatic | A snapshot of every linked experiment's canvas, and `DEVICES.md`: each instrument, how to call it, and whether automation may control it |
+| `Experiment_layout/LAYOUT.md` | yours | How the setups connect, what may be automated, safety notes |
+| `Tasks/` | yours | One Markdown file per task: goal, inputs, constraints, deliverables |
+| `Protocols/` | agent | The method and bounds the agent proposes for approval |
+| `ScriptsUtilized/` | agent | Every script the agent wrote or ran (`src/`, `analysis_scripts/`, `logs/`), for auditing |
+| `Analysis/` | agent | `Analysis.md` and the key figures in `outputs/` |
+
+**On the page:**
+- **Left:** the file tree. Your folders take uploads (button or drag and drop) and new folders.
+- **Middle:** the open file.
+  - Markdown renders as a document. Your own files (tasks, `LAYOUT.md`) have View and Edit.
+  - CSV shows as a table; images and PDFs show as themselves; code shows in a code block.
+- **Right:** the project's panel.
+  - Its tasks, with *Run* and *Run all*, and its [runs](#runs).
+  - **Linked experiments:** *Link experiment…*, *Unlink*, and *Update copies* when a newer version is saved on the Experiments tab.
+  - **Allowed devices:** only devices on a linked canvas, and only ticked ones, can ever be automated.
+  - **Library scope:** topic folders or reading lists; nothing ticked means the whole library.
+
+**Saving.**
+- Replacing a file needs the version it was opened with (`If-Match`). If someone else saved in between, the page asks before overwriting.
+- Uploads are limited to `LABNET_AUTOMATION_MAX_FILE_MB` per file. The limit is counted as the file streams in.
+- Deleting moves a file to the project's trash for 30 days. Deleting a project moves the whole folder to `.trash/`.
+
+**The lab library** is `LABNET_AGENT_LITERATURE_DIR`, the folder Photo-Agent already reads. Lay it out like this:
+- **Topic folders** of PDFs.
+- **Reading lists** in `collections/<name>.txt`: one library path per line, so a paper can be on several lists without copies.
+- **Folders starting with `_`** (for example `_duplicates/`) are not shown.
+
+**Where it lives.**
+- `LABNET_AUTOMATION_DIR` holds two trees:
+  - `projects/<id>/`: the folders above;
+  - `state/<id>/`: the Control Center's own (`project.json`, experiment snapshots, trash, `runs/`);
+  - `state/runners/`: one file per runner, holding a hash of its token;
+  - `state/library/literature.sqlite` and `state/<id>/literature.sqlite`: the [search indexes](#literature-search).
+- Whatever decides what an agent may do (allowed devices, approvals) lives in `state/`, never inside the folder an agent writes.
+- In development this is `automation/` at the repository root (git-ignored). In the lab it's `C:\ProgramData\LabNet\automation`, which is worth backing up.
+
+**Paths are checked, never trusted.** Every path is relative to its project or the library. Refused:
+- `..`, drive or UNC forms, and `:`;
+- hidden (`.`-prefixed) names, reserved device names, and control or invisible characters;
+- links and junctions, which are never followed; an opened file is also checked by its handle.
+
+Files are served inert:
+- PDFs and images are shown inline, and text is served as plain text.
+- An SVG is sandboxed.
+- HTML and unknown types are download-only.
+- Pages carry a Content-Security-Policy.
+- Changes must be JSON (or a raw upload) from the Control Center's own pages.
+
+#### Runs
+
+A **run** is one task of one project (`Tasks/Task1.md`), worked through by a
+[runner](#the-automation-runner). Until a runner is connected, queued runs
+simply wait in the queue.
+
+**On the page:**
+- **Tasks panel:** each task has *Run*, which is disabled (with a tooltip
+  saying why) while that task has a queued or active run. *Run all* queues
+  every task without one, in name order (`Task2` before `Task10`).
+- **Runs list**, newest first: the status, the task, who queued it, the
+  runner, when it started and finished, and how much it uploaded of its
+  quota. A queued run says *Waiting for a runner*. Queued and active runs
+  have *Stop*, which asks first.
+- **Clicking a run** opens its log in the middle: the run's events (kind,
+  text and the Control Center's time) and its summary, shown as plain text.
+- **Refreshing:** an open log refreshes every 2 s while its run is queued or
+  active, and the list every 5 s while any run is. Both pause while the page
+  is hidden.
+
+**Run settings** are part of the project (*Settings…*):
+
+| Setting | Default | |
+| --- | --- | --- |
+| `run_model` | the Control Center's `LABNET_AGENT_MODEL` | One of `LABNET_AGENT_MODELS`; anything else is refused (422) |
+| `run_effort` | the Control Center's `LABNET_AGENT_EFFORT` | `low` … `max`. Haiku has no effort levels, so its runs get none |
+| `run_max_turns` | `60` | 1 to 200 |
+| `run_budget_usd` | `5.0` | More than 0, at most 100 |
+
+- A run copies the settings when it is queued, as `settings: {model, effort,
+  max_turns, max_budget_usd}`. Changing the project afterwards changes only
+  later runs.
+- A save that leaves these fields out keeps them, so an older open page
+  can't reset them. Projects saved before these settings existed get the
+  defaults.
+
+Through the API:
+
+| Request | Does |
+| --- | --- |
+| `POST /api/automation/projects/<id>/runs` `{"task": "Tasks/Task1.md"}` | Queues the task (201). The task must be a Markdown file in `Tasks/`; one that is already queued or active is refused (409) |
+| `GET …/projects/<id>/runs` | The project's runs, newest first |
+| `GET …/projects/<id>/runs/<run_id>` | The run and its last 500 events |
+| `POST …/projects/<id>/runs/<run_id>/cancel` `{}` | Cancels a queued or active run; the runner notices on its next request |
+
+- A run is `queued`, then `active` once a runner claims it, and ends `done`,
+  `failed`, `stopped` (the runner says which) or `cancelled` (a person did).
+- With [logins](#logins), `queued_by` and `cancelled_by` are the signed-in
+  person; without them, the optional name sent in the body.
+- A runner claims the oldest queued run of any project.
+- A project can't be deleted while one of its runs is queued or active.
+- Events and the summary are written by the runner. Show them as plain
+  text, never as HTML or Markdown.
+- **Heartbeat and timeout.** Every runner request about an active run counts
+  as a sign of life (`last_seen_at`), and so does an upload still streaming
+  in. A runner with nothing else to say sends `POST runs/<run_id>/heartbeat`.
+  If an active run hears nothing for `LABNET_AUTOMATION_RUN_STALE_MINUTES`
+  (10), it is marked `failed` with the summary *The runner stopped reporting
+  (nothing for 10 minutes).* and a `timeout` event. Its runner then gets 409.
+  - The check runs whenever runs are read, and once a minute in the
+    background.
+  - After a Control Center restart, the clock starts again, so runners get a
+    full window to reconnect.
+  - Records from before heartbeats existed count from `claimed_at`.
+- Records live in `state/<id>/runs/`: `<run_id>.json` and
+  `<run_id>.events.jsonl`.
+
+#### Runners and their tokens
+
+A **runner** is the machine that works through the runs (see
+[The Automation runner](#the-automation-runner)): the lab's Linux PC, or
+Docker in WSL on a developer's laptop. It talks to the Control
+Center only over the [runner API](#the-runner-api), with its own token,
+never with a person's login. Manage runners on the Control Center PC:
+
+```powershell
+$ccadmin = "C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-control-center-admin.exe"
+& $ccadmin --env-file C:\ProgramData\LabNet\control-center.env runner add lab-laptop
+& $ccadmin --env-file C:\ProgramData\LabNet\control-center.env runner list
+& $ccadmin --env-file C:\ProgramData\LabNet\control-center.env runner revoke lab-laptop
+```
+
+- **Names:** lowercase letters, digits and dashes, at most 32 characters.
+- **`add`** prints the token (`lnr_…`) once. Put it in the runner's
+  settings. The Control Center keeps only its sha256, in
+  `state/runners/<name>.json`. A lost token can't be shown again: revoke the
+  runner and add it again.
+- **`revoke`** works at once: the runner's next request is refused.
+- The Control Center doesn't need a restart for either.
+- In development, `labnet-control-center-admin --env-file .devnet/control-center.env runner …`.
+  On a checkout set up before this command existed, run `scripts/dev/setup.sh`
+  again to install it, or use `python -m labnet.control_center.admin`.
+
+#### The runner API
+
+Every request carries `Authorization: Bearer lnr_…`. Paths start with
+`/api/automation/runner/`.
+
+| Request | Does |
+| --- | --- |
+| `GET whoami` | The runner's name |
+| `POST claim` | Claims the oldest queued run (200 with the run), or 204 when nothing is queued |
+| `GET runs/<run_id>` | The run's record, to notice a cancel |
+| `GET runs/<run_id>/inputs` | A zip of the project's inputs, with `run.json` at its root |
+| `GET runs/<run_id>/library/<path>` | One paper, if it is within the project's library scope |
+| `GET runs/<run_id>/literature/search?q=&k=&paper=` | [Literature search](#literature-search) in the run's project |
+| `GET runs/<run_id>/literature/papers` | The papers that search covers |
+| `GET runs/<run_id>/literature/pages?paper=&first=&last=` | Up to 20 pages' text of one of them |
+| `PUT runs/<run_id>/files/<path>` | Creates or replaces a file in the agent's folders. The body is the file |
+| `POST runs/<run_id>/events` | `{"events": [{"kind": "progress", "text": "…"}, …]}`: progress and transcript lines |
+| `POST runs/<run_id>/finish` | `{"status": "done" \| "failed" \| "stopped", "summary": "…"}` |
+| `POST runs/<run_id>/heartbeat` | Still working on it: `{"status": "active"}` (see [Runs](#runs) for the timeout) |
+
+- **Refused:** no token or a wrong one (401); any request a browser made,
+  which says so in `Sec-Fetch-Site` (403); a run this runner didn't claim
+  (404, as if it didn't exist); anything but `GET runs/<run_id>` on a run
+  that isn't active any more (409, with its `status`, which is how a runner
+  learns of a cancel).
+- **The inputs zip** holds the folders people fill (`Literature`,
+  `Data/example_data`, `Experiment_layout` with `DEVICES.md`, `Tasks`), never
+  the agent's folders, hidden names, `CLAUDE*.md` or links. `run.json` holds
+  the run, its `settings` (model, effort, max turns and budget, as copied
+  when it was queued), the project's settings (allowed devices, linked experiments,
+  library scope), the list of library papers in scope, and `truncated` when
+  the project had more files than a listing holds. A project that names no
+  topic folders or reading lists gets the whole library.
+- **Events:** each is exactly a `kind` (lowercase letters, digits and `_`)
+  and a `text` of at most 16 KiB; at most 100 per request, and 16 MiB per
+  run. The summary is at most 4000 characters. The Control Center stamps the
+  time and redacts both.
+
+**What a runner may write.** Only the agent's folders: `Data/new_data`,
+`Protocols`, `ScriptsUtilized` and `Analysis`. Uploads pass the same path
+checks as a person's, plus:
+- no hidden name (`.claude/`, `.mcp.json`) and no `CLAUDE*.md` anywhere on
+  the path, which a later run's Claude Code would read as settings or
+  instructions;
+- a file name, never one of the fixed folders (`Analysis/outputs`,
+  `ScriptsUtilized/logs`, …);
+- each file at most `LABNET_AUTOMATION_MAX_FILE_MB`;
+- the whole run at most `LABNET_AUTOMATION_RUN_QUOTA_MB` (500 MB). The quota
+  is counted as bytes stream in, so two uploads at once can't pass it
+  together, and replacing a file counts again. Past it, uploads get 413.
+
+The Control Center, not the runner's machine, decides what the agent may
+change.
+
+#### The Automation runner
+
+The runner (`labnet-runner`, in `labnet.automation_runner`) works through
+queued runs, one at a time. It runs in Docker: on a Linux PC in the lab, and
+in WSL on a developer's laptop. Both use the same images and compose file
+(`docker/automation/`); only an address, a token and a CA file differ.
+
+```text
+Control Center (Windows) ◄── HTTPS, runner token ── runner container (trusted supervisor)
+                                                     ├─ agent container per run: Claude Code + labnet tools
+                                                     │     internal network; out only via the egress proxy
+                                                     │     (Anthropic's servers); no token; tools via a
+                                                     │     Unix socket in its run folder
+                                                     └─ run container per run_python call: the working
+                                                           copy only, no network, CPU/memory/process limits
+```
+
+**A run, step by step.**
+1. The runner claims the oldest queued run and downloads its inputs.
+2. It unpacks them into a fresh working copy, refusing unsafe zip entries,
+   links, `.claude/`, `.mcp.json` and `CLAUDE*.md`.
+3. It starts Claude Code (`claude -p`) in an agent container, with the
+   project's model, effort, maximum turns and budget. Its tools:
+   - Read, Glob, Grep, and Edit and Write in the agent's folders only;
+   - subagents (`literature-reviewer`, `data-analyst`);
+   - the labnet tools `search_literature`, `list_papers`, `read_paper_pages`
+     (through the Control Center's [literature search](#literature-search))
+     and `run_python`.
+
+   There is no shell, and no web access beyond Anthropic's servers.
+4. **`run_python`** runs one script the agent wrote under `ScriptsUtilized/`.
+   It runs in a new container: Python 3.11 with numpy, scipy, pandas and
+   matplotlib, no network, a read-only system, 2 CPUs, 2 GB and 10 minutes by
+   default. Its output is saved in `ScriptsUtilized/logs/<run_id>/`.
+5. The run's progress streams to its log on the project page. The runner
+   sends a heartbeat, and stops the agent at once if someone presses Stop.
+6. **At the end**, it uploads the new and changed files in the agent's
+   folders, plus the transcript and its own log
+   (`ScriptsUtilized/logs/<run_id>/`). Anything changed elsewhere is
+   reported, never uploaded. It finishes the run `done`, `failed` or
+   `stopped`.
+
+**It refuses to start unless the isolation holds.** At start, and on
+`labnet-runner self-check`, it checks each of these and logs what failed:
+- the Control Center answers and knows its token;
+- the images exist;
+- the agent network is internal and has a Claude login;
+- a script container can reach nothing and can't see the runner's folders;
+- an agent container can reach `api.anthropic.com` through the proxy, but
+  not `example.com`, and nothing directly;
+- the installed Claude Code has the options the runner uses.
+
+**What's trusted:**
+- **The runner container** holds the token and the Docker socket. Agent and
+  script containers never get either.
+- **The agent container** holds the Claude login (a Docker volume). Claude
+  Code in it can read the login, but it can reach only Anthropic, and its
+  uploads go only to the agent's folders.
+- **The egress proxy** (`egress-allow.txt`) allows HTTPS to
+  `api.anthropic.com`, `platform.claude.com` and `claude.ai` only. It refuses
+  names that resolve to LAN addresses.
+
+| Setting (`runner.env`) | Default | |
+| --- | --- | --- |
+| `LABNET_RUNNER_CONTROL_CENTER_URL` | required | `https://pqt-control-center` in the lab. Plain `http://` only with `LABNET_RUNNER_DEV=1` |
+| `LABNET_RUNNER_TOKEN` (or `_TOKEN_FILE`) | required | From `labnet-control-center-admin runner add <name>` |
+| `LABNET_RUNNER_CA_FILE` | system trust | `/etc/labnet/labnet-ca.pem` in the lab |
+| `LABNET_RUNNER_WORK_DIR` | `/var/lib/labnet-runner` | Working copies; set by compose |
+| `LABNET_RUNNER_POLL_SECONDS` | `10` | How often it asks for a run |
+| `LABNET_RUNNER_AGENT_TIMEOUT_MINUTES` | `120` | One run's time limit |
+| `LABNET_RUNNER_PYTHON_TIMEOUT_SECONDS` / `_CPUS` / `_MEMORY_MB` / `_PIDS` | `600` / `2` / `2048` / `256` | One `run_python` call's limits |
+| `LABNET_RUNNER_KEEP_RUNS` | off | Keep each run's working copy after it ends (for debugging) |
+| `LABNET_RUNNER_DEV` | off | Development: allows plain HTTP and marks every run "development only" |
+
+##### In development: Docker in WSL on your laptop
+
+Needs, once:
+1. WSL 2 with a Linux distribution (`wsl --install -d Ubuntu-22.04`).
+2. Docker Engine in that distribution
+   ([docs.docker.com/engine/install/ubuntu](https://docs.docker.com/engine/install/ubuntu/)).
+   Then, in WSL, `sudo usermod -aG docker $USER`.
+3. **Mirrored networking**, so WSL reaches the laptop's `127.0.0.1:8080`.
+   `%UserProfile%\.wslconfig` must contain:
+
+   ```ini
+   [wsl2]
+   networkingMode=mirrored
+   ```
+
+   Then run `wsl --shutdown`.
+
+Then, from Git Bash at the repository root, with the dev network up:
+
+```bash
+scripts/dev/runner.sh build        # the three images (again after changing labnet/automation_runner)
+scripts/dev/runner.sh login        # once: in Claude, type /login, open the link, then /exit
+scripts/dev/runner.sh up           # issues a runner token into .devnet/runner.env, starts the runner
+scripts/dev/runner.sh logs         # watch it check itself, then claim runs
+scripts/dev/runner.sh self-check   # the checks alone
+scripts/dev/runner.sh down
+```
+
+The working copies live in WSL's own file system (`~/.labnet-runner`). Use a
+different distribution with `LABNET_WSL_DISTRO=<name>`.
+
+##### In the lab: the runner PC
+
+The runner gets its own Linux PC (Ubuntu 24.04 LTS or Debian 12; about 8 GB
+of RAM; wired to the lab network at a fixed address). It needs outbound
+HTTPS to the Control Center and to Anthropic, and nothing inbound.
+
+1. **Docker Engine.** Follow
+   [docs.docker.com/engine/install](https://docs.docker.com/engine/install/)
+   for the distribution, then `sudo systemctl enable --now docker`. Don't add
+   people to the `docker` group on this PC: it is root-equivalent.
+2. **The code.** Copy or clone the repository to `/opt/labnet-src`, and
+   update it the same way.
+3. **Trust and the address.**
+   - Copy `labnet-ca.pem` to `/etc/labnet/labnet-ca.pem`.
+   - Add `192.168.50.10  pqt-control-center` to `/etc/hosts`.
+   - Check with `curl --cacert /etc/labnet/labnet-ca.pem https://pqt-control-center/health/live`.
+4. **A token.** On the Control Center PC, `labnet-control-center-admin …
+   runner add lab-runner` ([Runners and their tokens](#runners-and-their-tokens)).
+5. **Optional: limit the runner API to this PC's address.** Run
+   `setup_logins.ps1 -RunnerAddress <its IP>` there, then restart Caddy
+   ([Logins](#logins)).
+6. **Settings.** Create `/etc/labnet/runner.env`, owned by root, mode 600:
+
+   ```ini
+   LABNET_RUNNER_CONTROL_CENTER_URL=https://pqt-control-center
+   LABNET_RUNNER_TOKEN=lnr_…
+   LABNET_RUNNER_CA_FILE=/etc/labnet/labnet-ca.pem
+   ```
+
+7. **Build, sign in, start.** In `/opt/labnet-src`:
+
+   ```bash
+   sudo mkdir -p /var/lib/labnet-runner
+   sudo docker compose -f docker/automation/compose.yaml build
+   sudo docker compose -f docker/automation/compose.yaml --profile login run --rm login   # /login, then /exit
+   sudo docker compose -f docker/automation/compose.yaml run --rm --no-deps runner labnet-runner self-check
+   sudo docker compose -f docker/automation/compose.yaml up -d egress runner
+   sudo docker compose -f docker/automation/compose.yaml logs -f runner
+   ```
+
+   The containers restart with Docker, so the runner is back after a reboot.
+
+**Updating:** pull the new code into `/opt/labnet-src`, then `build` and
+`up -d egress runner` again. A run in progress is stopped, keeps what it has
+uploaded, and ends `stopped`; queue it again.
+
+**Until the Linux PC is ready:** the same steps work with Docker in WSL on
+the Central PC. There, set `LABNET_RUNNER_CONTROL_CENTER_URL` to the
+Control Center's HTTPS address, as in the lab. Keep in mind that the agent
+then shares a computer with Central.
+
+**Claude login.** One login, saved in the `labnet-automation-claude-login`
+volume, serves every run. Confirm that your Claude plan allows lab-wide
+automated use. To change it, run the `login` step again. Removing the volume
+signs the runner out.
+
+#### Literature search
+
+Papers are searchable by keyword, page by page, with citations like
+`lasers_and_stabilization/…/An introduction to Pound–Drever–Hall laser frequency stabilization.pdf p.6`.
+The project page's search box and the agent's `search_literature`,
+`list_papers` and `read_paper_pages` tools use the same search.
+
+**What is indexed:**
+- **The lab library**, by the same rules as its tree: no `_`-folders, no
+  `collections/`, no hidden names, links, junctions or hard links. PDFs page
+  by page; `.txt` and `.md` files as one page.
+- **Each project's own `Literature/`** folder, the same way.
+- A PDF with (almost) no text layer, such as a scan, is flagged *no text
+  layer* and can't be found by its words. An encrypted or broken one is
+  flagged with a short reason. Neither stops the rest.
+
+**Keeping it current:**
+- The library is indexed when someone presses **Index library** on the
+  Automation tab's *Lab library* card. The card shows how many papers are
+  indexed, how many have no text layer and how many couldn't be read, with
+  live progress while it runs. Only one indexing runs at a time; pressing
+  again meanwhile gets 409.
+- Indexing is incremental. A paper with the same size and modification time
+  is skipped, one with the same bytes (sha256) only has its record updated,
+  and a paper that is gone is dropped. *Index library* also tries papers
+  that failed last time again.
+  The lab's 62 papers take about two minutes the first time and under a
+  second after that.
+- A project's own papers are indexed just before it is searched. If new ones
+  would take more than about 30 s, the search covers what is indexed and
+  says so.
+
+**What a search covers:** the project's [library scope](#automation) (its
+topic folders and reading lists, or the whole library when it names neither,
+exactly as the runner's library endpoint decides), plus the project's own
+papers. `paper=<path>` narrows it to one of them.
+
+**How a query is read:** words and `"quoted phrases"`. A page must have them
+all; when no page does, any of them will do (the reply's `mode` says `all`
+or `any`). Pages are ranked by BM25, and English endings are matched
+(*stabilizing* finds *stabilization*). Everything typed is searched as
+words: `AND`, `OR`, `NOT`, `NEAR`, `*`, `:` and parentheses mean nothing
+special, and a query can't cause an error.
+
+| Request | Does |
+| --- | --- |
+| `GET /api/automation/library/index` | The library index: `state` (`idle`, `running` or `failed`), `done` of `total`, the `current` paper, `papers`, `no_text`, `errors`, `message`, and `extractor` (false without pypdf) |
+| `POST /api/automation/library/index` `{}` | Starts indexing (202); 409 while it runs; 503 without pypdf |
+| `GET …/projects/<id>/literature/search?q=&k=&paper=` | Up to `k` pages (1 to 50, default 10) for `q` (at most 500 characters): `path`, `source` (`library` or `project`), `page`, `score`, `snippet` and `cite` |
+| `GET …/projects/<id>/literature/papers` | Every paper the project's search covers, with its pages and status |
+
+Runners have the same three, plus `pages`, under `runs/<run_id>/literature/`
+(see [the runner API](#the-runner-api)). They work only while the run is
+active.
+
+- In a `snippet`, each hit is between the characters U+0002 and U+0003. The
+  project page turns them into highlights without ever reading paper text as
+  HTML.
+- `pages` returns at most 20 pages per request, with `more` when the paper
+  goes on.
+
+**PDFs are read in a sandbox.** Papers come from the internet, and a PDF
+parser is a large attack surface, so pypdf never runs inside the Control
+Center:
+- Each PDF is copied, hashed, and read by a separate process,
+  `python -m labnet.control_center.literature_extract`.
+- That process gets the same allow-list environment as experiment scripts
+  (no `LABNET_*` settings, no credentials) and no console window.
+- It has 60 s per PDF; a slower one keeps the pages read so far and is
+  flagged.
+- At most 3000 pages are read, 200 000 characters per page and 64 MB per
+  paper.
+- pypdf comes with the `control-center` extra (`pypdf>=5,<7`). Without it,
+  the card says so and indexing is refused.
 
 ### Photo-Agent
 
@@ -731,6 +1198,13 @@ environment.
   `home/live/network.md` in the workspace: Lab PCs, devices, states, who
   holds them, and methods. Questions about what is online are answered from
   it.
+- **An open Automation project:** the chat shows "Photo-Agent sees:
+  <project>". With each message it gets:
+  - a listing of the project's files;
+  - a copy of its text files (up to 4 MB) in that conversation's uploads.
+
+  It gets copies, not the folder itself, because an added folder would also
+  load any Claude Code settings someone put in it.
 - **Briefing:** its role and the lab's script style (`from_env()`,
   try/except/finally, release in reverse order) are in
   [`agent_briefing.md`](labnet/control_center/agent_briefing.md).
@@ -772,20 +1246,33 @@ people have the page open.
    | Firewall | Allow inbound TCP 8443 | Nothing new (443 is already open) |
    | Viewing computers | Nothing extra | Add `192.168.50.10  pqt-control-center` to `C:\Windows\System32\drivers\etc\hosts` (the lab has no DNS) |
 
-   Either site block forwards to the Control Center:
+   Either site block forwards to the Control Center through the logins
+   snippet that step 4 writes
+   ([`site/Caddyfile.example`](../site/Caddyfile.example) has the whole file):
 
    ```caddyfile
+   {
+       admin off                                     # first block: see Logins
+   }
+   import C:/ProgramData/LabNet/caddy-logins.caddy
+
    https://pqt-control-center {          # or: https://192.168.50.10:8443
        tls C:/ProgramData/LabNet/certs/control-center.crt C:/ProgramData/LabNet/certs/control-center.key
-       reverse_proxy 127.0.0.1:8080
+       import labnet_control_center
    }
    ```
 
-4. **Browser trust.** Python clients use `LABNET_CA_FILE`, but browsers use the
+4. **Logins.** List the lab members in `C:\ProgramData\LabNet\logins.txt`
+   and run `scripts/lab/setup_logins.ps1` (see [Logins](#logins)). It writes
+   the snippet and sets `LABNET_CONTROL_CENTER_PROXY_SECRET` in
+   `control-center.env`, and prints each person's password once.
+5. **Browser trust.** Python clients use `LABNET_CA_FILE`, but browsers use the
    Windows certificate store. Install the CA once on each viewing computer
    with `certutil -addstore Root labnet-ca.pem`, or the page shows a
    certificate warning.
-5. **Start** it by hand in its own PowerShell window on `central_server_pc`:
+6. **Start** it by hand in its own PowerShell window on `central_server_pc`,
+   and restart Caddy so it reads the snippet (stop it with Ctrl+C and run it
+   again: with `admin off`, `caddy reload` and `caddy stop` don't work):
 
    ```powershell
    C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-control-center.exe --env-file C:\ProgramData\LabNet\control-center.env
@@ -793,14 +1280,18 @@ people have the page open.
 
    If Central isn't running yet, the page shows a "can't reach Central"
    banner and recovers on its own once Central starts.
-6. **Check it from a viewing computer**, not the server:
-   `curl.exe https://pqt-control-center/health/ready`, which returns 200 when
-   the Control Center is up *and* reaching Central.
+7. **Check it from a viewing computer**, not the server:
+   - `curl.exe https://pqt-control-center/health/ready` returns 200 when the
+     Control Center is up *and* reaching Central. It needs no login.
+   - Opening `https://pqt-control-center/status` asks for a login, and the
+     top bar then shows "Signed in as <name>".
+   - `curl.exe http://127.0.0.1:8080/status` on the server itself is refused
+     (403): only requests through Caddy get in.
 
 Use hyphens in the name: `pqt_control_center` with underscores is not a
 valid host name, and certificate tools reject it. The built-in server only
-binds to loopback. Caddy makes it reachable, over HTTPS, so adding logins
-later never sends keys in clear text.
+binds to loopback. Caddy makes it reachable, over HTTPS, so passwords never
+cross the network in clear text.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -808,11 +1299,17 @@ later never sends keys in clear text.
 | `LABNET_API_KEY` | required | The Control Center's own Central key (role `user`) |
 | `LABNET_CA_FILE` | system trust | Only needed if it ever runs on a different computer and reaches Central over HTTPS |
 | `LABNET_CONTROL_CENTER_HOST` / `_PORT` | `127.0.0.1` / `8080` | Built-in HTTP listener; loopback only |
+| `LABNET_CONTROL_CENTER_PROXY_SECRET` | none (no logins) | Turns on [logins](#logins): only requests carrying it (from Caddy) get in. At least 32 printable ASCII characters, no spaces; `setup_logins.ps1` makes one |
+| `LABNET_CONTROL_CENTER_ALLOWED_HOSTS` | `127.0.0.1,localhost`; any host with the secret | Host names the pages answer to, comma-separated, without ports or schemes (e.g. `pqt-control-center,192.168.50.10`); others get 400 |
 | `LABNET_CONTROL_CENTER_REFRESH_SECONDS` | `3` | How often the network picture is refreshed |
 | `LABNET_CONTROL_CENTER_MAX_HOLD_MINUTES` | `30` | Play stops itself and releases the device after this long |
 | `LABNET_CONTROL_CENTER_IDLE_RELEASE_SECONDS` | `15` | A device page releases its device this long after the last viewer leaves |
 | `LABNET_CONTROL_CENTER_SCRIPT_TIMEOUT_SECONDS` | `600` | A script is stopped after this long |
 | `LABNET_CONTROL_CENTER_EXPERIMENTS_DIR` | `experiments` next to the env file | The Experiments tab's folder: one JSON file per experiment, created on the first save |
+| `LABNET_AUTOMATION_DIR` | `automation` next to the env file | The Automation tab's folder: `projects/` and `state/` (see [Automation](#automation)) |
+| `LABNET_AUTOMATION_MAX_FILE_MB` | `100` | The largest file people, or a runner, may upload to a project |
+| `LABNET_AUTOMATION_RUN_QUOTA_MB` | `500` | How much one [run](#runs) may upload in all |
+| `LABNET_AUTOMATION_RUN_STALE_MINUTES` | `10` | How long an active [run](#runs) may go without a word from its runner before it is marked failed |
 | `LABNET_AGENT_COMMAND` | `claude` on `PATH`, then `~\.local\bin\claude.exe` | Claude Code for Photo-Agent; if it can't be found, the chat says so |
 | `LABNET_AGENT_WORKSPACE` | `agent` next to the env file | Photo-Agent's folder: `briefing.md`, `home/` (where it runs) and `uploads/` |
 | `LABNET_AGENT_SOURCES` | the installed `labnet` package | Folders it may read, separated by `;` on Windows. In the lab, list the package folder plus any folder where you unpacked the examples (`client-examples.zip`) or lab notes |
@@ -822,6 +1319,140 @@ later never sends keys in clear text.
 | `LABNET_AGENT_EFFORT` | `high` | The effort selected at first: `low`, `medium`, `high`, `xhigh` or `max` |
 | `LABNET_AGENT_TIMEOUT_SECONDS` | `300` | An answer is stopped after this long |
 | `LABNET_AGENT_MAX_CONCURRENT` | `2` | Answers in progress at once; later messages wait their turn |
+
+### Logins
+
+In the lab, each person signs in with their own login. Caddy checks it
+([`basic_auth`](https://caddyserver.com/docs/caddyfile/directives/basic_auth),
+Caddy 2.8 or later) and adds two headers to every request it forwards:
+
+| Header | Value |
+| --- | --- |
+| `X-LabNet-Proxy` | `LABNET_CONTROL_CENTER_PROXY_SECRET`, shared by Caddy and the Control Center |
+| `X-LabNet-User` | The login name |
+
+With the secret set, the Control Center refuses (403) any request without
+it. A program on the server that dials `127.0.0.1:8080` directly gets
+nowhere, so the user name can be trusted:
+- the top bar shows "Signed in as <name>";
+- it is the author of experiments and projects, and who queued or
+  cancelled a run (the *Created by* box is hidden);
+- later, it is who approved a protocol.
+
+There is no sign-out button: the browser remembers the login until it is
+closed.
+
+**Setting up or changing logins.** On `central_server_pc`, as the Windows
+account that runs Caddy and the Control Center (otherwise name theirs with
+`-ServiceAccount`):
+
+1. List the logins in `C:\ProgramData\LabNet\logins.txt`, one per line.
+   Names use letters, digits, `.`, `_` and `-` (at most 64); `#` starts a
+   comment. Names that differ only in case are refused.
+2. Copy `scripts/lab/setup_logins.ps1` from the repository (the release
+   doesn't include it) and run it:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\setup_logins.ps1 -WhatIf   # shows what would change
+   powershell -ExecutionPolicy Bypass -File .\setup_logins.ps1
+   ```
+
+3. Hand each new password to its owner. They are shown only this once.
+4. Restart Caddy. If the script made a new secret, restart the Control
+   Center too, so both use it.
+
+Run it again whenever someone joins or leaves, or forgets their password.
+Existing logins keep their passwords; new ones get a random password
+(20 characters, no look-alikes); logins no longer listed are removed.
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `-UsersFile` | `C:\ProgramData\LabNet\logins.txt` | The logins file |
+| `-CaddySnippet` | `C:\ProgramData\LabNet\caddy-logins.caddy` | The snippet it writes |
+| `-EnvFile` | `C:\ProgramData\LabNet\control-center.env` | Where it sets `LABNET_CONTROL_CENTER_PROXY_SECRET`; every other line stays as it is |
+| `-Caddy` | `caddy` on `PATH` | Path to `caddy.exe`, used for `caddy hash-password` |
+| `-Reset` | none | Logins that get a new password, e.g. `-Reset alice,bob` |
+| `-RunnerAddress` | any address, or what an earlier run was given | IP addresses or CIDR ranges allowed to use the runner API, e.g. the runner laptop's (full dotted form) |
+| `-AnyRunnerAddress` | | Removes an earlier `-RunnerAddress` restriction |
+| `-Upstream` | `127.0.0.1:8080`, or what an earlier run was given | Where Caddy forwards to |
+| `-ServiceAccount` | none | Accounts that may read the two files besides yours, e.g. `'NT AUTHORITY\NetworkService'` if Caddy runs as a service |
+| `-Caddyfile` | `C:\ProgramData\LabNet\Caddyfile` | Only checked: the script warns if it doesn't say `admin off` |
+| `-WhatIf` | | Writes nothing and says what would change |
+
+It checks that it can write both files before writing either, writes the
+env file first, and prints new passwords as soon as their hashes are in
+the snippet, so a failure halfway never loses a password. Passwords reach
+`caddy hash-password` on its standard input, never on a command line.
+
+The script keeps a secret already in the env file if it is at least 32
+characters of `A–Z a–z 0–9 . _ ~ + / = -`; otherwise it makes a new one.
+
+**The snippet** defines `(labnet_control_center)`. The Caddyfile imports the
+file at the top and uses `import labnet_control_center` in the Control
+Center's site block (step 3 above). It holds bcrypt hashes, never
+passwords, and the proxy secret, which `control-center.env` holds too.
+So the script restricts both files to Administrators, SYSTEM, the account
+that ran it and any `-ServiceAccount`, and refuses either file if another
+account owns it (anyone may create files in `C:\ProgramData`, and an owner
+can always grant themselves access again). Inside the snippet, three
+blocks, in order:
+
+| Path | Login | Headers |
+| --- | --- | --- |
+| `/health/*` | none | Both `X-LabNet-*` headers removed |
+| `/api/automation/runner/*` (from `-RunnerAddress` only, if given) | none | Both `X-LabNet-*` headers removed |
+| everything else | `basic_auth` | `Authorization` removed; `X-LabNet-Proxy` and `X-LabNet-User` added |
+
+**What is exempt, and why.**
+- **Health checks**, so monitoring and the check step work without a login.
+  They show only whether the Control Center is up and reaching Central.
+- **The runner API**, because a runner is a program, not a person: it
+  proves itself with a [runner token](#runners-and-their-tokens) instead.
+  It refuses anything a browser sends. With `-RunnerAddress`, the runner
+  API from any other address falls through to the login, which strips the
+  token, so it can't be used from there.
+
+The Control Center exempts the same two prefixes (lowercase, exactly). Caddy
+removes the two headers there, so they can't be forged.
+
+**Caddy's admin API must be off** (`admin off` in the Caddyfile's first
+block, as in [`site/Caddyfile.example`](../site/Caddyfile.example)). Caddy
+otherwise answers on `localhost:2019` without a password: any program on the
+server could read the running config, secret included, or load one without
+logins.
+
+**Whatever the mode,** a change (POST, PUT, PATCH, DELETE) that a browser
+says came from another web site is refused (403). The Experiments and
+Automation APIs also take changes only as JSON or a raw upload, which a
+cross-site form can't send. A page elsewhere can't pause a device, start a
+script, or edit an experiment through someone's open tab.
+
+**Development has no logins.** Without `LABNET_CONTROL_CENTER_PROXY_SECRET`
+anyone who can reach the port is trusted, the headers are ignored (anyone
+could send them), and the *Created by* name typed on the page is recorded.
+That is safe only because the server binds to loopback on a one-person
+computer.
+
+**The host check.** The pages answer only to the host names in
+`LABNET_CONTROL_CENTER_ALLOWED_HOSTS`; any other `Host` gets 400 "Invalid
+host header". This stops a web page from pointing its own name at
+`127.0.0.1` and reading the Control Center through a browser.
+- Without the secret, the default is `127.0.0.1,localhost`.
+- With the secret, the default is any host: the secret already stops that
+  trick, and Caddy forwards the name people typed.
+
+**Upgrading a lab install without logins.** Caddy passes on the name people
+typed (`pqt-control-center` or `192.168.50.10`), which the loopback-only
+default refuses. Either set up logins, or add
+`LABNET_CONTROL_CENTER_ALLOWED_HOSTS=pqt-control-center,192.168.50.10` to
+`control-center.env` before restarting the Control Center.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| 400 "Invalid host header" | The name used isn't allowed | Set `LABNET_CONTROL_CENTER_ALLOWED_HOSTS`, or set up logins |
+| 403 "Open the Control Center through its sign-in address (Caddy)." | No secret, or a different one: port 8080 opened directly, a site block with its own `reverse_proxy` instead of `import labnet_control_center`, or Caddy and the Control Center not both restarted after a new secret | Open it through Caddy; fix the site block; restart both |
+| 403 "The sign-in proxy sent no usable user name." | A hand-edited Caddyfile sends the secret without a login | Use the snippet `setup_logins.ps1` writes, unchanged |
+| The Control Center won't start: "…PROXY_SECRET must be at least 32…" | A short or hand-made secret | Run `setup_logins.ps1` again |
 
 ## Lease and streaming behavior
 
@@ -1080,4 +1711,9 @@ restore the `labnet.db.before-<version>.<time>` backup for that.
 Settings files, private keys, caches, build outputs, and runtime databases are
 ignored by Git. Keep each settings file only on the computer that uses it,
 restrict its permissions, and rotate any exposed API key or private key
-immediately.
+immediately. The same goes for the Control Center's credentials:
+- **Proxy secret:** delete the `LABNET_CONTROL_CENTER_PROXY_SECRET` line,
+  run `setup_logins.ps1` again, and restart Caddy and the Control Center.
+- **A login's password:** `setup_logins.ps1 -Reset <name>`, then restart Caddy.
+- **A runner token:** `labnet-control-center-admin runner revoke <name>`,
+  then `runner add <name>`.

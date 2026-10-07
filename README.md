@@ -230,7 +230,7 @@ own settings file:
 | `dev-admin.env` | Central URL + the admin key |
 | `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `scripts/dev/inventories/dev_lab_pc_01.py` |
 | `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `scripts/dev/inventories/dev_lab_pc_02.py` |
-| `control-center.env` | Central URL + the `control-center` key, port 8080, the experiments folder (`experiments/` at the repository root, git-ignored, so re-seeding keeps your experiments) and Photo-Agent's folders |
+| `control-center.env` | Central URL + the `control-center` key, port 8080, the experiments and automation folders (`experiments/` and `automation/` at the repository root, git-ignored, so re-seeding keeps them) and Photo-Agent's folders (papers in `literature/`) |
 | `logs/` | One log per process; `up.sh` prints the tail if a start fails |
 
 A dev Lab PC file is six lines. Having an API key turns on Central
@@ -264,6 +264,18 @@ opens one on a canvas:
 - **Export script** turns the diagram into a Python script that runs it and
   writes a CSV.
 
+The **Automation** tab holds projects an agent will work in. Each project is
+a folder:
+- **Literature:** the shared lab library is already there.
+- **Data:** your example data, and the data the agent makes.
+- **Experiment_layout:** snapshots of the canvases it uses.
+- **Tasks:** one Markdown file per task.
+- **ScriptsUtilized, Protocols and Analysis:** where the agent's work goes.
+
+You upload, edit and link experiments from the page. Folders the agent writes
+are read-only to people. Agent runs come in a later update. See
+[Automation](Labnet/README.md#automation).
+
 The **Photo-Agent** sidebar is Claude Code: ask it about LabNet, attach data
 or papers, or ask it to set up an experiment. It proposes a diagram you can
 apply to the canvas. See
@@ -281,6 +293,7 @@ settings file's location and the address people open differ:
 | `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | `http://127.0.0.1:8008` (same computer as Central) |
 | Started by | `scripts/dev/up.sh` | you, in its own window (see [starting the lab by hand](Labnet/README.md#starting-the-lab-by-hand)) |
 | Address | `http://127.0.0.1:8080/status` | `https://pqt-control-center/status` or `https://192.168.50.10:8443/status`, via Caddy |
+| Logins | none | One per person, checked by Caddy (`scripts/lab/setup_logins.ps1`; see [Logins](Labnet/README.md#logins)) |
 
 Use `pqt-control-center`, with hyphens: underscores are not valid in host
 names or certificates. Setup is in
@@ -447,7 +460,11 @@ bash $R/update_host.sh client                # on each client
 | Record | Copies `RELEASE.TXT` to `C:/ProgramData/LabNet/<role>-RELEASE.TXT` |
 
 Start the role again (the script prints the command) and check its
-`/health/ready`. Then run the
+`/health/ready`. A Control Center installed before logins existed answers
+400 through Caddy until you either set up
+[logins](Labnet/README.md#logins) or add
+`LABNET_CONTROL_CENTER_ALLOWED_HOSTS=pqt-control-center,192.168.50.10` to
+`control-center.env`. Then run the
 [deployment verification](Labnet/README.md#deployment-verification) checklist.
 
 **Rollback:** rerun `update_host.sh` from the previous release directory. The
@@ -464,6 +481,7 @@ backup if you need to.
 | `scripts/dev/up.sh` | dev machine | Start `labnet-central`, every `labnet-lab-pc` in `config.sh`, then `labnet-control-center`; wait for readiness |
 | `scripts/dev/status.sh` | dev machine | Component health + Central's device table |
 | `scripts/dev/smoke.sh` | dev machine | Lease and read every available device end to end |
+| `scripts/dev/runner.sh` (`build`, `login`, `up`, `logs`, `down`) | dev machine (Docker in WSL) | The [Automation runner](Labnet/README.md#the-automation-runner) against the dev Control Center |
 | `scripts/dev/down.sh` | dev machine | Stop Lab PCs, then Central (found by port; only Python processes) |
 | `scripts/dev/codegen.sh [--skip-tests]` | dev machine | Generate protos, `--check`, run pytest |
 | `scripts/dev/redeploy.sh [--skip-tests]` | dev machine | `down` → `codegen` → `up` → `smoke` |
@@ -473,6 +491,8 @@ backup if you need to.
 | `update_host.sh <central\|lab-pc\|client\|control-center>` | each runtime computer | Verify, install, migrate or install site/examples, record |
 | `labnet-certs init-ca / issue / show` | development PC | Create the private CA and server certificates |
 | `labnet-central-admin setup / user …` | Central | Migrate, create users, write their settings files |
+| `scripts/lab/setup_logins.ps1 [-Reset NAME] [-WhatIf]` | Central (PowerShell) | Control Center logins: Caddy snippet with each person's password hash, and the proxy secret in `control-center.env` |
+| `labnet-control-center-admin runner add / list / revoke` | Central | Issue and revoke Automation runner tokens |
 
 ## Repository layout
 
@@ -485,7 +505,7 @@ backup if you need to.
 | [`Labnet/labnet/lab_pc/`](Labnet/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
 | [`Labnet/labnet/control_center/`](Labnet/labnet/control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |
 | [`Labnet/tests/`](Labnet/tests/) | Unit, full-stack, and example tests |
-| [`site/`](site/README.md) | The PQT lab's configuration: env templates and Lab PC inventories |
+| [`site/`](site/README.md) | The PQT lab's configuration: env templates, the Caddyfile template, and Lab PC inventories |
 | [`examples/`](examples/README.md) | Experiment scripts 01–05 |
 | [`scripts/`](scripts/) | Development, release, and host-update scripts |
 | [`PQT_network_releases/`](PQT_network_releases/) | Built releases with their `RELEASE.TXT` records |
@@ -495,6 +515,12 @@ backup if you need to.
 The local network uses plaintext only because everything is on loopback;
 LabNet refuses plaintext Central or gRPC endpoints on any other address. Use
 HTTPS for Central and TLS for every LAN-facing Lab PC.
+
+In the lab, the Control Center answers only requests that come through
+Caddy, where each person signs in with their own login; Caddy vouches for
+them with a shared proxy secret. Automation runners use their own tokens
+instead. Development on one computer has no logins. See
+[Logins](Labnet/README.md#logins).
 
 Never commit API keys, private keys, `.env` files, site certificates, or
 runtime databases. Rotate any credential that may have been exposed

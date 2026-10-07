@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automation · PQT Lab Control Center</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-page="automation">
+  <main id="page" class="workspace">
+    <div class="page-head">
+      <div>
+        <h1>Automation</h1>
+        <p class="subtle" id="summary">Loading projects…</p>
+      </div>
+      <div class="page-actions">
+        <button class="button primary" type="button" id="new-project">New project</button>
+      </div>
+    </div>
+    <div id="notice" class="banner" role="status" hidden></div>
+    <div class="lab-pcs">
+      <section class="lab-pc">
+        <header class="lab-pc-head">
+          <h2>Projects</h2>
+          <span class="lab-pc-count" id="project-count"></span>
+        </header>
+        <ul class="devices projects" id="projects"></ul>
+      </section>
+      <section class="lab-pc">
+        <header class="lab-pc-head">
+          <h2>Lab library</h2>
+          <span class="lab-pc-count" id="library-count"></span>
+        </header>
+        <div class="card-body" id="library"></div>
+      </section>
+      <section class="lab-pc">
+        <header class="lab-pc-head">
+          <h2>What a project holds</h2>
+        </header>
+        <div class="card-body">
+          <p class="card-intro">
+            Each project is a folder an agent works in. You provide the papers, data, setup and tasks; the
+            agent's scripts, logs, data and analysis are kept beside them, so every step can be checked.
+          </p>
+          <ul class="zone-guide" id="zone-guide"></ul>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="/static/js/markdown.js"></script>
+  <script src="/static/js/experiment-model.js"></script>
+  <script src="/static/js/experiment-card.js"></script>
+  <script src="/static/js/shell.js"></script>
+  <script src="/static/js/live.js"></script>
+  <script src="/static/js/automation.js"></script>
+</body>
+</html>

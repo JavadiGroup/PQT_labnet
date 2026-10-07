@@ -1,0 +1,32 @@
+# Caddy for the lab, on central_server_pc. Copy to C:\ProgramData\LabNet\Caddyfile.
+# Check it:  caddy validate --config C:\ProgramData\LabNet\Caddyfile
+# Start it:  caddy run --config C:\ProgramData\LabNet\Caddyfile
+# Needs Caddy 2.8 or later (the basic_auth directive). See Labnet/README.md,
+# "HTTPS with Caddy" (Central) and "Control Center" (logins).
+
+# No admin API. Caddy's default one (localhost:2019, no password) would show
+# the Control Center's proxy secret to any program on this PC and let it load
+# a config without logins. Restart Caddy to apply changes instead of reloading.
+{
+	admin off
+}
+
+# The Control Center's logins and proxy secret, written by
+# scripts/lab/setup_logins.ps1. It defines the (labnet_control_center) snippet
+# used below; re-run the script when someone joins or leaves the lab.
+import C:/ProgramData/LabNet/caddy-logins.caddy
+
+# Central: Lab PCs and Python clients, with their API keys. No logins here.
+https://192.168.50.10 {
+	tls C:/ProgramData/LabNet/certs/central.crt C:/ProgramData/LabNet/certs/central.key
+	reverse_proxy 127.0.0.1:8008
+}
+
+# The Control Center: each person signs in with their own login. The snippet
+# forwards to 127.0.0.1:8080 with X-LabNet-Proxy (the secret) and
+# X-LabNet-User (the login); /health/* and the Automation runner's API
+# (/api/automation/runner/*, runner tokens) skip the login.
+https://pqt-control-center {  # or: https://192.168.50.10:8443 with Central's tls line
+	tls C:/ProgramData/LabNet/certs/control-center.crt C:/ProgramData/LabNet/certs/control-center.key
+	import labnet_control_center
+}

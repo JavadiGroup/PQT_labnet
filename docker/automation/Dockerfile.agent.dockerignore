@@ -1,0 +1,13 @@
+# Build context is the repository root: send only what this image needs.
+*
+!Labnet/pyproject.toml
+!Labnet/README.md
+!Labnet/MANIFEST.in
+!Labnet/labnet
+!Labnet/protos
+!docker/automation/requirements-run.txt
+!docker/automation/egress-allow.txt
+**/__pycache__
+**/*.pyc
+# Windows vendor DLLs for a lab device (46 MB): never needed in a Linux container.
+Labnet/labnet/devices/*/DLLs

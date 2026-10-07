@@ -67,6 +67,19 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def replace_with_retry(source: Path, target: Path, busy: str = "The file is busy; try again in a moment.") -> None:
+    """os.replace, retried while Windows has the file open elsewhere (indexer, antivirus, OneDrive)."""
+
+    for attempt in range(_REPLACE_ATTEMPTS):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_ATTEMPTS - 1:
+                raise ExperimentError(503, busy) from None
+            time.sleep(0.05)
+
+
 def slug(name: str) -> str:
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii").lower()
     return re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")[:40].strip("-") or "experiment"
@@ -251,14 +264,7 @@ class ExperimentStore:
 
     @staticmethod
     def _replace(source: Path, target: Path) -> None:
-        for attempt in range(_REPLACE_ATTEMPTS):
-            try:
-                os.replace(source, target)
-                return
-            except PermissionError:  # Windows: another program has the file open
-                if attempt == _REPLACE_ATTEMPTS - 1:
-                    raise ExperimentError(503, "The experiment file is busy; try again in a moment.") from None
-                time.sleep(0.05)
+        replace_with_retry(source, target, "The experiment file is busy; try again in a moment.")
 
     @staticmethod
     def _prune_trash(trash: Path) -> None:
@@ -271,4 +277,4 @@ class ExperimentStore:
                 pass
 
 
-__all__ = ["ExperimentError", "ExperimentStore", "VersionConflict", "now", "slug", "summary"]
+__all__ = ["ExperimentError", "ExperimentStore", "VersionConflict", "now", "replace_with_retry", "slug", "summary"]

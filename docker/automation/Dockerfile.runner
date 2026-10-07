@@ -1,0 +1,24 @@
+# The runner image: the supervisor (`labnet-runner run`), and also the egress proxy
+# (`python -m labnet.automation_runner.egress_proxy`, compose service "egress").
+#
+# The supervisor is trusted: it holds the runner token and talks to the Docker daemon through the
+# mounted /var/run/docker.sock (root-equivalent on the runner host, which is why this host runs nothing
+# else of value). Agents never get the socket. The egress service runs this image as nobody, read-only.
+#
+# Build context: the repository root (compose.yaml: context ../..).
+
+FROM python:3.11-slim-bookworm
+
+# Only the docker CLI (a static binary); the daemon is the host's.
+COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
+
+COPY Labnet /src/Labnet
+RUN pip install --no-cache-dir --disable-pip-version-check "/src/Labnet[runner]" \
+ && rm -rf /src
+
+COPY docker/automation/egress-allow.txt /etc/labnet/egress-allow.txt
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+CMD ["labnet-runner", "run"]

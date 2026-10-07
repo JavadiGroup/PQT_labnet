@@ -1,0 +1,27 @@
+# Where the agent container may connect (through labnet-automation-egress, CONNECT to port 443 only).
+# One exact host name per line; "*.suffix" would match names under suffix (none are used here).
+# Every other host is refused, and so is any of these if it resolves to a private address.
+# Source: https://code.claude.com/docs/en/network-config ("Network access requirements"), checked
+# 2026-10-07 for Claude Code 2.1.x. The agent container also sets CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1,
+# DISABLE_AUTOUPDATER=1 and ENABLE_CLAUDEAI_MCP_SERVERS=false, so nothing else is needed.
+
+# The Claude API itself (model requests, plus the feature flags and account profile Claude Code reads there).
+api.anthropic.com
+
+# OAuth token refresh for a saved claude.ai login: since 2.1.x the token exchange and refresh go here,
+# for claude.ai accounts as well as Console ones. Without it a login stops working when its access token expires.
+platform.claude.com
+
+# claude.ai account authentication. Signing in itself happens in the `login` service, which has plain
+# internet; this entry covers account lookups a headless session may make with a saved claude.ai login.
+claude.ai
+
+# Deliberately left out:
+#   console.anthropic.com   OAuth host of Claude Code before platform.claude.com (older 1.x/2.0 versions only)
+#   statsig.anthropic.com, http-intake.logs.us5.datadoghq.com, browser-intake-us5-datadoghq.com,
+#   sentry.io               telemetry and error reports (off: CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC)
+#   registry.npmjs.org, downloads.claude.ai, storage.googleapis.com
+#                           updates and plugins (off: DISABLE_AUTOUPDATER; the version is pinned in the image)
+#   mcp-proxy.anthropic.com claude.ai MCP connectors (off: ENABLE_CLAUDEAI_MCP_SERVERS=false, --strict-mcp-config)
+#   claude.com, code.claude.com, github.com, raw.githubusercontent.com
+#                           sign-in pages in a browser, docs lookups, plugin marketplaces: not used by a run

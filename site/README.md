@@ -9,10 +9,12 @@ installs it on each Lab PC as `C:\ProgramData\LabNet\site\`.
 | `central.env.example` | Central | Template for `C:\ProgramData\LabNet\central.env` |
 | `lab-pc.env.example` | each Lab PC | Template for `C:\ProgramData\LabNet\lab-pc.env` |
 | `control-center.env.example` | Central | Template for `C:\ProgramData\LabNet\control-center.env` (the web interface) |
+| `Caddyfile.example` | Central | Template for `C:\ProgramData\LabNet\Caddyfile`: Central's HTTPS site, and the Control Center's with the logins that `scripts/lab/setup_logins.ps1` writes |
 | `inventories/<lab pc>.py` | that Lab PC | Which instruments the Lab PC serves |
 
-Real `.env` files hold API keys. They live only on their own computer,
-never in this repository.
+Real `.env` files hold API keys, and the Caddy logins snippet holds the
+Control Center's proxy secret. They live only on their own computer, never
+in this repository.
 
 ## Inventories
 
