@@ -45,6 +45,31 @@ protocol's safe state (each call up to three tries, re-taking a lost lease once)
 → release the leases → audit → ``ended`` (or ``ended_unsafe`` if the safe
 state could not be applied). After a restart, grants left active on disk are
 marked ``interrupted`` (:meth:`GrantManager.mark_interrupted`).
+
+**The safe-state watchdog** (``labnet.automation_watchdog``) is a separate
+process that applies a grant's safe state when this Control Center dies or
+hangs mid-grant. It needs nothing from this process:
+
+* While a grant holds its leases (``active``/``ending``), a task on this event
+  loop rewrites ``state/<project>/grants/<id>.json`` every
+  ``HEARTBEAT_SECONDS`` with a fresh ``alive_at`` (wall-clock seconds), so a
+  hung loop stops the heartbeat. The record holds the approved normalized
+  ``protocol`` (devices, types, safe-state calls) and ``ends_at``. If the
+  heartbeat can't be written ``HEARTBEAT_FAILURES_TO_END`` times in a row, the
+  grant is ended here (safe state) rather than left for the watchdog to guess.
+* The watchdog never writes this process's record. It writes its own
+  ``<id>.watchdog.json`` (a *claim*: ``claimed`` → ``safing`` → ``ended`` |
+  ``ended_unsafe``, or ``stood_down``) and lines of kind ``watchdog`` in the
+  grant's audit file. One writer per file, so no update is ever lost.
+* ``claimed`` (no lease taken yet) binds nobody: a heartbeat from here makes
+  the watchdog stand down. ``safing`` and the final states bind: the watchdog
+  holds a lease, so this process *hands the grant over* (refuses calls, cancels
+  calls in flight, releases its leases without a safe state of its own, unless
+  the claim says ``ended_unsafe``: then it tries its own) and marks it
+  ``interrupted`` with ``handed_to_watchdog``; when the claim is
+  final, its outcome is copied into the record and the run
+  (``safe_state_by: "watchdog"``). :meth:`GrantManager.mark_interrupted` does
+  the same at startup, so a grant the watchdog handled is never overwritten.
 """
 
 from __future__ import annotations
@@ -107,6 +132,22 @@ PUBLIC_KEYS = (
     "id", "status", "approved_by", "starts_at", "ends_at", "devices", "calls", "refused_calls",
     "ended_reason", "ended_at",
 )
+
+# ---- the watchdog's side of the record (see the module docstring) ----
+HEARTBEAT_SECONDS = 5.0  # how often a live grant's record gets a fresh alive_at
+HEARTBEAT_FAILURES_TO_END = 3  # heartbeats that couldn't be written in a row: end the grant here
+WATCHDOG_SUFFIX = ".watchdog.json"  # state/<project>/grants/<id>.watchdog.json: written only by the watchdog
+CLAIMED, SAFING, STOOD_DOWN = "claimed", "safing", "stood_down"
+WATCHDOG_STATUSES = frozenset({CLAIMED, SAFING, STOOD_DOWN, ENDED, ENDED_UNSAFE})
+WATCHDOG_FINAL = frozenset({ENDED, ENDED_UNSAFE})
+# The watchdog took (or decided about) the grant: a Control Center that comes back ends it, without resuming.
+WATCHDOG_BINDING = frozenset({SAFING}) | WATCHDOG_FINAL
+# ...and leaves the safe state to the watchdog, which holds the leases or has applied it. After
+# ended_unsafe the Control Center tries its own safe state, in case it still holds a lease.
+WATCHDOG_APPLIES = frozenset({SAFING, ENDED})
+HANDED_REASON = ("the Control Center stopped answering, so the safe-state watchdog took the grant over "
+                 "and applies its safe state")
+HANDED_FOLLOW_SECONDS = 3600.0  # how long a handed-over grant's claim is watched for its outcome
 
 
 class GrantError(AutomationError):
@@ -432,6 +473,62 @@ def _clip(text: str, limit: int = MAX_REASON_CHARACTERS) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _parse_iso(value: Any) -> float | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_small_json(path: Path) -> Any:
+    """A JSON file of at most MAX_RECORD_BYTES. A replace by the other process can make Windows
+    refuse an open for a moment, so that is retried briefly; OSError/ValueError otherwise."""
+
+    for attempt in range(3):
+        try:
+            raw = path.read_bytes()
+            break
+        except PermissionError:
+            if attempt == 2:
+                raise
+            time.sleep(0.02)
+    if len(raw) > MAX_RECORD_BYTES:
+        raise ValueError("too large")
+    return json.loads(raw.decode("utf-8"))
+
+
+def read_grant_record(path: Path) -> dict[str, Any]:
+    """``state/<project>/grants/<id>.json``; ValueError if it isn't that grant's record, OSError if unreadable."""
+
+    record = _read_small_json(path)
+    if not isinstance(record, dict) or record.get("id") != path.name[:-5] or GRANT_ID.fullmatch(path.name[:-5]) is None:
+        raise ValueError("not a grant record")
+    return record
+
+
+def watchdog_claim_path(grants_folder: Path, grant_id: str) -> Path:
+    """Where the watchdog keeps what it did with ``grant_id`` (it is the only writer)."""
+
+    return Path(grants_folder) / f"{grant_id}{WATCHDOG_SUFFIX}"
+
+
+def read_watchdog_claim(grants_folder: Path, grant_id: str) -> dict[str, Any] | None:
+    """The watchdog's claim on ``grant_id``, or None (none, or not readable as a claim: logged)."""
+
+    path = watchdog_claim_path(grants_folder, grant_id)
+    try:
+        claim = _read_small_json(path)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        LOGGER.warning("Could not read the watchdog's claim %s: %s", path, exc)
+        return None
+    if not isinstance(claim, dict) or claim.get("grant_id") != grant_id or claim.get("status") not in WATCHDOG_STATUSES:
+        LOGGER.warning("Ignoring %s: not a watchdog claim on %s", path, grant_id)
+        return None
+    return claim
+
+
 class _LeaseGone(Exception):
     """A lease lapsed and could not be taken again."""
 
@@ -465,6 +562,12 @@ class _Grant:
     end_task: asyncio.Task[dict[str, Any]] | None = None
     audit_path: Path | None = None
     audit_full: bool = False
+    alive_at: float | None = None  # wall clock of the last heartbeat written (see HEARTBEAT_SECONDS)
+    heartbeat_seconds: float = HEARTBEAT_SECONDS
+    heartbeat_failures: int = 0
+    claim_seen: str | None = None  # the watchdog claim status last noticed (logged once per change)
+    handed_to_watchdog: bool = False
+    safe_state_by: str | None = None  # "watchdog" once its outcome is copied in
 
     @property
     def device_ids(self) -> list[str]:
@@ -499,6 +602,12 @@ class _Grant:
             "duration_minutes": self.duration_minutes,
             "token_sha256": self.token_sha256,
             "token_taken": self.token is None,
+            # What the watchdog needs to apply the safe state without this process.
+            "alive_at": self.alive_at,
+            "heartbeat_seconds": self.heartbeat_seconds,
+            "protocol": self.protocol,
+            "handed_to_watchdog": self.handed_to_watchdog,
+            "safe_state_by": self.safe_state_by,
         }
 
 
@@ -522,6 +631,7 @@ class GrantManager:
         *,
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
+        heartbeat_seconds: float = HEARTBEAT_SECONDS,
     ) -> None:
         if callable(client) and not hasattr(client, "acquire_device"):
             client = client()
@@ -531,22 +641,36 @@ class GrantManager:
         self._settings = settings
         self._clock = clock
         self._wall = wall
+        self._heartbeat_seconds = heartbeat_seconds
         self._grants: dict[str, _Grant] = {}
         self._background: set[asyncio.Task[Any]] = set()
         self._closed = False
         # Runs and devices a create() is taking leases for right now (two approvals at once).
         self._creating: set[str] = set()
+        # Grants handed to the watchdog (here or by a restart) whose outcome is still to be copied in:
+        # grant id → (project id, run id, the in-memory grant or None, since when).
+        self._handed: dict[str, tuple[str, str, _Grant | None, float]] = {}
+        self._monitor_task: asyncio.Task[None] | None = None
 
     # ---- where things are kept --------------------------------------------------------
 
     def _project_state(self, project_id: str) -> Path:
         return Path(self._store.runs_folder(project_id)).parent  # state/<project>
 
-    def _save(self, grant: _Grant) -> None:
+    def _grants_folder(self, project_id: str) -> Path:
+        return self._project_state(project_id) / "grants"
+
+    def _save(self, grant: _Grant) -> bool:
+        """Write the grant's record; while it holds its leases this is also its heartbeat (alive_at)."""
+
+        if grant.status in LIVE:
+            grant.alive_at = self._wall()
         try:
-            write_json_file(self._project_state(grant.project_id) / "grants", f"{grant.id}.json", grant.record())
+            write_json_file(self._grants_folder(grant.project_id), f"{grant.id}.json", grant.record())
+            return True
         except Exception:  # the grant goes on; its audit lines still say what happened
             LOGGER.exception("Could not save grant %s", grant.id)
+            return False
 
     def _audit(self, grant: _Grant, entry: dict[str, Any]) -> None:
         if grant.audit_path is None:
@@ -725,10 +849,11 @@ class GrantManager:
             task=str(protocol.get("task") or ""), protocol=protocol, sha256=str(sha256), approved_by=approved_by,
             duration_minutes=float(duration_minutes), starts_at=wall, ends_at=wall + duration_minutes * 60,
             deadline=now + duration_minutes * 60, token_sha256=_token_hash(token), token=token,
-            contracts=contracts, devices=leases,
+            contracts=contracts, devices=leases, heartbeat_seconds=self._heartbeat_seconds,
         )
         self._grants[grant.id] = grant
         self._save(grant)
+        self._ensure_monitor()  # the heartbeat the watchdog watches
         self._audit(grant, {"kind": "start", "approved_by": approved_by, "sha256": grant.sha256,
                             "devices": grant.device_ids, "duration_minutes": grant.duration_minutes})
         grant.timer = asyncio.create_task(self._expire_later(grant), name=f"grant-expiry-{grant.id}")
@@ -1017,15 +1142,31 @@ class GrantManager:
                 await task
             except BaseException:  # noqa: BLE001 - cancelled or failed: either way it is over
                 pass
-        unsafe = not await self._apply_safe_state(grant)
+        # The watchdog holds a lease of this grant (this loop was hung or slow): the safe state is its.
+        handed = self._watchdog_applies(grant)
+        unsafe = False
+        if not handed:
+            unsafe = not await self._apply_safe_state(grant)
+            if unsafe and self._watchdog_applies(grant):  # it took a lease while this one failed
+                handed = True
         released = True
         for device_id in grant.device_ids:
             device = grant.devices.get(device_id)
             grant.devices[device_id] = None
             released = await self._release(device_id, device) and released
-        grant.status = ENDED_UNSAFE if unsafe else ENDED
         grant.ended_at = self._wall()
-        self._audit(grant, {"kind": "end", "outcome": grant.status, "reason": grant.ended_reason,
+        if handed:
+            grant.status = INTERRUPTED
+            grant.handed_to_watchdog = True
+            grant.ended_reason = _clip(HANDED_REASON)
+            self._handed[grant.id] = (grant.project_id, grant.run_id, grant, self._wall())
+            self._ensure_monitor()  # copies the watchdog's outcome in when it is final
+            outcome = "handed_to_watchdog"
+            LOGGER.warning("Grant %s was handed to the safe-state watchdog (no safe state applied here)", grant.id)
+        else:
+            grant.status = ENDED_UNSAFE if unsafe else ENDED
+            outcome = grant.status
+        self._audit(grant, {"kind": "end", "outcome": outcome, "reason": grant.ended_reason,
                             "calls": grant.calls, "refused_calls": grant.refused_calls, "released": released})
         self._save(grant)
         await self._update_run(grant, analyzing=True)
@@ -1159,10 +1300,151 @@ class GrantManager:
                 }
         return held
 
+    # ---- the watchdog's heartbeat and hand-over (see the module docstring) -------------------
+
+    def _watchdog_claim(self, grant: _Grant) -> dict[str, Any] | None:
+        return read_watchdog_claim(self._grants_folder(grant.project_id), grant.id)
+
+    def _watchdog_applies(self, grant: _Grant) -> bool:
+        claim = self._watchdog_claim(grant)
+        return claim is not None and claim["status"] in WATCHDOG_APPLIES
+
+    def start_monitor(self) -> None:
+        """Start the heartbeat task if there is anything to watch (the app calls this at startup,
+        after :meth:`mark_interrupted`; :meth:`create` starts it for each new grant)."""
+
+        self._ensure_monitor()
+
+    def _ensure_monitor(self) -> None:
+        if self._monitor_task is not None and not self._monitor_task.done():
+            return
+        if not self._handed and not any(grant.status in LIVE for grant in self._grants.values()):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # no loop (a test calling mark_interrupted alone): nothing to run it on
+            return
+        self._monitor_task = loop.create_task(self._monitor(), name="grant-heartbeat")
+
+    async def _monitor(self) -> None:
+        """Runs on this event loop while a grant holds leases or a hand-over awaits its outcome."""
+
+        while True:
+            try:
+                self._beat()
+                if self._handed:
+                    await self._follow_handed()
+            except Exception:  # noqa: BLE001 - the next beat tries again
+                LOGGER.exception("The grant heartbeat failed")
+            if not self._handed and not any(grant.status in LIVE for grant in self._grants.values()):
+                return
+            await asyncio.sleep(self._heartbeat_seconds)
+
+    def _beat(self) -> None:
+        """One heartbeat: each live grant's record gets a fresh alive_at, unless the watchdog holds it."""
+
+        for grant in list(self._grants.values()):
+            if grant.status not in LIVE:
+                continue
+            claim = self._watchdog_claim(grant)
+            status = claim["status"] if claim is not None else None
+            if status != grant.claim_seen:
+                grant.claim_seen = status
+                if status == CLAIMED:
+                    LOGGER.warning("The watchdog found grant %s's heartbeat stale and is about to take it over; "
+                                   "this heartbeat makes it stand down", grant.id)
+                elif status == STOOD_DOWN:
+                    LOGGER.info("The watchdog stood down from grant %s", grant.id)
+            if status in WATCHDOG_BINDING:
+                if grant.end_task is None:  # an ending already under way notices it itself
+                    LOGGER.warning("The watchdog took grant %s over while this loop was not answering (claim %s): "
+                                   "ending it here", grant.id, status)
+                    self._start_ending(grant, "watchdog", HANDED_REASON if status in WATCHDOG_APPLIES else
+                                       "the Control Center stopped answering and the watchdog could not apply the "
+                                       "safe state")
+                continue
+            if self._save(grant):
+                grant.heartbeat_failures = 0
+                continue
+            grant.heartbeat_failures += 1
+            if grant.heartbeat_failures >= HEARTBEAT_FAILURES_TO_END and grant.status == ACTIVE:
+                # The watchdog would think this process is gone: end the grant here, with its safe state.
+                self._start_ending(grant, "heartbeat", "the grant's heartbeat for the watchdog could not be written")
+
+    async def _follow_handed(self) -> None:
+        """Copy each handed-over grant's outcome in once the watchdog's claim is final."""
+
+        for grant_id, (project_id, run_id, grant, since) in list(self._handed.items()):
+            claim = read_watchdog_claim(self._grants_folder(project_id), grant_id)
+            if claim is None or claim["status"] not in WATCHDOG_FINAL:
+                if self._wall() - since > HANDED_FOLLOW_SECONDS:
+                    LOGGER.warning("No outcome from the watchdog for grant %s after %.0f min; the next start of "
+                                   "the Control Center copies it in", grant_id, HANDED_FOLLOW_SECONDS / 60)
+                    self._handed.pop(grant_id, None)
+                continue
+            self._handed.pop(grant_id, None)
+            if grant is not None:
+                grant.status = claim["status"]
+                grant.ended_reason = _clip(claim.get("ended_reason") or claim["status"])
+                grant.ended_at = _parse_iso(claim.get("ended_at")) or grant.ended_at
+                grant.safe_state_by = "watchdog"
+                self._save(grant)
+                await self._update_run(grant, analyzing=False)
+            else:
+                await asyncio.to_thread(self._merge_claim, self._grants_folder(project_id), grant_id, claim)
+            self._log_outcome(grant_id, claim)
+
+    @staticmethod
+    def _log_outcome(grant_id: str, claim: dict[str, Any]) -> None:
+        if claim["status"] == ENDED_UNSAFE:
+            LOGGER.error("The watchdog could NOT put grant %s's devices in their safe state: %s", grant_id,
+                         claim.get("ended_reason"))
+        else:
+            LOGGER.warning("The watchdog applied grant %s's safe state: %s", grant_id, claim.get("ended_reason"))
+
+    def _merge_claim(self, folder: Path, grant_id: str, claim: dict[str, Any]) -> dict[str, Any] | None:
+        """Copy a final watchdog claim into the grant's record on disk, and into its run; the merged record."""
+
+        try:
+            record = read_grant_record(folder / f"{grant_id}.json")
+        except (OSError, ValueError) as exc:
+            LOGGER.warning("Could not read grant %s to record the watchdog's outcome: %s", grant_id, exc)
+            return None
+        record.update({
+            "status": claim["status"],
+            "ended_reason": _clip(claim.get("ended_reason") or claim["status"]),
+            "ended_at": claim.get("ended_at") if _parse_iso(claim.get("ended_at")) else _iso(self._wall()),
+            "safe_state_by": "watchdog",
+        })
+        try:
+            write_json_file(folder, f"{grant_id}.json", record)
+        except Exception:
+            LOGGER.exception("Could not record the watchdog's outcome in grant %s", grant_id)
+            return None
+        self._record_in_run(folder.parent.name, record, analyzing=False)
+        return record
+
+    def _record_in_run(self, project_id: str, record: dict[str, Any], *, analyzing: bool) -> None:
+        public = {key: record.get(key) for key in PUBLIC_KEYS}
+        run_id = record.get("run_id")
+        try:
+            self._runs.set_grant(project_id, run_id, public)
+            if analyzing and self._runs.get(project_id, run_id).get("status") == "active":
+                self._runs.set_phase(project_id, run_id, "analyzing")
+        except Exception as exc:
+            LOGGER.warning("Could not record grant %s in its run: %s", record.get("id"), exc)
+
     # ---- restart and shutdown ----------------------------------------------------------------
 
     def mark_interrupted(self) -> None:
-        """At startup: grants left active (or ending) on disk were cut off by a restart."""
+        """At startup: grants left active (or ending) on disk were cut off by a restart.
+
+        Each is marked ``interrupted`` (no safe state was applied by this process), unless the
+        watchdog has already finished with it: then its outcome (``ended``/``ended_unsafe``) is
+        kept, never overwritten. A grant the watchdog may still be handling is followed (see
+        :meth:`start_monitor`), and an ``interrupted`` grant whose watchdog outcome came in while
+        this process was down gets that outcome now.
+        """
 
         root = Path(self._store.state)
         try:
@@ -1180,36 +1462,42 @@ class GrantManager:
                 if not entry.name.endswith(".json") or GRANT_ID.fullmatch(entry.name[:-5]) is None:
                     continue
                 try:
-                    raw = Path(entry.path).read_bytes()
-                    if len(raw) > MAX_RECORD_BYTES:
-                        raise ValueError("too large")
-                    record = json.loads(raw.decode("utf-8"))
-                    if not isinstance(record, dict) or record.get("id") != entry.name[:-5]:
-                        raise ValueError("not a grant record")
+                    record = read_grant_record(Path(entry.path))
                 except (OSError, ValueError) as exc:
                     LOGGER.warning("Skipping the unreadable grant record %s: %s", entry.path, exc)
                     continue
-                if record.get("status") not in LIVE:
+                grant_id, status = record["id"], record.get("status")
+                if status not in LIVE and not (status == INTERRUPTED and record.get("safe_state_by") is None):
                     continue
+                claim = read_watchdog_claim(folder, grant_id)
+                if claim is not None and claim["status"] in WATCHDOG_FINAL:
+                    # The watchdog already finished with it: its outcome stands.
+                    merged = self._merge_claim(folder, grant_id, claim)
+                    if merged is not None:
+                        self._log_outcome(grant_id, claim)
+                        if status in LIVE:  # the run may still be executing: move it on (with the outcome)
+                            self._record_in_run(project.name, merged, analyzing=True)
+                    continue
+                if status not in LIVE:
+                    continue  # interrupted earlier, and no outcome from the watchdog yet
+                watching = claim is not None and claim["status"] in (CLAIMED, SAFING)
                 record.update({
                     "status": INTERRUPTED,
-                    "ended_reason": "the Control Center restarted during the grant (no safe state was applied)",
+                    "ended_reason": (HANDED_REASON if watching else
+                                     "the Control Center restarted during the grant (no safe state was applied)"),
                     "ended_at": _iso(self._wall()),
+                    "handed_to_watchdog": watching or bool(record.get("handed_to_watchdog")),
                 })
                 try:
                     write_json_file(folder, entry.name, record)
                 except Exception:
-                    LOGGER.exception("Could not mark grant %s interrupted", record["id"])
+                    LOGGER.exception("Could not mark grant %s interrupted", grant_id)
                     continue
-                LOGGER.warning("Grant %s was interrupted by a restart", record["id"])
-                public = {key: record.get(key) for key in PUBLIC_KEYS}
-                project_id, run_id = project.name, record.get("run_id")
-                try:
-                    self._runs.set_grant(project_id, run_id, public)
-                    if self._runs.get(project_id, run_id).get("status") == "active":
-                        self._runs.set_phase(project_id, run_id, "analyzing")
-                except Exception as exc:
-                    LOGGER.warning("Could not record the interrupted grant %s in its run: %s", record["id"], exc)
+                LOGGER.warning("Grant %s was interrupted by a restart%s", grant_id,
+                               " (the watchdog is handling it)" if watching else "")
+                self._record_in_run(project.name, record, analyzing=True)
+                if isinstance(record.get("protocol"), dict):  # a watchdog can act on it: follow its outcome
+                    self._handed[grant_id] = (project.name, str(record.get("run_id")), None, self._wall())
 
     async def close(self) -> None:
         """Shutdown: end every grant (safe state, release) before the leases' client closes."""
@@ -1224,9 +1512,20 @@ class GrantManager:
         for grant in self._grants.values():
             if grant.timer is not None and not grant.timer.done():
                 grant.timer.cancel()
+        # The heartbeat ran until every grant ended; outcomes still pending are copied in at the next start.
+        if self._monitor_task is not None and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except BaseException:  # noqa: BLE001 - cancelled
+                pass
 
 
 __all__ = [
-    "ACTIVE", "ENDED", "ENDED_UNSAFE", "ENDING", "GRANT_ID", "INTERRUPTED", "MAX_REFUSED_IN_A_ROW", "PUBLIC_KEYS",
-    "GrantCallState", "GrantError", "GrantManager", "check_call", "readings_needed", "step_key",
+    "ACTIVE", "CLAIMED", "ENDED", "ENDED_UNSAFE", "ENDING", "GRANT_ID", "HANDED_REASON", "HEARTBEAT_SECONDS",
+    "INTERRUPTED", "LIVE", "MAX_REFUSED_IN_A_ROW", "PUBLIC_KEYS", "SAFE_STATE_CALL_SECONDS", "SAFE_STATE_TRIES",
+    "SAFING", "STOOD_DOWN", "WATCHDOG_APPLIES", "WATCHDOG_BINDING", "WATCHDOG_FINAL", "WATCHDOG_STATUSES",
+    "WATCHDOG_SUFFIX",
+    "GrantCallState", "GrantError", "GrantManager", "check_call", "read_grant_record", "read_watchdog_claim",
+    "readings_needed", "step_key", "watchdog_claim_path",
 ]

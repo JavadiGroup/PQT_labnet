@@ -400,6 +400,7 @@ def create_app(
         # a run that stops being active (from any thread) has its grant ended on this loop.
         app.state.grants = GrantManager(client, app.state.automation, app.state.runs, settings)
         await asyncio.to_thread(app.state.grants.mark_interrupted)
+        app.state.grants.start_monitor()  # follows grants a restart handed to the safe-state watchdog
         loop = asyncio.get_running_loop()
         grant_endings: set[asyncio.Task[Any]] = set()
 

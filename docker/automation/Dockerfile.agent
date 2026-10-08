@@ -7,7 +7,8 @@
 #
 # Build context: the repository root (compose.yaml: context ../..).
 
-FROM node:22-bookworm-slim
+# Base images are pinned by digest (the exact image tested); update the digest deliberately.
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 
 # Pinned 2.1.x (the version checked against the supervisor's command line); `--build-arg
 # CLAUDE_CODE_VERSION=…` to change it. The self-check reports the version and the flags the supervisor uses.
@@ -23,11 +24,13 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && npm cache clean --force
 
 # labnet without extras (no server dependencies), plus what the MCP server needs.
+# constraints.txt: the exact package versions tested.
 COPY Labnet /src/Labnet
+COPY docker/automation/constraints.txt /tmp/constraints.txt
 RUN python3 -m venv /opt/labnet \
- && /opt/labnet/bin/pip install --no-cache-dir --disable-pip-version-check \
+ && /opt/labnet/bin/pip install --no-cache-dir --disable-pip-version-check -c /tmp/constraints.txt \
         /src/Labnet "mcp>=1.30,<2" "httpx>=0.27,<1" \
- && rm -rf /src
+ && rm -rf /src /tmp/constraints.txt
 
 # Mount points. /claude is owned by node so a new login volume starts out writable by uid 1000
 # (Docker copies the image folder's ownership into an empty named volume on first mount).

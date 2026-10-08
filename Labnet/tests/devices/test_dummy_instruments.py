@@ -202,8 +202,10 @@ async def test_the_bench_is_served_over_grpc_with_typed_command_results() -> Non
             assert angle.measurement.value == pytest.approx(14.857, abs=1e-3)
 
             awg = dummy_awg_pb2_grpc.DummyAWGServiceStub(channel)
+            # Remote calls must use the published choices exactly ("Square" is refused
+            # by the Lab PC although the driver itself would accept it).
             shape = await awg.SetWaveform(
-                dummy_awg_pb2.DummyAwgWaveformRequest(device_id="awg", operation_id="op-2", channel="CH2", waveform="Square"),
+                dummy_awg_pb2.DummyAwgWaveformRequest(device_id="awg", operation_id="op-2", channel="CH2", waveform="square"),
                 metadata=metadata,
             )
             assert shape.result.text_value == "square"

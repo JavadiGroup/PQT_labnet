@@ -479,7 +479,8 @@ class Tools:
             "phase": run.get("phase"),
             "run_status": run.get("status"),
             "protocol": {key: protocol.get(key) for key in ("status", "submissions", "sha256", "title",
-                                                             "reviewed_by", "reviewed_at", "note") if key in protocol},
+                                                             "reviewed_by", "reviewed_at", "note", "approved_sha256",
+                                                             "edited_by", "changes") if key in protocol},
             **summary,
             "note": note,
         }

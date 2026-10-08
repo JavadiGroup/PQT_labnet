@@ -302,10 +302,21 @@ def approval_prompt(run: dict[str, Any], grant: dict[str, Any], protocol: dict[s
     ends_at = grant.get("ends_at") or "(see grant_status)"
     left = seconds_until(grant.get("ends_at"))
     minutes = f" (about {left / 60:.0f} minutes from now)" if left is not None else ""
+    sha256 = review.get("approved_sha256") or review.get("sha256")
+    changes = [str(item) for item in review.get("changes") or [] if isinstance(item, str)]
     lines = [
-        "# Your protocol was APPROVED",
+        "# Your protocol was APPROVED" + (" WITH EDITS" if changes else ""),
         "",
-        f"Approved by {approved_by}" + (f", sha256 {review.get('sha256')}" if review.get("sha256") else "") + ".",
+        f"Approved by {approved_by}" + (f", sha256 {sha256}" if sha256 else "") + ".",
+    ]
+    if changes:  # "Edit and approve": the reviewer changed it; the bounds below are theirs
+        lines += [
+            f"{review.get('edited_by') or approved_by} EDITED your protocol before approving it. What was approved "
+            "(and is enforced) differs from your Protocols/ file; use the bounds below, not your file's. Changes:",
+            *[f"- {change}" for change in changes],
+            "",
+        ]
+    lines += [
         f"The device grant is active until {ends_at} UTC{minutes}. After that, or after end_experiment, every "
         "device call is refused and the devices are put in the safe state.",
         "",

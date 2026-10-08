@@ -4,6 +4,7 @@ from importlib import import_module
 from typing import Any
 
 from .base import BaseDeviceInterface
+from .limits import DeviceLimitsError, SiteLimits, get_site_limits, site_limits
 from .protocol import AvailabilityAwareDevice, DeviceAvailability, PhysicalDevice
 
 __all__ = [
@@ -11,8 +12,12 @@ __all__ = [
     "BaseDeviceInterface",
     "ContractDeviceFacade",
     "DeviceAvailability",
+    "DeviceLimitsError",
     "PhysicalDevice",
     "RemoteDeviceBinding",
+    "SiteLimits",
+    "get_site_limits",
+    "site_limits",
 ]
 
 

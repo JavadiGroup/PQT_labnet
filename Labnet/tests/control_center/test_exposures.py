@@ -375,3 +375,7 @@ def test_centrals_error_is_redacted_on_the_status_page(tmp_path: Path) -> None:
     assert central["ok"] is False
     assert "lease_…" in central["error"] and "labnet_…" in central["error"]
     assert "ab" * 16 not in central["error"] and "k" * 43 not in central["error"]
+
+
+def test_claude_credentials_are_redacted() -> None:
+    assert redact("token sk-ant-oat01-" + "a" * 40 + " end") == "token sk-ant-… end"

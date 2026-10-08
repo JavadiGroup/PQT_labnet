@@ -1511,7 +1511,9 @@ async def test_a_whole_number_safe_state_is_applied(tmp_path: Path) -> None:
     raw = {**{key: PROTOCOL[key] for key in ("schema_version", "task", "title", "duration_minutes")},
            "devices": [sacher],
            "safe_state": [{"device_id": "dev01-sacher", "method": "jog_steps", "args": {"relative_steps": 0}}]}
-    live = {"dev01-sacher": {"id": "dev01-sacher", "type": "sacher_laser", "state": "available", "hints": {}}}
+    # The Sacher driver publishes no limits; the Lab PC inventory gives it site limits.
+    live = {"dev01-sacher": {"id": "dev01-sacher", "type": "sacher_laser", "state": "available", "hints": {
+        "limits": {"jog_steps.relative_steps": [-100.0, 100.0]}, "sources": {"jog_steps.relative_steps": "site"}}}}
     normalized, problems = validate_protocol(raw, project={"allowed_devices": ["dev01-sacher"]}, live_devices=live,
                                              canvas_devices=[{"device_id": "dev01-sacher",
                                                               "device_type": "sacher_laser"}],

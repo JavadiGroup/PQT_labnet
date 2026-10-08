@@ -421,11 +421,17 @@
       : "Queue " + entry.name + " for an Automation runner.";
     run.title = tip;
     run.disabled = Boolean(open);
+    // "Run with…": this run only, with another model, effort, max turns or budget.
+    const runWith = smallButton("…", () => runTaskWith(entry));
+    runWith.classList.add("run-with-button");
+    runWith.setAttribute("aria-label", "Run " + entry.name + " with…");
+    runWith.title = open ? tip : "Run with… another model, effort, max turns or budget, for this run only.";
+    runWith.disabled = Boolean(open);
     return el("li", {}, [
       fileLink(entry.path, entry.name),
       el("span", { class: "linked-tools" }, [
         el("span", { class: "outline-kind", text: ago(entry.modified) }),
-        el("span", { class: "run-button-wrap", title: tip }, [run]),
+        el("span", { class: "run-button-wrap run-split", title: tip }, [run, runWith]),
       ]),
     ]);
   }
@@ -592,14 +598,44 @@
     return store.get("localStorage", AUTHOR_KEY, "");
   }
 
-  async function queueTask(path) {
+  // ``settings`` (Run with…): {model, effort, max_turns, max_budget_usd} for this run only.
+  async function queueTask(path, settings) {
+    const body = { task: path, queued_by: author() };
+    if (settings) body.settings = settings;
     try {
-      await request(api + "/runs", jsonRequest("POST", { task: path, queued_by: author() }));
+      await request(api + "/runs", jsonRequest("POST", body));
       toast(path.replace(/^Tasks\//i, "") + " queued");
     } catch (error) {
       showNotice("Couldn't queue " + path + ": " + error.message);
     }
     await loadRuns();
+  }
+
+  async function runTaskWith(entry) {
+    const fields = await runSettingsFields(project);
+    const choice = await dialog({
+      title: "Run " + entry.name + " with…",
+      body: el("div", { class: "dialog-fields" }, [
+        el("p", {
+          class: "section-note",
+          text: "For this run only; the project's settings (" + projectRunSettings() + ") stay as they are. " +
+            "Run uses those; change them under Settings.",
+        }),
+        fields.grid,
+      ]),
+      actions: [{ label: "Queue run", value: "run", primary: true }],
+      validate: () => fields.validate(),
+    });
+    if (choice !== "run") return;
+    const chosen = fields.values();
+    // "Default" here means the Control Center's default, even when the project chose another
+    // (the server reads a missing value as the project's).
+    await queueTask(entry.path, {
+      model: chosen.run_model || (agentInfo && agentInfo.model) || null,
+      effort: chosen.run_effort || (agentInfo && agentInfo.effort) || null,
+      max_turns: chosen.run_max_turns,
+      max_budget_usd: chosen.run_budget_usd,
+    });
   }
 
   async function runAll() {
@@ -763,8 +799,28 @@
           : "Nothing logged.",
       }));
     }
+    // The approval card (and an edit in it) is the same node across refreshes; keep the field
+    // being typed in focused, and the scroll position, while the runner's heartbeats refresh the log.
+    const active = document.activeElement;
+    const focused = active && box.contains(active) ? active : null;
+    let selection = null;
+    try {
+      if (focused && typeof focused.selectionStart === "number") selection = [focused.selectionStart, focused.selectionEnd];
+    } catch (_ignored) {
+      /* number inputs have no selection */
+    }
+    const top = box.scrollTop;
     box.replaceChildren(...children);
     if (atBottom) box.scrollTop = box.scrollHeight;
+    else box.scrollTop = top;
+    if (focused && focused.isConnected) {
+      focused.focus({ preventScroll: true });
+      try {
+        if (selection) focused.setSelectionRange(selection[0], selection[1]);
+      } catch (_ignored) {
+        /* not a text field */
+      }
+    }
   }
 
   // ---- Protocols, approval and the device grant ---------------------------------------
@@ -916,7 +972,22 @@
     if (data.status === "submitted" && data.phase === "awaiting_approval" && data.run_status === "active") {
       parts.push(approvalCard(run, data));
     }
-    parts.push(reviewNode(review));
+    if (data.approved_review && Array.isArray(data.changes)) {
+      // Approved with the approver's edits: their version is what the grant enforces.
+      parts.push(el("div", { class: "protocol-edited" }, [
+        el("strong", { text: "Edited by " + (data.edited_by || "the approver") + " before approval" }),
+        " · approved version sha256 ",
+        el("code", { class: "protocol-sha", title: data.approved_sha256, text: String(data.approved_sha256).slice(0, 16) + "…" }),
+        el("ul", { class: "edit-changes" }, data.changes.map((text) => el("li", {}, [el("code", { text })]))),
+      ]));
+      parts.push(el("h4", { class: "run-log-heading", text: "The approved version (what the grant enforces)" }), reviewNode(data.approved_review));
+      parts.push(el("details", { class: "protocol-submitted" }, [
+        el("summary", { text: "As the agent submitted it" }),
+        reviewNode(review),
+      ]));
+    } else {
+      parts.push(reviewNode(review));
+    }
     parts.push(el("div", { class: "agent-prose" }, [
       el("div", { class: "agent-prose-label", text: "Written by the agent: its explanation, not checked by the Control Center" }),
       data.prose
@@ -929,7 +1000,14 @@
   function boundText(arg) {
     // Every bounded argument is sent in every call (leaving one out would drive the driver's default).
     const always = arg.always_sent ? "; always sent" : "";
-    if (arg.choices) return arg.choices.map((choice) => JSON.stringify(choice)).join(", ") + always;
+    if (arg.choices) {
+      let choices = arg.choices.map((choice) => JSON.stringify(choice)).join(", ");
+      if (arg.offered) {
+        choices += " (" + (arg.limit_source === "site" ? "site allows " : "device offers ") +
+          arg.offered.map((choice) => JSON.stringify(choice)).join(", ") + ")";
+      }
+      return choices + always;
+    }
     const unit = arg.unit ? " " + arg.unit : "";
     let text = num(arg.min) + " to " + num(arg.max) + unit;
     if (arg.max_step !== null && arg.max_step !== undefined) {
@@ -938,7 +1016,11 @@
     } else {
       text += ", any step";
     }
-    if (arg.driver_limit) text += " (driver allows " + num(arg.driver_limit[0]) + " to " + num(arg.driver_limit[1]) + ")";
+    // Where the hard limit comes from: the lab's site limit (Lab PC inventory) or the driver's own.
+    const limit = arg.limit || arg.driver_limit;
+    if (limit) {
+      text += " (" + (arg.limit_source === "site" ? "site limit " : "driver allows ") + num(limit[0]) + " to " + num(limit[1]) + ")";
+    }
     return text + always;
   }
 
@@ -995,7 +1077,8 @@
 
   function approvalCard(run, data) {
     const requested = data.protocol.duration_minutes;
-    const sha256 = data.sha256; // exactly what this card shows is what gets approved
+    const sha256 = data.sha256; // the submission this card shows; an edit starts from it
+    const runApi = api + "/runs/" + encodeURIComponent(run.id) + "/protocol/";
     const minutes = el("input", { type: "number", min: "1", max: String(requested), step: "any", value: String(requested) });
     const name = el("input", { type: "text", maxlength: "64", value: author(), autocomplete: "name" });
     const nameField = el("label", { class: "field approval-name" }, [el("span", { class: "field-label", text: "Your name" }), name]);
@@ -1010,7 +1093,10 @@
     const error = el("p", { class: "dialog-error", role: "alert", hidden: true });
     const approveButton = el("button", { class: "button primary", type: "button", text: "Approve" });
     const rejectButton = el("button", { class: "button danger", type: "button", text: "Reject" });
+    const editButton = el("button", { class: "button", type: "button", text: "Edit…", title: "Change the bounds, caps, devices, duration or safe state, then approve your version" });
+    const editorHost = el("div", { class: "protocol-editor-host" });
     const deviceList = data.review.devices.map((device) => device.device_id).join(", ");
+    let editor = null; // the approver's edit, while "Edit…" is open
 
     function fail(text) {
       error.textContent = text;
@@ -1021,10 +1107,18 @@
       return signedInUser || name.value.trim();
     }
 
+    function busy(on) {
+      approveButton.disabled = rejectButton.disabled = editButton.disabled = on;
+    }
+
+    function problemsText(problems) {
+      return problems.map((item) => (item.path ? item.path + ": " : "") + item.message).join(" ");
+    }
+
     async function send(path, body, done) {
-      approveButton.disabled = rejectButton.disabled = true;
+      busy(true);
       try {
-        await request(api + "/runs/" + encodeURIComponent(run.id) + "/protocol/" + path, jsonRequest("POST", body));
+        await request(runApi + path, jsonRequest("POST", body));
         if (!signedInUser && name.value.trim()) store.set("localStorage", AUTHOR_KEY, name.value.trim());
         toast(done);
         await loadRuns();
@@ -1032,22 +1126,106 @@
       } catch (error_) {
         let text = error_.message;
         const problems = error_.body && Array.isArray(error_.body.problems) ? error_.body.problems : [];
-        if (problems.length) text += " " + problems.map((item) => (item.path ? item.path + ": " : "") + item.message).join(" ");
+        if (problems.length && editor && path === "approve") {
+          editor.showProblems(problems); // an edit the server refused: shown beside the fields
+        } else if (problems.length) {
+          text += " " + problemsText(problems);
+        }
         fail(text);
-        approveButton.disabled = rejectButton.disabled = false;
+        busy(false);
         if (error_.status === 409 && runLog && runLog.id === run.id) refreshLog();
       }
+    }
+
+    function setEditing(next) {
+      editor = next;
+      editorHost.replaceChildren(...(editor ? [editor.node] : []));
+      editButton.textContent = editor ? "Discard edits" : "Edit…";
+      approveButton.textContent = editor ? "Review changes…" : "Approve";
+      error.hidden = true;
+    }
+
+    editButton.addEventListener("click", async () => {
+      if (!editor) {
+        setEditing(protocolEditor(data));
+        return;
+      }
+      const choice = await dialog({
+        title: "Discard your edits?",
+        body: el("p", { text: "The card goes back to the protocol as the agent submitted it." }),
+        actions: [{ label: "Discard edits", value: "discard", danger: true }],
+      });
+      if (choice === "discard") setEditing(null);
+    });
+
+    // Edited: the server checks the edit (as it checks the agent's), lists what changed, and
+    // the approval sends exactly the version it previewed; the server checks it once more.
+    async function approveEdited(value) {
+      const protocol = editor.build();
+      busy(true);
+      let preview;
+      try {
+        preview = await request(runApi + "preview", jsonRequest("POST", { sha256, protocol }));
+      } catch (error_) {
+        fail("Couldn't check your edits: " + error_.message);
+        if (error_.status === 409 && runLog && runLog.id === run.id) refreshLog();
+        return;
+      } finally {
+        busy(false);
+      }
+      editor.showProblems(preview.problems || []);
+      if (preview.problems && preview.problems.length) {
+        fail("Your edited protocol has " + plural(preview.problems.length, "problem") + ", listed in your edit. " +
+          "Fix them, then review again.");
+        return;
+      }
+      if (value > preview.normalized.duration_minutes) {
+        fail("Your version asks for " + minutesText(preview.normalized.duration_minutes) + "; grant at most that.");
+        return;
+      }
+      const unchanged = preview.sha256 === sha256;
+      const granted = preview.normalized.devices.map((device) => device.device_id).join(", ");
+      const choice = await dialog({
+        title: unchanged ? "Approve this protocol?" : "Approve your edited protocol?",
+        wide: !unchanged,
+        body: el("div", { class: "dialog-fields" }, unchanged
+          ? [el("p", { text: "Your edits change nothing, so this approves the protocol as the agent submitted it." })]
+          : [
+            el("p", { text: "The Control Center checked your version and found " + plural(preview.changes.length, "change") +
+              " from the agent's. The agent is told about each one:" }),
+            el("ul", { class: "edit-changes" }, preview.changes.map((text) => el("li", {}, [el("code", { text })]))),
+            el("p", {
+              text: "The agent may then control " + granted + " for " + minutesText(value) + ", calling only the " +
+                "methods in your version, within its bounds. Your version's sha256 " + preview.sha256.slice(0, 16) + "…",
+            }),
+          ]),
+        actions: [{ label: "Approve for " + minutesText(value), value: "approve", primary: true }],
+      });
+      if (choice !== "approve") return;
+      const body = { sha256, duration_minutes: value, approved_by: who() };
+      if (!unchanged) Object.assign(body, { protocol: preview.normalized, edited_sha256: preview.sha256 });
+      await send("approve", body, unchanged ? "Approved: the grant has started" : "Approved with your edits: the grant has started");
     }
 
     approveButton.addEventListener("click", async () => {
       error.hidden = true;
       const value = Number(minutes.value);
-      if (!minutes.value || !Number.isFinite(value) || value < 1 || value > requested) {
-        fail("Grant between 1 and " + num(requested) + " minutes: an approval can shorten the time, never lengthen it.");
+      const longest = editor ? editor.duration() : requested;
+      if (!minutes.value || !Number.isFinite(value) || value < 1) {
+        fail("Grant at least 1 minute.");
+        return;
+      }
+      if (typeof longest === "number" && value > longest) {
+        fail("Grant between 1 and " + num(longest) + " minutes: an approval can shorten the time the protocol asks for, " +
+          "never lengthen it" + (editor ? " (change \"Asks for\" in your edit to ask for more)." : "."));
         return;
       }
       if (!who()) {
         fail("Type your name: an approval records who gave it.");
+        return;
+      }
+      if (editor) {
+        await approveEdited(value);
         return;
       }
       const choice = await dialog({
@@ -1077,12 +1255,14 @@
       el("h3", { text: "Approval needed" }),
       el("p", {
         text: "The agent asks to control " + deviceList + ". If you approve, it may call only the methods below, " +
-          "within the bounds shown, until the time runs out; then the safe state is applied and the devices are released.",
+          "within the bounds shown, until the time runs out; then the safe state is applied and the devices are released. " +
+          "Edit… lets you change the protocol and approve your version instead; the agent is told what you changed.",
       }),
       el("dl", { class: "approval-facts" }, [
         el("dt", { text: "Protocol" }), el("dd", {}, [el("code", { title: sha256, text: "sha256 " + sha256.slice(0, 16) + "…" })]),
         el("dt", { text: "Asks for" }), el("dd", { text: minutesText(requested) + " (at most " + minutesText(data.max_minutes) + " here)" }),
       ]),
+      editorHost,
       el("div", { class: "approval-fields" }, [
         el("label", { class: "field" }, [
           el("span", { class: "field-label", text: "Grant for (minutes)" }), minutes,
@@ -1092,8 +1272,330 @@
       ]),
       el("label", { class: "field" }, [el("span", { class: "field-label", text: "Note for the agent" }), note]),
       error,
-      el("div", { class: "approval-actions" }, [rejectButton, approveButton]),
+      el("div", { class: "approval-actions" }, [editButton, el("span", { class: "approval-spacer" }), rejectButton, approveButton]),
     ]);
+  }
+
+  // ---- Edit and approve: the approver's own version of the protocol -------------------
+  // Plain inputs over the normalized protocol: each argument's range, step or choices, the
+  // call, rate and stream caps, removing a method or a device, the duration, and the safe
+  // state (values, remove, reorder, add a call the protocol allows). Nothing is checked
+  // here that the server doesn't check again: POST …/protocol/preview validates the edit
+  // exactly like the agent's and lists the changes; approving sends what it previewed.
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  // A number input's value: null when empty or not a number (the server says what's wrong).
+  function numberFrom(input) {
+    const text = input.value.trim();
+    if (!text) return null;
+    const value = Number(text);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function protocolEditor(data) {
+    let draft = clone(data.protocol);
+    let removedDevices = new Set();
+    let removedMethods = new Set(); // "device|method"
+    const types = {}; // "device|method|arg" → "float", "int", "bool", "str" (from the server's review)
+    const units = {};
+    for (const device of data.review.devices) {
+      for (const method of device.methods) {
+        for (const arg of method.args) {
+          types[device.device_id + "|" + method.name + "|" + arg.name] = arg.type;
+          if (arg.unit) units[device.device_id + "|" + method.name + "|" + arg.name] = arg.unit;
+        }
+      }
+    }
+    const node = el("div", { class: "protocol-editor" });
+    const problemsList = el("ul", { class: "editor-problems", role: "alert", hidden: true });
+    const jsonBox = el("textarea", { class: "editor-json", rows: "14", spellcheck: "false" });
+    const jsonError = el("p", { class: "dialog-error", hidden: true });
+
+    function gone(deviceId, method) {
+      return removedDevices.has(deviceId) || removedMethods.has(deviceId + "|" + method);
+    }
+
+    function isStream(method) {
+      return Boolean(method && method.stream);
+    }
+
+    // The edited protocol as the server gets it: removed devices and methods left out, and the
+    // safe-state calls to them with them (the server's list of changes names those too).
+    function build() {
+      const protocol = clone(draft);
+      protocol.devices = (protocol.devices || []).filter((device) => !removedDevices.has(device.device_id)).map((device) => {
+        const methods = {};
+        for (const [name, method] of Object.entries(device.methods || {})) {
+          if (!removedMethods.has(device.device_id + "|" + name)) methods[name] = method;
+        }
+        return { ...device, methods };
+      });
+      protocol.safe_state = (protocol.safe_state || []).filter((call) => !gone(call.device_id, call.method));
+      return protocol;
+    }
+
+    function numberInput(object, key, options) {
+      const value = object[key];
+      const input = el("input", {
+        type: "number",
+        step: options.step || "any",
+        value: value === null || value === undefined ? "" : String(value),
+        placeholder: options.placeholder || "",
+        "aria-label": options.label,
+      });
+      input.addEventListener("input", () => {
+        object[key] = numberFrom(input);
+      });
+      return el("label", { class: "editor-field" }, [el("span", { text: options.label }), input]);
+    }
+
+    function boolChoices(bound) {
+      const boxes = [true, false].map((choice) => {
+        const box = el("input", { type: "checkbox", checked: bound.choices.includes(choice) });
+        box.addEventListener("change", () => {
+          bound.choices = [true, false].filter((_item, index) => boxes[index].checked);
+          renderSafe();
+        });
+        return box;
+      });
+      return el("span", { class: "editor-field" }, [
+        el("span", { text: "choices" }),
+        el("label", { class: "editor-check" }, [boxes[0], " true"]),
+        el("label", { class: "editor-check" }, [boxes[1], " false"]),
+      ]);
+    }
+
+    function textChoices(bound) {
+      const input = el("input", { type: "text", value: bound.choices.join(", "), spellcheck: "false", "aria-label": "choices" });
+      input.addEventListener("input", () => {
+        bound.choices = input.value.split(",").map((item) => item.trim()).filter(Boolean);
+      });
+      input.addEventListener("change", renderSafe);
+      return el("label", { class: "editor-field wide" }, [el("span", { text: "choices (comma-separated)" }), input]);
+    }
+
+    function argRow(deviceId, methodName, argName, bound) {
+      const key = deviceId + "|" + methodName + "|" + argName;
+      const type = types[key] || ("choices" in bound ? (typeof bound.choices[0] === "boolean" ? "bool" : "str") : "float");
+      const unit = units[key] ? " (" + units[key] + ")" : "";
+      const whole = type === "int" ? "1" : "any";
+      let fields;
+      if ("choices" in bound) {
+        fields = [type === "bool" ? boolChoices(bound) : textChoices(bound)];
+      } else {
+        fields = [
+          numberInput(bound, "min", { label: "min" + unit, step: whole }),
+          numberInput(bound, "max", { label: "max" + unit, step: whole }),
+          numberInput(bound, "max_step", { label: "max step", placeholder: "any step" }),
+        ];
+      }
+      return el("div", { class: "editor-arg" }, [el("code", { class: "editor-arg-name", text: argName }), ...fields]);
+    }
+
+    function methodBlock(device, name) {
+      const method = device.methods[name];
+      const removed = gone(device.device_id, name);
+      const toggle = smallButton(removedMethods.has(device.device_id + "|" + name) ? "Restore" : "Remove", () => {
+        const key = device.device_id + "|" + name;
+        if (removedMethods.has(key)) removedMethods.delete(key);
+        else removedMethods.add(key);
+        render();
+      });
+      toggle.disabled = removedDevices.has(device.device_id);
+      const parts = [
+        el("div", { class: "editor-method-head" }, [
+          el("code", { class: "review-method", text: name }),
+          removed ? el("span", { class: "muted", text: "removed: the agent may not call it" }) : "",
+          toggle,
+        ]),
+      ];
+      if (!removed) {
+        for (const [argName, bound] of Object.entries(method.args || {})) parts.push(argRow(device.device_id, name, argName, bound));
+        const caps = [
+          numberInput(method, "max_calls", { label: "max calls", step: "1" }),
+          numberInput(method, "max_rate_hz", { label: "max calls per second" }),
+        ];
+        if (method.stream) {
+          caps.push(
+            numberInput(method.stream, "max_sample_rate_hz", { label: "max sample rate (Hz)" }),
+            numberInput(method.stream, "max_samples", { label: "max samples", step: "1" })
+          );
+        }
+        parts.push(el("div", { class: "editor-arg editor-caps" }, caps));
+      }
+      return el("div", { class: "editor-method" + (removed ? " editor-removed" : "") }, parts);
+    }
+
+    function deviceBlock(device) {
+      const removed = removedDevices.has(device.device_id);
+      const toggle = smallButton(removed ? "Restore device" : "Remove device", () => {
+        if (removed) removedDevices.delete(device.device_id);
+        else removedDevices.add(device.device_id);
+        render();
+      });
+      return el("div", { class: "editor-device" + (removed ? " editor-removed" : "") }, [
+        el("h4", {}, [
+          el("code", { text: device.device_id }), " · " + device.device_type,
+          removed ? el("span", { class: "muted", text: " · removed: no calls to it at all" }) : "",
+          toggle,
+        ]),
+        ...(removed ? [] : Object.keys(device.methods || {}).sort().map((name) => methodBlock(device, name))),
+      ]);
+    }
+
+    // ---- the safe state
+    const safeList = el("ol", { class: "editor-safe" });
+    const addSelect = el("select", { "aria-label": "Add a safe-state call" });
+    const addButton = smallButton("Add call", () => {
+      const [deviceId, name] = addSelect.value.split("|");
+      const device = (draft.devices || []).find((item) => item.device_id === deviceId);
+      const method = device && device.methods[name];
+      if (!method) return;
+      const args = {};
+      for (const [argName, bound] of Object.entries(method.args || {})) {
+        if ("choices" in bound) {
+          args[argName] = bound.choices[0];
+        } else {
+          const low = bound.min === null ? 0 : bound.min;
+          args[argName] = types[deviceId + "|" + name + "|" + argName] === "int" ? Math.ceil(low) : low;
+        }
+      }
+      draft.safe_state = draft.safe_state || [];
+      draft.safe_state.push({ device_id: deviceId, method: name, args });
+      renderSafe();
+    });
+
+    function valueInput(call, argName, bound, type) {
+      const current = call.args[argName];
+      if (bound && "choices" in bound) {
+        const options = bound.choices.slice();
+        if (current !== undefined && !options.some((item) => item === current)) options.push(current);
+        const select = el("select", { "aria-label": argName }, options.map((item) =>
+          el("option", { value: JSON.stringify(item), text: JSON.stringify(item) })
+        ));
+        select.value = JSON.stringify(current);
+        select.addEventListener("change", () => {
+          call.args[argName] = JSON.parse(select.value);
+        });
+        return select;
+      }
+      const input = el("input", {
+        type: "number", step: type === "int" ? "1" : "any", "aria-label": argName,
+        value: typeof current === "number" ? String(current) : "",
+      });
+      input.addEventListener("input", () => {
+        call.args[argName] = numberFrom(input);
+      });
+      return input;
+    }
+
+    function renderSafe() {
+      const calls = draft.safe_state || [];
+      safeList.replaceChildren(...calls.map((call, index) => {
+        const device = (draft.devices || []).find((item) => item.device_id === call.device_id);
+        const method = device && device.methods[call.method];
+        const dropped = gone(call.device_id, call.method);
+        const args = Object.keys(call.args || {}).map((argName) => el("label", { class: "editor-field" }, [
+          el("span", { text: argName }),
+          valueInput(call, argName, method && method.args[argName], types[call.device_id + "|" + call.method + "|" + argName]),
+        ]));
+        const up = smallButton("↑", () => {
+          [calls[index - 1], calls[index]] = [calls[index], calls[index - 1]];
+          renderSafe();
+        });
+        up.disabled = index === 0;
+        up.title = "Move earlier (calls run in this order)";
+        return el("li", { class: "editor-safe-call" + (dropped ? " editor-removed" : "") }, [
+          el("code", { text: call.device_id + "." + call.method }),
+          dropped ? el("span", { class: "muted", text: "dropped: its method is removed" }) : "",
+          ...(dropped ? [] : args),
+          el("span", { class: "editor-safe-buttons" }, [
+            up,
+            smallButton("Remove", () => {
+              calls.splice(index, 1);
+              renderSafe();
+            }),
+          ]),
+        ]);
+      }));
+      if (!calls.length) safeList.replaceChildren(el("li", { class: "muted", text: "No safe state: nothing is set when the grant ends." }));
+      const choices = [];
+      for (const device of draft.devices || []) {
+        for (const name of Object.keys(device.methods || {}).sort()) {
+          if (!gone(device.device_id, name) && !isStream(device.methods[name])) {
+            choices.push(el("option", { value: device.device_id + "|" + name, text: device.device_id + "." + name }));
+          }
+        }
+      }
+      addSelect.replaceChildren(...choices);
+      addSelect.disabled = addButton.disabled = !choices.length;
+    }
+
+    // ---- advanced: the whole edited protocol as JSON
+    const useJson = smallButton("Use this JSON", () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonBox.value);
+      } catch (error) {
+        jsonError.textContent = "Not valid JSON: " + error.message;
+        jsonError.hidden = false;
+        return;
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray(parsed.devices)) {
+        jsonError.textContent = "Send a protocol: a JSON object with devices (and safe_state).";
+        jsonError.hidden = false;
+        return;
+      }
+      jsonError.hidden = true;
+      draft = parsed;
+      removedDevices = new Set();
+      removedMethods = new Set();
+      render();
+    });
+    const advanced = el("details", { class: "editor-advanced" }, [
+      el("summary", { text: "Advanced: edit as JSON" }),
+      el("p", { class: "section-note", text: "The whole protocol, as the fields above have it. \"Use this JSON\" replaces the fields; the server checks it like any edit." }),
+      jsonBox, jsonError, el("div", { class: "inspector-actions" }, [useJson]),
+    ]);
+    advanced.addEventListener("toggle", () => {
+      if (advanced.open) jsonBox.value = JSON.stringify(build(), null, 2);
+    });
+
+    function render() {
+      const duration = numberInput(draft, "duration_minutes", { label: "Asks for (minutes, at most " + num(data.max_minutes) + ")" });
+      node.replaceChildren(
+        el("h4", { class: "editor-title", text: "Your edit of the protocol" }),
+        el("p", {
+          class: "section-note",
+          text: "Change what you'd allow; anything may be widened or narrowed within the device's and the lab's limits, " +
+            "which the Control Center checks as it checks the agent's. Review changes… shows what you changed before you approve.",
+        }),
+        el("div", { class: "editor-arg editor-caps" }, [duration]),
+        ...(draft.devices || []).map(deviceBlock),
+        el("h4", { text: "Safe state (applied when the grant ends, in this order)" }),
+        safeList,
+        el("div", { class: "editor-add" }, [addSelect, addButton]),
+        problemsList,
+        advanced
+      );
+      renderSafe();
+    }
+
+    render();
+    return {
+      node,
+      build,
+      duration: () => (typeof draft.duration_minutes === "number" ? draft.duration_minutes : null),
+      showProblems(problems) {
+        problemsList.replaceChildren(...problems.map((item) =>
+          el("li", {}, [item.path ? el("code", { text: item.path }) : "", item.path ? ": " : "", item.message])
+        ));
+        problemsList.hidden = !problems.length;
+      },
+    };
   }
 
   function experimentsSection() {
@@ -1204,7 +1706,7 @@
     runAllButton = smallButton("Run all", runAll);
     const tasks = section(
       "Tasks",
-      "One Markdown file each. Run queues a task for an Automation runner, which works through it as its own Claude Code session; Run all queues every task, in order.",
+      "One Markdown file each. Run queues a task for an Automation runner, which works through it as its own Claude Code session, with the project's run settings; … beside it runs it with another model, effort, max turns or budget. Run all queues every task, in order, with the project's settings.",
       [tasksList, el("div", { class: "inspector-actions" }, [runAllButton, smallButton("New task", newTask, true)])]
     );
     runsList = el("ul", { class: "outline run-list" });
@@ -1276,13 +1778,10 @@
     }
   }
 
-  async function editSettings() {
-    const name = el("input", { maxlength: "120" });
-    name.value = project.name;
-    const description = el("textarea", { maxlength: "4000" });
-    description.value = project.description;
-
-    // How runs are run. Empty model or effort: the Control Center's defaults.
+  // Model, effort, max turns and budget inputs, prefilled from ``initial`` (the project's
+  // run_model, run_effort, run_max_turns, run_budget_usd). Empty model or effort: the
+  // Control Center's defaults. Used by Settings… and by Run with….
+  async function runSettingsFields(initial) {
     const info = await loadAgentInfo();
     const models = info && Array.isArray(info.models) && info.models.length ? info.models : null;
     const efforts = info && Array.isArray(info.efforts) && info.efforts.length
@@ -1296,18 +1795,18 @@
         el("option", { value: "", text: "Default" + (defaultModel ? " (" + labelFrom(models, defaultModel) + ")" : "") }),
         ...models.map((item) => el("option", { value: item.id, text: item.label || item.id })),
       ]);
-      if (project.run_model && !models.some((item) => item.id === project.run_model)) {
-        model.append(el("option", { value: project.run_model, text: project.run_model + " (no longer offered)" }));
+      if (initial.run_model && !models.some((item) => item.id === initial.run_model)) {
+        model.append(el("option", { value: initial.run_model, text: initial.run_model + " (no longer offered)" }));
       }
     } else {
       model = el("input", { maxlength: "100", placeholder: "Default (the Control Center's model)", spellcheck: "false" });
     }
-    model.value = project.run_model || "";
+    model.value = initial.run_model || "";
     const effort = el("select", {}, [
       el("option", { value: "", text: "Default" + (defaultEffort ? " (" + labelFrom(efforts, defaultEffort) + ")" : "") }),
       ...efforts.map((item) => el("option", { value: item.id, text: item.label || item.id })),
     ]);
-    effort.value = project.run_effort || "";
+    effort.value = initial.run_effort || "";
     const syncEffort = () => {
       const chosen = models && models.find((item) => item.id === (model.value || defaultModel));
       effort.disabled = Boolean(chosen && chosen.effort === false);
@@ -1316,9 +1815,40 @@
     model.addEventListener("change", syncEffort);
     syncEffort();
     const turns = el("input", { type: "number", min: "1", max: "200", step: "1" });
-    turns.value = String(project.run_max_turns);
+    turns.value = String(initial.run_max_turns);
     const budget = el("input", { type: "number", min: "0.01", max: "100", step: "0.01" });
-    budget.value = String(project.run_budget_usd);
+    budget.value = String(initial.run_budget_usd);
+    return {
+      grid: el("div", { class: "run-settings-grid" }, [
+        el("label", {}, ["Model", model]),
+        el("label", {}, ["Effort", effort]),
+        el("label", {}, ["Max turns", turns]),
+        el("label", {}, ["Budget per run (USD)", budget]),
+      ]),
+      validate() {
+        const maxTurns = Number(turns.value);
+        if (!Number.isInteger(maxTurns) || maxTurns < 1 || maxTurns > 200) return "Max turns must be a whole number from 1 to 200.";
+        const dollars = Number(budget.value);
+        if (!budget.value.trim() || !(dollars > 0 && dollars <= 100)) return "The budget must be more than $0 and at most $100.";
+        return null;
+      },
+      values() {
+        return {
+          run_model: model.value.trim() || null,
+          run_effort: effort.value || null,
+          run_max_turns: Number(turns.value),
+          run_budget_usd: Number(budget.value),
+        };
+      },
+    };
+  }
+
+  async function editSettings() {
+    const name = el("input", { maxlength: "120" });
+    name.value = project.name;
+    const description = el("textarea", { maxlength: "4000" });
+    description.value = project.description;
+    const runFields = await runSettingsFields(project); // how runs are run
 
     const choice = await dialog({
       title: "Project settings",
@@ -1327,31 +1857,19 @@
         el("label", {}, ["Description", description]),
         el("h3", { class: "run-settings-head", text: "Runs" }),
         el("p", { class: "section-note", text: "Each run copies these when it is queued; changing them doesn't change runs already queued." }),
-        el("div", { class: "run-settings-grid" }, [
-          el("label", {}, ["Model", model]),
-          el("label", {}, ["Effort", effort]),
-          el("label", {}, ["Max turns", turns]),
-          el("label", {}, ["Budget per run (USD)", budget]),
-        ]),
+        runFields.grid,
       ]),
       actions: [{ label: "Save", value: "save", primary: true }],
       validate: () => {
         if (!name.value.trim()) return "Give the project a name.";
-        const maxTurns = Number(turns.value);
-        if (!Number.isInteger(maxTurns) || maxTurns < 1 || maxTurns > 200) return "Max turns must be a whole number from 1 to 200.";
-        const dollars = Number(budget.value);
-        if (!budget.value.trim() || !(dollars > 0 && dollars <= 100)) return "The budget must be more than $0 and at most $100.";
-        return null;
+        return runFields.validate();
       },
     });
     if (choice !== "save") return;
     saveSettings({
       name: name.value.trim(),
       description: description.value.trim(),
-      run_model: model.value.trim() || null,
-      run_effort: effort.value || null,
-      run_max_turns: Number(turns.value),
-      run_budget_usd: Number(budget.value),
+      ...runFields.values(),
     }, "Settings");
   }
 

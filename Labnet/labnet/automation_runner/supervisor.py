@@ -71,6 +71,7 @@ from .workcopy import (
     Refused,
     RunFolder,
     collect_outputs,
+    redact_credentials,
     hand_over,
     make_skeleton,
     preflight_tree,
@@ -513,6 +514,14 @@ class Supervisor:
             state.note(f"The protocol was rejected by {review.get('reviewed_by') or 'a reviewer'}; resuming the "
                        "agent with the note.")
             return agent_config.rejection_prompt(run, submissions_left=left)
+        if review.get("status") == "approved":
+            # Approved, but the grant ended before this runner took it (the Control Center stopped
+            # answering and the watchdog applied the safe state, Stop was pressed, it expired): the
+            # experiment never ran, so the run must not end "done" on the planning session's answer.
+            grant = run.get("grant") if isinstance(run.get("grant"), dict) else {}
+            why = grant.get("ended_reason") or f"the grant is {grant.get('status') or 'gone'}"
+            self._stop(state, FAILED, f"The approved experiment never started: its grant ended before the runner "
+                                      f"could take it ({why}). Queue the task again to retry.")
         return None
 
     def _get_run(self, state: _RunState) -> dict[str, Any] | None:
@@ -582,7 +591,7 @@ class Supervisor:
         if protocol is None:
             state.note("The Control Center sent no approved protocol with the grant; the agent is told the "
                        "granted devices only.", level=logging.WARNING)
-        elif review.get("sha256") and protocol_sha256(protocol) != review.get("sha256"):
+        elif (expected := review.get("approved_sha256") or review.get("sha256")) and protocol_sha256(protocol) != expected:
             state.note("The protocol sent with the grant doesn't match the approved sha256; the agent is told the "
                        "granted devices only.", level=logging.WARNING)
             protocol = None
@@ -783,6 +792,16 @@ class Supervisor:
                        level=logging.WARNING)
             return False
 
+    def _upload_redacted(self, state: _RunState, relative: str, path: Path) -> bool:
+        """Upload a copy with any Claude credential blanked: the transcript records what the agent read."""
+
+        copy = path.with_name(path.name + ".redacted")
+        try:
+            redact_credentials(path, copy)
+            return self._upload(state, relative, copy)
+        finally:
+            copy.unlink(missing_ok=True)
+
     def _upload_outputs(self, state: _RunState, folder: RunFolder, before: dict[str, str]) -> None:
         outputs = collect_outputs(folder.work, before)
         for note in outputs.ignored:
@@ -797,10 +816,10 @@ class Supervisor:
         try:
             logs = f"ScriptsUtilized/logs/{state.run_id}"
             if folder.transcript.is_file():
-                self._upload(state, f"{logs}/transcript.jsonl", folder.transcript)
+                self._upload_redacted(state, f"{logs}/transcript.jsonl", folder.transcript)
             state.note(f"Finishing the run as {status}.")
             state.flush_log()
-            self._upload(state, f"{logs}/runner.log", folder.log)
+            self._upload_redacted(state, f"{logs}/runner.log", folder.log)
             self._flush(state)
             if state.stop_status == CANCELLED:
                 return CANCELLED

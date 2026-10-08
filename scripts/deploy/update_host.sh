@@ -106,6 +106,10 @@ esac
 if [[ -n "$port" ]] && running_on "$port"; then
     die "$role is still running (answers on 127.0.0.1:$port). Stop it, then re-run this script."
 fi
+# The safe-state watchdog runs from the Control Center's environment too.
+if [[ "$role" == control-center ]] && running_on "${WATCHDOG_PORT:-8081}"; then
+    die "The safe-state watchdog is still running (answers on 127.0.0.1:${WATCHDOG_PORT:-8081}). Stop it (Ctrl+C in its window, or Stop-ScheduledTask \"LabNet safe-state watchdog\"), then re-run this script."
+fi
 if [[ "$role" == central && ! -f "$settings_file" ]]; then
     die "Create $settings_file first (template: site/central.env.example in the release's site.zip)."
 fi
@@ -218,5 +222,8 @@ case "$role" in
     central) echo "  $bin_dir/labnet-central --env-file $settings_file   then   curl http://127.0.0.1:8008/health/ready" ;;
     lab-pc) echo "  $bin_dir/labnet-lab-pc --env-file $settings_file   then   curl http://127.0.0.1:9001/health/ready" ;;
     client) echo "  LABNET_ENV_FILE=$settings_file $python $LABNET_HOME/client-app/01_hello_device.py" ;;
-    control-center) echo "  $bin_dir/labnet-control-center --env-file $settings_file   then   curl http://127.0.0.1:8080/health/ready" ;;
+    control-center)
+        echo "  $bin_dir/labnet-control-center --env-file $settings_file   then   curl http://127.0.0.1:8080/health/ready"
+        echo "  $bin_dir/labnet-automation-watchdog --env-file $LABNET_HOME/watchdog.env   then   curl http://127.0.0.1:8081/health/ready"
+        ;;
 esac

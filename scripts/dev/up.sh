@@ -2,6 +2,7 @@
 # Start the local development network in dependency order and wait until each
 # component reports ready:
 #   Central (:8008)  ->  every Lab PC in scripts/dev/config.sh  ->  Control Center (:8080)
+#   ->  the safe-state watchdog for Automation grants (health on :8081)
 #
 # Processes run in the background; logs go to .devnet/logs/. Stop them with
 # scripts/dev/down.sh.
@@ -56,6 +57,29 @@ else
 fi
 wait_for_http "http://127.0.0.1:$CONTROL_CENTER_PORT/health/ready" 30 "$log_file"
 ok "Control Center ready"
+
+# The safe-state watchdog: applies an Automation grant's safe state if the
+# Control Center dies or hangs mid-grant. It has no web page, only a health port.
+log_file="$DEVNET_DIR/logs/automation-watchdog.log"
+watchdog_env="$DEVNET_DIR/$WATCHDOG_USER.env"
+if port_in_use "$WATCHDOG_PORT"; then
+    ok "Safe-state watchdog already running (restart.sh reloads code changes)"
+    wait_for_http "http://127.0.0.1:$WATCHDOG_PORT/health/ready" 30 "$log_file"
+elif [[ ! -f "$watchdog_env" ]]; then
+    warn "No safe-state watchdog settings (this network was seeded before it existed)."
+    warn "Run scripts/dev/seed.sh --watchdog, then scripts/dev/up.sh again."
+else
+    watchdog_command=("$(native_path "$(labnet_bin labnet-automation-watchdog)")")
+    if [[ ! -e "$(labnet_bin labnet-automation-watchdog)" && ! -e "$(labnet_bin labnet-automation-watchdog).exe" ]]; then
+        # .venv was set up before the command existed (setup.sh adds it): run the module instead.
+        watchdog_command=("$(native_path "$PYTHON")" -m labnet.automation_watchdog)
+    fi
+    log "Starting the safe-state watchdog"
+    start_process automation-watchdog "$WATCHDOG_PORT" "$log_file" "${watchdog_command[@]}" \
+        --env-file "$(native_path "$watchdog_env")"
+    wait_for_http "http://127.0.0.1:$WATCHDOG_PORT/health/ready" 30 "$log_file"
+    ok "Safe-state watchdog ready"
+fi
 
 ok "Network is up. Control Center: http://127.0.0.1:$CONTROL_CENTER_PORT/status"
 echo "Inspect: scripts/dev/status.sh    Exercise: scripts/dev/smoke.sh    Stop: scripts/dev/down.sh"

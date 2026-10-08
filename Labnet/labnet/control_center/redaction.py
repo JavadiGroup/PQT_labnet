@@ -15,11 +15,13 @@ _SECRETS = re.compile(
     r"|labnet_[A-Za-z0-9_-]{20,}"  # Central's API keys
     r"|lnr_[A-Za-z0-9_-]{20,}"  # Automation runner tokens
     r"|lng_[A-Za-z0-9_-]{20,}"  # Automation grant tokens (the device gateway)
+    r"|sk-ant-[A-Za-z0-9_-]{20,}"  # Claude credentials (the runner's login, API keys)
 )
 
 
 def _hide(match: re.Match[str]) -> str:
-    return match.group(0).split("_", 1)[0] + "_…"
+    text = match.group(0)
+    return "sk-ant-…" if text.startswith("sk-ant-") else text.split("_", 1)[0] + "_…"
 
 
 def redact(text: str) -> str:

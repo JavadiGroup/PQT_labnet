@@ -58,7 +58,9 @@ GOOD: dict[str, Any] = {
     "safe_state": [{"device_id": "dev01-aom", "method": "set_rf_enabled", "args": {"enabled": False}}],
 }
 AOM_HINTS = {"limits": {"set_frequency.value": [60.0, 100.0], "set_rf_power.value": [0.0, 2.0]}}
-AWG_HINTS = {"channels": ["CH1", "CH2"], "choices": {"set_waveform.waveform": ["sine", "square"]}}
+AWG_HINTS = {"channels": ["CH1", "CH2"], "choices": {"set_waveform.waveform": ["sine", "square"]},
+             "limits": {"set_amplitude.value": [0.0, 10.0], "set_offset.value": [-5.0, 5.0],
+                        "set_frequency.value": [0.001, 1.2e8]}}
 PROJECT = {"allowed_devices": ["dev01-aom", "dev02-awg"]}
 CANVAS = [{"device_id": "dev01-aom", "device_type": "dummy_aom"}, {"device_id": "dev02-awg", "device_type": "dummy_awg"},
           {"device_id": "dev03-laser", "device_type": "dummy_laser"}]
@@ -412,7 +414,8 @@ def test_the_review_is_built_from_the_normalized_copy_and_the_contracts() -> Non
     assert frequency["args"] == [{"name": "value", "type": "float", "optional": False, "always_sent": True,
                                   "min": 70.0, "max": 90.0, "max_step": 2.0, "unit": "MHz",
                                   "step_from": "the device's reading before the first change",
-                                  "driver_limit": [60.0, 100.0]}]
+                                  "limit": [60.0, 100.0], "limit_source": "driver",
+                                  "driver_limit": [60.0, 100.0], "site_limit": None}]
     assert review["safe_state"][0]["text"] == "dev01-aom.set_rf_enabled(enabled=false)"
     assert not any("max_step" in warning for warning in review["warnings"])
 
@@ -428,11 +431,19 @@ def test_the_review_is_built_from_the_normalized_copy_and_the_contracts() -> Non
 # ---- the security review's findings ----------------------------------------------------------------
 # Each test asserts the safe behaviour; each failed before the fix.
 
+# These drivers publish no limits of their own, so (no limit, no automation) their Lab PC
+# inventories give them site limits, published with the source "site".
+SACHER_SITE = {"go_to_wavelength_nm.wavelength_nm": [0.5, 900.0], "set_velocity_nm_s.velocity_nm_s": [0.0, 5.0],
+               "jog_steps.relative_steps": [-100.0, 100.0]}
 MORE_LIVE = {
     **LIVE,
-    "dev05-sacher": {"id": "dev05-sacher", "type": "sacher_laser", "state": "available", "hints": {}},
-    "dev06-dummy": {"id": "dev06-dummy", "type": "dummy_device", "state": "available", "hints": {}},
-    "dev07-wavemeter": {"id": "dev07-wavemeter", "type": "simulated_wavemeter", "state": "available", "hints": {}},
+    "dev05-sacher": {"id": "dev05-sacher", "type": "sacher_laser", "state": "available", "hints": {
+        "limits": SACHER_SITE,
+        "sources": {key: "site" for key in SACHER_SITE}}},
+    "dev06-dummy": {"id": "dev06-dummy", "type": "dummy_device", "state": "available", "hints": {
+        "limits": {"write_value.value": [-10.0, 10.0]}, "sources": {"write_value.value": "site"}}},
+    "dev07-wavemeter": {"id": "dev07-wavemeter", "type": "simulated_wavemeter", "state": "available", "hints": {
+        "limits": {"set_exposure.value": [1.0, 100.0]}, "sources": {"set_exposure.value": "site"}}},
 }
 MORE_CANVAS = CANVAS + [{"device_id": device_id, "device_type": MORE_LIVE[device_id]["type"]}
                         for device_id in ("dev05-sacher", "dev06-dummy", "dev07-wavemeter")]

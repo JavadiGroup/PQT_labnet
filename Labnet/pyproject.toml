@@ -63,6 +63,7 @@ labnet-lab-pc = "labnet.lab_pc.app:main"
 labnet-certs = "labnet.certs:main"
 labnet-control-center = "labnet.control_center.app:main"
 labnet-control-center-admin = "labnet.control_center.admin:main"
+labnet-automation-watchdog = "labnet.automation_watchdog.service:main"
 labnet-runner = "labnet.automation_runner.supervisor:main"
 
 [tool.setuptools.packages.find]

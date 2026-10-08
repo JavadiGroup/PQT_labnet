@@ -9,12 +9,53 @@
 # Run this once after setup.sh, and again whenever you want a clean slate
 # (for example after renaming Lab PCs or moving a device between them).
 #
-# Usage: scripts/dev/seed.sh
+# `--watchdog` only adds the safe-state watchdog's Central user and
+# .devnet/automation-watchdog.env to a network seeded before it existed; it
+# deletes nothing and may run while the network is up.
+#
+# Usage: scripts/dev/seed.sh [--watchdog]
 
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 source "$REPO_ROOT/scripts/dev/config.sh"
 clear_labnet_environment
 require_dev_python
+
+case "${1:-}" in
+    "") watchdog_only=false ;;
+    --watchdog) watchdog_only=true ;;
+    *) die "Usage: scripts/dev/seed.sh [--watchdog]" ;;
+esac
+
+# setup wrote the watchdog's Central URL and key; add what it watches: the
+# Control Center's grant records (the same automation/ folder) and its health.
+write_watchdog_settings() {
+    local env_file="$DEVNET_DIR/$WATCHDOG_USER.env"
+    grep -q '^LABNET_API_KEY=' "$env_file" 2> /dev/null ||
+        die "$env_file has no API key. Reissue it: labnet-central-admin --env-file .devnet/central.env user rotate-key $WATCHDOG_USER"
+    cat >> "$env_file" << EOF
+LABNET_AUTOMATION_DIR=$(native_path "$REPO_ROOT/automation")
+LABNET_WATCHDOG_CONTROL_CENTER_URL=http://127.0.0.1:$CONTROL_CENTER_PORT
+LABNET_WATCHDOG_PORT=$WATCHDOG_PORT
+EOF
+    ok "$WATCHDOG_USER -> watches the Control Center's grants; health http://127.0.0.1:$WATCHDOG_PORT/health/ready"
+}
+
+if $watchdog_only; then
+    [[ -f "$DEVNET_DIR/central.env" ]] || die "No seeded network found. Run scripts/dev/seed.sh first."
+    if [[ -f "$DEVNET_DIR/$WATCHDOG_USER.env" ]]; then
+        ok "$DEVNET_DIR/$WATCHDOG_USER.env already exists"
+        exit 0
+    fi
+    mkdir -p "$REPO_ROOT/automation"
+    log "Adding the safe-state watchdog's Central user"
+    "$(labnet_bin labnet-central-admin)" --env-file "$(native_path "$DEVNET_DIR/central.env")" \
+        setup --user "$WATCHDOG_USER" \
+        --write-env "$(native_path "$DEVNET_DIR")" --server-url "$CENTRAL_URL" 2>&1 |
+        grep -v "^INFO  \[alembic" | sed 's/^/    /'
+    write_watchdog_settings
+    echo "Next: scripts/dev/up.sh (starts the watchdog after the Control Center)"
+    exit 0
+fi
 
 port_in_use "$CENTRAL_PORT" && die "Central is running. Run scripts/dev/down.sh first."
 for entry in "${LAB_PCS[@]}"; do
@@ -46,7 +87,8 @@ done
 
 log "Creating Central schema, users, and their settings files"
 "$(labnet_bin labnet-central-admin)" --env-file "$(native_path "$DEVNET_DIR/central.env")" \
-    setup --admin "$ADMIN_USER" --user "$RESEARCHER_USER" --user "$CONTROL_CENTER_USER" "${lab_pc_args[@]}" \
+    setup --admin "$ADMIN_USER" --user "$RESEARCHER_USER" --user "$CONTROL_CENTER_USER" --user "$WATCHDOG_USER" \
+    "${lab_pc_args[@]}" \
     --write-env "$(native_path "$DEVNET_DIR")" --server-url "$CENTRAL_URL" 2>&1 |
     grep -v "^INFO  \[alembic" | sed 's/^/    /'
 
@@ -78,6 +120,7 @@ LABNET_AGENT_SOURCES=$(native_path "$REPO_ROOT/Labnet")$path_sep$(native_path "$
 LABNET_AGENT_LITERATURE_DIR=$(native_path "$REPO_ROOT/literature")
 EOF
 ok "$CONTROL_CENTER_USER -> http://127.0.0.1:$CONTROL_CENTER_PORT/status (Photo-Agent reads Labnet/, examples/, literature/)"
+write_watchdog_settings
 
 ok "Seeded. Keys and settings are in $DEVNET_DIR (git-ignored)."
 echo "Next: scripts/dev/up.sh"

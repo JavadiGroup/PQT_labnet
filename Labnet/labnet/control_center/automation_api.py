@@ -18,6 +18,7 @@ that works on them has its own API (``automation_runner_api.py``).
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import os
 import tempfile
@@ -33,12 +34,13 @@ from .automation_grants import GRANT_ID
 from .automation_paths import ZONES
 from .automation_protocol import (
     MAX_NOTE_CHARACTERS,
+    MAX_PROTOCOL_BYTES,
     build_review,
     network_devices,
     protocol_sha256,
     validate_protocol,
 )
-from .automation_runs import SHA256, RunStore
+from .automation_runs import SHA256, RunStore, protocol_changes
 from .automation_store import RUN_SETTINGS, AutomationError, AutomationStore, etag, parse_settings
 from .experiment_schema import EXPERIMENT_ID
 from .experiment_store import ExperimentError, ExperimentStore
@@ -51,6 +53,7 @@ from .redaction import redact
 NetworkSource = Callable[[], Awaitable[dict[str, Any]]]
 _SETTINGS_FIELDS = ("name", "description", "library_folders", "library_collections", "allowed_devices", *RUN_SETTINGS)
 _RUN_EVENTS = 500  # how many of a run's latest events its page shows
+_EDIT_REQUEST_BYTES = MAX_PROTOCOL_BYTES + 16 * 1024  # an approval or preview carrying an edited protocol
 
 # How each kind of file is served. Anything not listed is a download.
 _INLINE_TYPES = {
@@ -316,11 +319,13 @@ def create_automation_router(network: NetworkSource, *, max_file_bytes: int) -> 
 
     @router.post("/projects/{project_id}/runs", status_code=201, dependencies=changes)
     async def queue_run(request: Request, project_id: str) -> JSONResponse:
-        """Queue one task, e.g. {"task": "Tasks/Task1.md"}; the next free runner claims it."""
+        """Queue one task, e.g. {"task": "Tasks/Task1.md", "settings"?: {"model", "effort", "max_turns",
+        "max_budget_usd"}}; the next free runner claims it. Settings left out are the project's."""
 
         data = await _json(request)
         run = await asyncio.to_thread(
-            runs(request).queue, project_id, data.get("task"), author=_author(request, data, "queued_by")
+            runs(request).queue, project_id, data.get("task"), author=_author(request, data, "queued_by"),
+            settings=data.get("settings"),  # "Run with…": this run's own model, effort, turns, budget
         )
         return JSONResponse({"run": run}, status_code=201)
 
@@ -346,44 +351,120 @@ def create_automation_router(network: NetworkSource, *, max_file_bytes: int) -> 
 
     approvals = asyncio.Lock()  # one approval at a time: two people can't both start a grant
 
+    async def check_now(run_store: RunStore, project_id: str, run: dict[str, Any],
+                        raw: Any) -> tuple[dict[str, Any] | None, list[dict[str, str]], dict[str, Any]]:
+        """``validate_protocol`` against the project and the live network now: (normalized or None,
+        problems, the live devices). 503 while Central can't confirm the network."""
+
+        live = await network_devices(network)
+        if live is None:
+            raise AutomationError(503, "Central can't be reached now, so the devices can't be checked. "
+                                       "Try again in a minute.")
+        project = await asyncio.to_thread(run_store.automation.get, project_id)
+        canvas = await asyncio.to_thread(run_store.automation.snapshot_devices, project_id)
+        normalized, problems = validate_protocol(
+            raw, project=project, live_devices=live, canvas_devices=canvas,
+            max_minutes=run_store.grant_max_minutes, task=run["task"],
+        )
+        return normalized, problems, live
+
+    def base_sha(data: dict[str, Any]) -> str:
+        sha256 = data.get("sha256")
+        if not isinstance(sha256, str) or SHA256.fullmatch(sha256) is None:
+            raise AutomationError(422, "Send the sha256 of the protocol you reviewed.")
+        return sha256
+
+    def edited_input(data: dict[str, Any], *, required: bool) -> dict[str, Any] | None:
+        """The approver's edited protocol ("protocol"), or None when they approve it as submitted."""
+
+        raw = data.get("protocol")
+        if raw is None and not required:
+            return None
+        if not isinstance(raw, dict):
+            raise AutomationError(422, "protocol: send the edited protocol as a JSON object.")
+        if len(json.dumps(raw)) > MAX_PROTOCOL_BYTES:
+            raise AutomationError(413, f"The edited protocol may be at most {MAX_PROTOCOL_BYTES // 1024} KiB.")
+        return raw
+
     @router.get("/projects/{project_id}/runs/{run_id}/protocol")
     async def get_protocol(request: Request, project_id: str, run_id: str) -> JSONResponse:
-        """{"protocol" (normalized), "sha256", "review", "prose" (the agent's, untrusted), "status", ...}."""
+        """{"protocol" (normalized), "sha256", "review", "prose" (the agent's, untrusted), "status", ...}.
+
+        Once approved: "approved_sha256"; with an approver's edits also "approved_protocol",
+        "approved_review", "edited_by" and "changes"."""
 
         stored = await asyncio.to_thread(runs(request).stored_protocol, project_id, run_id)
         run, record = stored["run"], stored["run"]["protocol"]
-        review = build_review(stored["protocol"], await network_devices(network))
-        return JSONResponse({
+        live = await network_devices(network)
+        reply = {
             "protocol": stored["protocol"],
             "sha256": stored["sha256"],
-            "review": review,
+            "review": build_review(stored["protocol"], live),
             "prose": stored["prose"],
             "status": record["status"],
             "submission": record["submissions"],
             "phase": run["phase"],
             "run_status": run["status"],
             "max_minutes": runs(request).grant_max_minutes,
-        }, headers={"Cache-Control": "no-store"})
+            "approved_sha256": record.get("approved_sha256"),
+            "edited_by": record.get("edited_by"),
+            "changes": record.get("changes"),
+        }
+        if stored["approved"] is not None:
+            reply["approved_protocol"] = stored["approved"]
+            reply["approved_review"] = build_review(stored["approved"], live)
+        return JSONResponse(reply, headers={"Cache-Control": "no-store"})
+
+    @router.post("/projects/{project_id}/runs/{run_id}/protocol/preview", dependencies=changes)
+    async def preview_protocol(request: Request, project_id: str, run_id: str) -> JSONResponse:
+        """{"sha256": the submission the edit started from, "protocol": the edited protocol}.
+
+        Checks the edit as approving it would, without approving: 200 {"normalized", "sha256",
+        "problems", "changes", "review"}; with problems, normalized, sha256 and review are null.
+        409 when that submission is no longer the one waiting for approval."""
+
+        data = await _json(request, limit=_EDIT_REQUEST_BYTES)
+        sha256 = base_sha(data)
+        raw = edited_input(data, required=True)
+        run_store = runs(request)
+        stored = await asyncio.to_thread(run_store.approval_target, project_id, run_id, sha256)
+        normalized, problems, live = await check_now(run_store, project_id, stored["run"], raw)
+        headers = {"Cache-Control": "no-store"}
+        if problems or normalized is None:
+            return JSONResponse({"normalized": None, "sha256": None, "problems": problems, "changes": [],
+                                 "review": None}, headers=headers)
+        return JSONResponse({
+            "normalized": normalized,
+            "sha256": protocol_sha256(normalized),
+            "problems": [],
+            "changes": protocol_changes(stored["protocol"], normalized),
+            "review": build_review(normalized, live),
+        }, headers=headers)
 
     @router.post("/projects/{project_id}/runs/{run_id}/protocol/approve", dependencies=changes)
     async def approve_protocol(request: Request, project_id: str, run_id: str) -> dict[str, Any]:
-        """{"sha256": the one reviewed, "duration_minutes": at most what it asks for}.
+        """{"sha256": the one reviewed, "duration_minutes": at most what it asks for,
+        "protocol"?: the approver's edited version, "edited_sha256"?: its sha256 as previewed}.
 
-        The protocol is checked again against the project and the live network, then the
-        grant takes its leases; only then is the run executing. 409 for another sha256, a
-        run not waiting for approval, a protocol the network no longer allows, or a busy device.
+        The protocol (the edited one, if sent) is checked again against the project and the live
+        network, then the grant takes its leases; only then is the run executing. 409 for another
+        sha256, a run not waiting for approval, a submitted protocol the network no longer allows,
+        an edit that changed since its preview, or a busy device; 422 with "problems" for an edit
+        that doesn't pass the checks.
         """
 
-        data = await _json(request)
-        sha256, minutes = data.get("sha256"), data.get("duration_minutes")
-        if not isinstance(sha256, str) or SHA256.fullmatch(sha256) is None:
-            raise AutomationError(422, "Send the sha256 of the protocol you reviewed.")
+        data = await _json(request, limit=_EDIT_REQUEST_BYTES)
+        sha256, minutes = base_sha(data), data.get("duration_minutes")
         try:  # an integer too large for a float (JSON allows 10**400) is refused, not a 500
             minutes = None if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) else float(minutes)
         except OverflowError:
             minutes = None
         if minutes is None or not math.isfinite(minutes) or minutes < 1:
             raise AutomationError(422, "duration_minutes must be a number of minutes, at least 1.")
+        raw_edit = edited_input(data, required=False)
+        previewed = data.get("edited_sha256")
+        if previewed is not None and (not isinstance(previewed, str) or SHA256.fullmatch(previewed) is None):
+            raise AutomationError(422, "edited_sha256: send the sha256 the preview returned, or leave it out.")
         approver = _author(request, data, "approved_by")
         if not approver:
             raise AutomationError(422, "Type your name: an approval records who gave it.")
@@ -391,32 +472,44 @@ def create_automation_router(network: NetworkSource, *, max_file_bytes: int) -> 
         async with approvals:
             stored = await asyncio.to_thread(run_store.approval_target, project_id, run_id, sha256)
             protocol, run = stored["protocol"], stored["run"]
-            if minutes > protocol["duration_minutes"]:
-                raise AutomationError(
-                    422, f"The protocol asks for {protocol['duration_minutes']:g} minutes; an approval can shorten "
-                         "that, never lengthen it.")
-            live = await network_devices(network)
-            if live is None:
-                raise AutomationError(503, "Central can't be reached now, so the devices can't be checked. "
-                                           "Try again in a minute.")
-            project = await asyncio.to_thread(run_store.automation.get, project_id)
-            canvas = await asyncio.to_thread(run_store.automation.snapshot_devices, project_id)
-            normalized, problems = validate_protocol(
-                protocol, project=project, live_devices=live, canvas_devices=canvas,
-                max_minutes=run_store.grant_max_minutes, task=run["task"],
-            )
-            if problems or normalized is None or protocol_sha256(normalized) != sha256:
-                raise AutomationError(
-                    409, "The project or the network changed since this protocol was submitted, and it no longer "
-                         "passes the checks. Reject it so the agent can write a new one.",
-                    problems=problems,
-                )
+            edited = None
+            if raw_edit is None:
+                if minutes > protocol["duration_minutes"]:
+                    raise AutomationError(
+                        422, f"The protocol asks for {protocol['duration_minutes']:g} minutes; an approval can "
+                             "shorten that, never lengthen it.")
+                normalized, problems, _live = await check_now(run_store, project_id, run, protocol)
+                if problems or normalized is None or protocol_sha256(normalized) != sha256:
+                    raise AutomationError(
+                        409, "The project or the network changed since this protocol was submitted, and it no "
+                             "longer passes the checks. Reject it so the agent can write a new one.",
+                        problems=problems,
+                    )
+                approved_sha = sha256
+            else:
+                normalized, problems, _live = await check_now(run_store, project_id, run, raw_edit)
+                if problems or normalized is None:
+                    count = len(problems)
+                    raise AutomationError(
+                        422, f"Your edited protocol has {count} problem{'' if count == 1 else 's'}; fix "
+                             f"{'it' if count == 1 else 'them'} and approve again.", problems=problems)
+                approved_sha = protocol_sha256(normalized)
+                if previewed is not None and previewed != approved_sha:
+                    raise AutomationError(409, "The edited protocol isn't the one you previewed (its sha256 "
+                                               "differs). Review the changes again.", edited_sha256=approved_sha)
+                if minutes > normalized["duration_minutes"]:
+                    raise AutomationError(
+                        422, f"Your edited protocol asks for {normalized['duration_minutes']:g} minutes; the grant "
+                             "can't be longer than that.")
+                if approved_sha != sha256:  # an edit that changes nothing is a plain approval
+                    edited = {"protocol": normalized, "sha256": approved_sha,
+                              "changes": protocol_changes(protocol, normalized)}
             grants = getattr(request.app.state, "grants", None)
             if grants is None:
                 raise AutomationError(503, "Device grants aren't available in this Control Center.")
             try:
                 grant = await grants.create(
-                    project_id=project_id, run_id=run_id, protocol=normalized, sha256=sha256,
+                    project_id=project_id, run_id=run_id, protocol=normalized, sha256=approved_sha,
                     duration_minutes=float(minutes), approved_by=approver,
                 )
             except AutomationError:
@@ -429,9 +522,10 @@ def create_automation_router(network: NetworkSource, *, max_file_bytes: int) -> 
                 raise
             try:
                 run = await asyncio.to_thread(run_store.mark_approved, project_id, run_id, sha256=sha256, by=approver,
-                                              minutes=float(minutes))
-            except AutomationError:
-                # The run ended (cancelled, timed out) while the leases were being taken.
+                                              minutes=float(minutes), edited=edited)
+            except Exception:
+                # The run ended (cancelled, timed out) while the leases were being taken, or the
+                # approval couldn't be recorded: no grant runs without its approval on record.
                 await grants.end_for_run(run_id, reason="the run ended while it was being approved")
                 raise
         return {"run": run, "grant": grant}

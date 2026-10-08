@@ -29,6 +29,16 @@ class DuplicateDeviceIdError(InvalidConfigurationError):
     code = "DUPLICATE_DEVICE_ID"
 
 
+class InvalidDeviceLimitsError(InvalidConfigurationError):
+    """A device's site limits or its driver's published hints can't be used.
+
+    Raised when a device connects (site limits wider than the driver's own, or
+    malformed driver hints). The Lab PC refuses to start with it.
+    """
+
+    code = "INVALID_DEVICE_LIMITS"
+
+
 class DeviceNotFoundError(DeviceManagerError):
     code = "DEVICE_NOT_FOUND"
 
@@ -70,6 +80,16 @@ class InvalidDeviceArgumentError(DeviceManagerError):
     code = "INVALID_DEVICE_ARGUMENT"
 
 
+class ArgumentOutsideLimitsError(InvalidDeviceArgumentError):
+    """A call's argument is outside the device's site or driver limits.
+
+    Raised by the Lab PC before the driver is called; reaches gRPC clients as
+    INVALID_ARGUMENT with ``labnet-error-code: ARGUMENT_OUTSIDE_LIMITS``.
+    """
+
+    code = "ARGUMENT_OUTSIDE_LIMITS"
+
+
 class DeviceOperationError(DeviceManagerError):
     code = "DEVICE_OPERATION_FAILED"
 
@@ -97,6 +117,7 @@ class CentralCommunicationError(DeviceManagerError):
 
 
 __all__ = [
+    "ArgumentOutsideLimitsError",
     "CentralCommunicationError",
     "DeviceDeadlineExceededError",
     "DeviceManagerError",
@@ -110,6 +131,7 @@ __all__ = [
     "DuplicateDeviceIdError",
     "InvalidConfigurationError",
     "InvalidDeviceArgumentError",
+    "InvalidDeviceLimitsError",
     "LeaseError",
     "LeaseInvalidError",
     "LeaseValidationUnavailableError",

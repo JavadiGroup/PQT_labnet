@@ -97,16 +97,21 @@ def facade_class_name(contract: DeviceContract) -> str | None:
 
 _HINT_KEY = re.compile(r"[a-z][a-z0-9_]{0,63}\.[a-z][a-z0-9_]{0,63}")
 _HINT_TEXT = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.:+/-]{0,31}")
+LIMIT_SOURCES = ("site", "driver")
 
 
 def clean_hints(metadata: Any) -> dict[str, Any]:
-    """The ``hints`` a driver publishes in ``metadata()``, checked and size-limited:
+    """The ``hints`` a device publishes in ``metadata()``, checked and size-limited:
 
     ``{"channels": ["CH1", "CH2"],
        "limits": {"set_frequency.value": [60.0, 100.0]},
-       "choices": {"set_waveform.waveform": ["sine", "square"]}}``
+       "choices": {"set_waveform.waveform": ["sine", "square"], "set_rf_enabled.enabled": [False]},
+       "sources": {"set_frequency.value": "site", "set_waveform.waveform": "driver"}}``
 
-    Keys are ``<method>.<argument>``. Anything malformed is dropped.
+    Keys are ``<method>.<argument>``. The Lab PC publishes the effective limits
+    (the driver's narrowed by the inventory's ``site_limits``) and, in
+    ``sources``, where each comes from. Choices are all text or all true/false.
+    Anything malformed is dropped.
     """
 
     raw = metadata.get("hints") if isinstance(metadata, dict) else None
@@ -136,11 +141,21 @@ def clean_hints(metadata: Any) -> dict[str, Any]:
         clean_choices = {}
         for key, value in list(choices.items())[:64]:
             if isinstance(key, str) and _HINT_KEY.fullmatch(key) and isinstance(value, list):
-                options = [item for item in value[:32] if isinstance(item, str) and _HINT_TEXT.fullmatch(item)]
+                if value and all(isinstance(item, bool) for item in value):
+                    options = list(dict.fromkeys(value))
+                else:
+                    options = [item for item in value[:32] if isinstance(item, str) and _HINT_TEXT.fullmatch(item)]
                 if options:
                     clean_choices[key] = options
         if clean_choices:
             hints["choices"] = clean_choices
+    sources = raw.get("sources")
+    if isinstance(sources, dict):
+        known = set(hints.get("limits", {})) | set(hints.get("choices", {}))
+        clean_sources = {key: value for key, value in sources.items()
+                         if key in known and value in LIMIT_SOURCES}
+        if clean_sources:
+            hints["sources"] = clean_sources
     return hints
 
 
@@ -160,12 +175,18 @@ def hint_lines(hints: dict[str, Any]) -> list[str]:
     """A driver's channels, ranges and choices as Markdown list items."""
 
     lines = []
+    sources = hints.get("sources") or {}
+
+    def source(key: str) -> str:
+        return " (site limit)" if sources.get(key) == "site" else ""
+
     if hints.get("channels"):
         lines.append("- Channels: " + ", ".join(hints["channels"]))
     for key, (low, high) in (hints.get("limits") or {}).items():
-        lines.append(f"- Range of {key}: {low:g} to {high:g}")
+        lines.append(f"- Range of {key}: {low:g} to {high:g}{source(key)}")
     for key, options in (hints.get("choices") or {}).items():
-        lines.append(f"- Choices for {key}: " + ", ".join(options))
+        shown = [("true" if item else "false") if isinstance(item, bool) else item for item in options]
+        lines.append(f"- Choices for {key}: " + ", ".join(shown) + source(key))
     return lines
 
 
@@ -184,6 +205,7 @@ def type_label(device_type: str) -> str:
 
 
 __all__ = [
+    "LIMIT_SOURCES",
     "clean_hints",
     "describe_device_type",
     "describe_method",

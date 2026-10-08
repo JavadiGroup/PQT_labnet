@@ -157,6 +157,10 @@ The rules:
 - **The drivers' limits are hard limits:** your ranges must lie inside the
   limits and choices `DEVICES.md` gives for each argument (and a `channel`
   inside the device's channels). Ask for what the task needs, not the maximum.
+- **No limit, no automation:** a number `DEVICES.md` gives no range for can't
+  be bounded, so a protocol that uses it is refused. Don't guess one: say in
+  your answer which device and argument need a site limit, so a person can
+  set it in the Lab PC's inventory (`site_limits(...)`).
 - **Streams** (methods that return many samples) need
   `"stream": {"max_sample_rate_hz": … (at most 200), "max_samples": … (at most 100000)}`;
   other methods must not have it.

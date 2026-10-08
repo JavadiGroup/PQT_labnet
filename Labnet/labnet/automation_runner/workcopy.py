@@ -286,6 +286,30 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+# A Claude credential (OAuth access or refresh token, API key). The login volume is readable in
+# the agent's container; a file that carries one is never uploaded where lab members can read it.
+CREDENTIAL = re.compile(rb"sk-ant-[A-Za-z0-9_-]{20,}")
+_SCAN_CHUNK = 1024 * 1024
+
+
+def holds_credential(path: Path) -> bool:
+    """True if the file contains something shaped like a Claude credential (scanned in overlapping chunks)."""
+
+    tail = b""
+    with open(path, "rb") as file:
+        while chunk := file.read(_SCAN_CHUNK):
+            if CREDENTIAL.search(tail + chunk):
+                return True
+            tail = chunk[-256:]
+    return False
+
+
+def redact_credentials(source: Path, target: Path) -> None:
+    """``source`` copied to ``target`` with every credential replaced (for the transcript and log)."""
+
+    target.write_bytes(CREDENTIAL.sub("sk-ant-…".encode(), source.read_bytes()))
+
+
 def snapshot(work: Path) -> dict[str, str]:
     """{relative path: sha256} of every regular file (links are not followed)."""
 
@@ -361,6 +385,13 @@ def collect_outputs(
             continue
         if info.st_size > max_file_bytes:
             result.ignored.append(f"ignored: {key} (larger than {max_file_bytes / 2**20:g} MB)")
+            continue
+        try:
+            if holds_credential(path):
+                result.ignored.append(f"ignored: {key} (it contains a Claude credential)")
+                continue
+        except OSError as exc:
+            result.ignored.append(f"ignored: {key} (unreadable: {exc.strerror or exc})")
             continue
         if total + info.st_size > max_total_bytes or len(result.files) >= max_files:
             result.ignored.append(f"ignored: {key} (the run's outputs are over their limit)")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import inspect
 import queue
 import threading
 from collections.abc import Callable, Collection, Mapping
@@ -9,6 +10,12 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Any, Generic, TypeVar
 
+from labnet.devices.core.limits import (
+    DeviceLimits,
+    DeviceLimitsError,
+    get_site_limits,
+    resolve_limits,
+)
 from labnet.devices.core.protocol import (
     AvailabilityAwareDevice,
     DeviceAvailability,
@@ -16,6 +23,7 @@ from labnet.devices.core.protocol import (
 )
 
 from .errors import (
+    ArgumentOutsideLimitsError,
     DeviceDeadlineExceededError,
     DeviceManagerError,
     DeviceOperationError,
@@ -24,6 +32,8 @@ from .errors import (
     DeviceStartupError,
     DeviceUnavailableError,
     InvalidConfigurationError,
+    InvalidDeviceArgumentError,
+    InvalidDeviceLimitsError,
     MethodNotAllowedError,
 )
 from .models import DeviceSnapshot, DeviceState, FailureInfo, utc_now
@@ -92,6 +102,8 @@ class DeviceWorker:
         self._availability = DeviceAvailability.UNAVAILABLE
         self._metadata: dict[str, Any] = {}
         self._allowed_methods: tuple[str, ...] = ()
+        # Effective site and driver limits, enforced before every call.
+        self._limits: DeviceLimits | None = None
         self._failure: FailureInfo | None = None
         self._startup_abandoned = False
         self._shutdown_future: concurrent.futures.Future[None] | None = None
@@ -226,6 +238,7 @@ class DeviceWorker:
         self._require_allowed(method)
         positional = tuple(args)
         keyword = dict(kwargs or {})
+        self._require_within_limits(method, positional, keyword)
 
         def operation() -> Any:
             self._require_allowed(method)
@@ -352,6 +365,8 @@ class DeviceWorker:
                     self._state = DeviceState.READY
                     self._failure = None
                     self._updated_at = utc_now()
+        except InvalidDeviceLimitsError as exc:
+            self._record_failure(exc, exc)
         except Exception as exc:
             error = DeviceStartupError(
                 f"Device startup failed: {self.device_id}",
@@ -461,6 +476,46 @@ class DeviceWorker:
                 details={"device_id": self.device_id, "method": method},
             )
 
+    @property
+    def limits(self) -> DeviceLimits | None:
+        """The effective limits enforced on this device's calls, once connected."""
+
+        with self._state_lock:
+            return self._limits
+
+    def _require_within_limits(
+        self,
+        method: str,
+        positional: tuple[Any, ...],
+        keyword: dict[str, Any],
+    ) -> None:
+        """Refuse a call outside the device's site or driver limits.
+
+        This is the one place every remote call passes before it reaches the
+        driver, so the published hints are never merely advisory.
+        """
+
+        limits = self.limits
+        if limits is None or not limits.limits_method(method):
+            return
+        arguments: dict[str, Any] = dict(keyword)
+        if positional:
+            target = getattr(self._device, method, None)
+            try:
+                bound = inspect.signature(target).bind_partial(*positional, **keyword)
+            except (TypeError, ValueError) as exc:
+                raise InvalidDeviceArgumentError(
+                    f"The arguments of {method} can't be checked against its limits.",
+                    details={"device_id": self.device_id, "method": method},
+                ) from exc
+            arguments = dict(bound.arguments)
+        problem = limits.check(method, arguments)
+        if problem is not None:
+            raise ArgumentOutsideLimitsError(
+                problem,
+                details={"device_id": self.device_id, "method": method},
+            )
+
     def _refresh_description(self) -> None:
         device_type = self._device.device_type
         status = self._device.status()
@@ -493,6 +548,12 @@ class DeviceWorker:
             # Keep the transport-neutral manager usable for legacy/test-only
             # physical devices that have no network service contract.
             methods = self._device.allowed_methods()
+            limits = None
+            if getattr(self._device, "labnet_site_limits", None) is not None:
+                raise InvalidDeviceLimitsError(
+                    f"{self.device_id} has site limits but no generated contract "
+                    "to check them against."
+                )
         else:
             validate_implementation(self._device, contract)
             methods = contract.allowed_physical_methods
@@ -500,6 +561,24 @@ class DeviceWorker:
             metadata["capabilities"] = [
                 method.python_name for method in contract.methods
             ]
+            try:
+                limits = resolve_limits(
+                    contract,
+                    metadata.get("hints"),
+                    get_site_limits(self._device),
+                    device_id=self.device_id,
+                )
+            except DeviceLimitsError as exc:
+                raise InvalidDeviceLimitsError(
+                    str(exc),
+                    details={"device_id": self.device_id},
+                ) from exc
+            # Publish what is enforced: the driver's and the site's limits
+            # together, with where each comes from.
+            if limits.hints:
+                metadata["hints"] = dict(limits.hints)
+            else:
+                metadata.pop("hints", None)
         allowed = _normalize_allowed_methods(methods)
         with self._state_lock:
             self._device_type = device_type.strip()
@@ -507,6 +586,7 @@ class DeviceWorker:
             self._availability = availability
             self._metadata = dict(metadata)
             self._allowed_methods = allowed
+            self._limits = limits
             self._failure = None
             self._updated_at = utc_now()
 

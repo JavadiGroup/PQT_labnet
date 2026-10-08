@@ -198,3 +198,29 @@ def test_a_run_folder_starts_empty(tmp_path: Path) -> None:
     folder.create()  # a leftover from a crash is replaced
     assert not any(folder.work.iterdir())
     assert folder.config.is_dir() and folder.sock.is_dir()
+
+
+def test_a_file_carrying_a_claude_credential_is_never_uploaded(tmp_path: Path) -> None:
+    """The login volume is readable in the agent's container; a copied token must not reach the lab."""
+
+    from labnet.automation_runner.workcopy import collect_outputs, holds_credential, make_skeleton, redact_credentials
+
+    work = tmp_path / "work"
+    make_skeleton(work)
+    token = "sk-ant-ort01-" + "Q" * 60
+    (work / "Analysis" / "Analysis.md").write_text("# Results\nfine\n", encoding="utf-8")
+    (work / "Data" / "new_data" / "creds.csv").write_text(f"a,b\n1,{token}\n", encoding="utf-8")
+    big = work / "Analysis" / "outputs" / "big.txt"  # the token straddles a scan chunk
+    big.write_bytes(b"x" * (1024 * 1024 - 10) + token.encode() + b"\n")
+    outputs = collect_outputs(work, {})
+    uploaded = {item.relative for item in outputs.files}
+    assert "Analysis/Analysis.md" in uploaded
+    assert "Data/new_data/creds.csv" not in uploaded and "Analysis/outputs/big.txt" not in uploaded
+    assert any("creds.csv (it contains a Claude credential)" in note for note in outputs.ignored)
+    assert holds_credential(big) and not holds_credential(work / "Analysis" / "Analysis.md")
+
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(f'{{"text": "read {token} from /claude"}}\n', encoding="utf-8")
+    redacted = tmp_path / "out.jsonl"
+    redact_credentials(transcript, redacted)
+    assert token not in redacted.read_text(encoding="utf-8") and "sk-ant-…" in redacted.read_text(encoding="utf-8")

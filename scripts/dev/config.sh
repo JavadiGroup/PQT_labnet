@@ -17,6 +17,12 @@ RESEARCHER_USER="researcher"
 CONTROL_CENTER_USER="control-center"
 CONTROL_CENTER_PORT=8080
 
+# The safe-state watchdog for Automation device grants: its own Central user
+# (it takes leases to apply a grant's safe state if the Control Center dies),
+# and a loopback health page at http://127.0.0.1:$WATCHDOG_PORT/health/ready.
+WATCHDOG_USER="automation-watchdog"
+WATCHDOG_PORT=8081
+
 # One line per simulated Lab PC:
 #   <lab-pc id>  <gRPC port>  <health port>  <inventory file, relative to the repo>
 #

@@ -9,6 +9,7 @@ installs it on each Lab PC as `C:\ProgramData\LabNet\site\`.
 | `central.env.example` | Central | Template for `C:\ProgramData\LabNet\central.env` |
 | `lab-pc.env.example` | each Lab PC | Template for `C:\ProgramData\LabNet\lab-pc.env` |
 | `control-center.env.example` | Central | Template for `C:\ProgramData\LabNet\control-center.env` (the web interface) |
+| `watchdog.env.example` | Central | Template for `C:\ProgramData\LabNet\watchdog.env` (the safe-state watchdog for Automation grants) |
 | `Caddyfile.example` | Central | Template for `C:\ProgramData\LabNet\Caddyfile`: Central's HTTPS site, and the Control Center's with the logins that `scripts/lab/setup_logins.ps1` writes |
 | `inventories/<lab pc>.py` | that Lab PC | Which instruments the Lab PC serves |
 

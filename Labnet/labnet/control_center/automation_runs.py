@@ -33,7 +33,15 @@ grant took its leases; ``analyzing`` once the grant ended. A protocol not
 approved or rejected within ``approval_hours`` fails the run. The normalized
 protocol a person reviews is kept as ``state/<project>/protocols/<run>-<n>.json``
 (its canonical text, so its sha256 is the file's), the agent's prose beside it
-as ``<run>-<n>.md``.
+as ``<run>-<n>.md``. An approver may edit it before approving ("Edit and
+approve"): their version passes the same checks, is kept as
+``<run>-<n>-edited.json`` with its own sha256 (``protocol.approved_sha256``),
+and the record lists what changed (``protocol_changes``), which the runner
+quotes to the agent.
+
+"Run with…": a run may be queued with its own model, effort, max turns and
+budget (``RunOverrides``), checked as the project's settings are; the project
+is unchanged.
 
 The ``grant`` field belongs to the GrantManager (``automation_grants.py``),
 which writes it with :meth:`RunStore.set_grant` and moves the phase with
@@ -68,7 +76,7 @@ from .automation_paths import PathRefused, clean_relative, open_inside, zone_of
 from .automation_protocol import MAX_NOTE_CHARACTERS, MAX_PROSE_BYTES, canonical
 from .automation_store import PROJECT_ID, AutomationError, AutomationStore, ModelName, refusal, write_json_file
 from .config import AGENT_EFFORTS, DEFAULT_AGENT_MODELS
-from .experiment_schema import DeviceId, Text, _Strict
+from .experiment_schema import DeviceId, Text, _Strict, problems_from
 from .experiment_store import replace_with_retry
 from .redaction import redact
 
@@ -91,6 +99,11 @@ PHASE_MOVES = {
 }
 MAX_SUBMISSIONS = 3  # protocols a run may send for approval (ones the checks refused don't count)
 SHA256 = re.compile(r"[0-9a-f]{64}")
+MAX_CHANGES = 60  # lines of an approver's edits kept in the run record (then "… and N more")
+MAX_CHANGE_CHARACTERS = 240
+# A run's own settings, given when it is queued ("Run with…"): request key → project setting.
+RUN_OVERRIDES = {"model": "run_model", "effort": "run_effort", "max_turns": "run_max_turns",
+                 "max_budget_usd": "run_budget_usd"}
 EVENT_KIND = re.compile(r"[a-z][a-z0-9_]{0,31}")
 MAX_EVENT_TEXT_BYTES = 16 * 1024
 MAX_EVENTS_PER_REQUEST = 100
@@ -110,7 +123,18 @@ class RunSettings(_Strict):
     max_budget_usd: float = Field(gt=0, le=100)
 
 
+class RunOverrides(_Strict):
+    """A run's own settings from "Run with…": each the same kind of value as the project's
+    run setting it overrides (``ProjectSettings``); None or left out keeps the project's."""
+
+    model: ModelName | None = None
+    effort: Literal[AGENT_EFFORTS] | None = None
+    max_turns: int | None = Field(default=None, ge=1, le=200)
+    max_budget_usd: float | None = Field(default=None, gt=0, le=100)
+
+
 Stamp = Annotated[str, Field(max_length=40)]
+Sha256 = Annotated[str, Field(pattern=rf"^{SHA256.pattern}$")]
 
 
 class RunProtocol(_Strict):
@@ -118,7 +142,12 @@ class RunProtocol(_Strict):
 
     submissions: int = Field(ge=1, le=MAX_SUBMISSIONS)
     status: Literal["submitted", "approved", "rejected"]
-    sha256: Annotated[str, Field(pattern=rf"^{SHA256.pattern}$")]
+    sha256: Sha256  # the agent's submission, as normalized
+    # Once approved: the version the grant enforces. The submission's sha256, unless the
+    # approver edited it (then <run>-<n>-edited.json, edited_by and the list of changes).
+    approved_sha256: Sha256 | None = None
+    edited_by: Text(64) | None = None
+    changes: list[Text(MAX_CHANGE_CHARACTERS)] | None = Field(default=None, max_length=MAX_CHANGES + 1)
     title: Text(120) = ""
     duration_minutes: float = Field(gt=0)  # as requested
     submitted_at: Stamp
@@ -175,6 +204,132 @@ def _parse_stamp(value: str) -> datetime:
 def _zip_time(timestamp: float) -> tuple[int, int, int, int, int, int]:
     moment = time.localtime(max(timestamp, 315532800 + 86400))  # zip dates start in 1980
     return moment[:6]
+
+
+# ---- what an approver changed (both protocols normalized by validate_protocol) ----------------
+
+
+def _shown(value: Any) -> str:
+    """A protocol value as a change line shows it: 90 (not 90.0), true, "CH1", [..], none."""
+
+    if value is None:
+        return "none"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer() and abs(value) < 1e15:
+        return str(int(value))
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ", ".join(_shown(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{key}: {_shown(item)}" for key, item in value.items()) + "}"
+    return str(value)
+
+
+def _same(old: Any, new: Any) -> bool:
+    return json.dumps(old, sort_keys=True) == json.dumps(new, sort_keys=True)  # true ≠ 1, 1 ≠ 1.0
+
+
+def _call_shown(call: dict[str, Any]) -> str:
+    args = ", ".join(f"{name}={_shown(value)}" for name, value in call.get("args", {}).items())
+    return f"{call.get('device_id')}.{call.get('method')}({args})"
+
+
+def _bound_shown(bound: dict[str, Any]) -> str:
+    if "choices" in bound:
+        return f"choices {_shown(bound['choices'])}"
+    text = f"{_shown(bound.get('min'))} to {_shown(bound.get('max'))}"
+    return text + (f", max_step {_shown(bound['max_step'])}" if bound.get("max_step") is not None else "")
+
+
+def protocol_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    """What changed from ``before`` (the agent's protocol) to ``after`` (an approver's edit), one
+    line each: ``dev01-aom.set_frequency.value.max: 92 → 90``. Both are normalized protocols."""
+
+    changes: list[str] = []
+
+    def changed(path: str, old: Any, new: Any) -> None:
+        if not _same(old, new):
+            changes.append(f"{path}: {_shown(old)} → {_shown(new)}")
+
+    for key in ("task", "title", "duration_minutes"):
+        changed(key, before.get(key), after.get(key))
+    old_devices = {device["device_id"]: device for device in before.get("devices", [])}
+    new_devices = {device["device_id"]: device for device in after.get("devices", [])}
+    for device_id in old_devices:
+        if device_id not in new_devices:
+            changes.append(f"{device_id}: removed (no calls to it at all)")
+    for device_id, device in new_devices.items():
+        if device_id not in old_devices:
+            changes.append(f"{device_id}: added, with {', '.join(sorted(device['methods']))}")
+            continue
+        old = old_devices[device_id]
+        changed(f"{device_id}.device_type", old.get("device_type"), device.get("device_type"))
+        for name in sorted(old["methods"]):
+            if name not in device["methods"]:
+                changes.append(f"{device_id}.{name}: removed (may not be called)")
+        for name in sorted(device["methods"]):
+            method, path = device["methods"][name], f"{device_id}.{name}"
+            if name not in old["methods"]:
+                bounds = "; ".join(f"{field} {_bound_shown(bound)}" for field, bound in method["args"].items())
+                changes.append(f"{path}: added (at most {method['max_calls']} calls, "
+                               f"{_shown(method['max_rate_hz'])}/s" + (f"; {bounds}" if bounds else "") + ")")
+                continue
+            was = old["methods"][name]
+            for field in sorted(set(was["args"]) | set(method["args"])):
+                old_bound, new_bound = was["args"].get(field), method["args"].get(field)
+                if old_bound is None:
+                    changes.append(f"{path}.{field}: now bounded, {_bound_shown(new_bound)}")
+                elif new_bound is None:
+                    changes.append(f"{path}.{field}: no longer bounded (may never be sent)")
+                else:
+                    for key in sorted(set(old_bound) | set(new_bound)):
+                        changed(f"{path}.{field}.{key}", old_bound.get(key), new_bound.get(key))
+            changed(f"{path}.max_calls", was.get("max_calls"), method.get("max_calls"))
+            changed(f"{path}.max_rate_hz", was.get("max_rate_hz"), method.get("max_rate_hz"))
+            old_stream, new_stream = was.get("stream") or {}, method.get("stream") or {}
+            for key in sorted(set(old_stream) | set(new_stream)):
+                changed(f"{path}.stream.{key}", old_stream.get(key), new_stream.get(key))
+
+    old_safe, new_safe = before.get("safe_state", []), after.get("safe_state", [])
+    if not _same(old_safe, new_safe):
+        same_calls = len(old_safe) == len(new_safe) and all(
+            (a["device_id"], a["method"]) == (b["device_id"], b["method"]) for a, b in zip(old_safe, new_safe))
+        if same_calls:  # the same calls in the same order: only values changed
+            for index, (old, new) in enumerate(zip(old_safe, new_safe)):
+                for name in sorted(set(old["args"]) | set(new["args"])):
+                    changed(f"safe_state[{index}] {old['device_id']}.{old['method']}.{name}",
+                            old["args"].get(name), new["args"].get(name))
+        else:
+            old_texts, new_texts = [_call_shown(call) for call in old_safe], [_call_shown(call) for call in new_safe]
+            remaining = list(new_texts)
+            for text in old_texts:
+                if text in remaining:
+                    remaining.remove(text)
+                else:
+                    changes.append(f"safe_state: removed {text}")
+            leftover = list(old_texts)
+            for text in new_texts:
+                if text in leftover:
+                    leftover.remove(text)
+                else:
+                    changes.append(f"safe_state: added {text}")
+            if sorted(old_texts) == sorted(new_texts):
+                changes.append("safe_state: reordered, now " + "; ".join(new_texts))
+    return changes
+
+
+def _clip_changes(changes: list[str]) -> list[str]:
+    """``changes`` as the run record keeps them: each line clipped, at most MAX_CHANGES lines."""
+
+    clipped = [text if len(text) <= MAX_CHANGE_CHARACTERS else text[: MAX_CHANGE_CHARACTERS - 1] + "…"
+               for text in changes[:MAX_CHANGES]]
+    if len(changes) > MAX_CHANGES:
+        clipped.append(f"… and {len(changes) - MAX_CHANGES} more changes")
+    return clipped
 
 
 class RunStore:
@@ -412,10 +567,40 @@ class RunStore:
             model=model, effort=effort, max_turns=project["run_max_turns"], max_budget_usd=project["run_budget_usd"]
         ).model_dump(mode="json")
 
-    def queue(self, project_id: str, raw_task: Any, *, author: str) -> dict[str, Any]:
+    def _overridden(self, project: dict[str, Any], raw: Any) -> dict[str, Any]:
+        """``project`` with this run's own settings ("Run with…") in place of its run settings.
+
+        ``raw`` is ``{"model"?, "effort"?, "max_turns"?, "max_budget_usd"?}``; each is checked
+        as the project's own setting would be (the model must be one LABNET_AGENT_MODELS
+        offers); a missing or null one keeps the project's. The project itself is unchanged.
+        """
+
+        if raw is None:
+            return project
+        if not isinstance(raw, dict):
+            raise AutomationError(422, "settings: send an object with model, effort, max_turns or max_budget_usd.")
+        try:
+            overrides = RunOverrides.model_validate(raw)
+        except ValidationError as exc:
+            problems = problems_from(exc, raw)
+            for problem in problems:
+                problem["field"] = f"settings.{problem['field']}" if problem["field"] else "settings"
+            first = problems[0]
+            raise AutomationError(422, f"{first['field']}: {first['message']}", errors=problems) from None
+        if overrides.model is not None and overrides.model not in self.models:
+            raise AutomationError(
+                422, f"settings.model: {overrides.model} isn't offered here; choose one of {', '.join(self.models)}.",
+                errors=[{"field": "settings.model", "message": f"Choose one of {', '.join(self.models)}."}],
+            )
+        chosen = overrides.model_dump()
+        return {**project, **{RUN_OVERRIDES[key]: value for key, value in chosen.items() if value is not None}}
+
+    def queue(self, project_id: str, raw_task: Any, *, author: str, settings: Any = None) -> dict[str, Any]:
+        """Queue a task; ``settings`` (optional) overrides the project's run settings for this run only."""
+
         # Under the lock delete_project takes, so a project deleted meanwhile isn't brought back.
         with self._lock:
-            settings = self.run_settings(self.automation.get(project_id))  # 404 if gone
+            settings = self.run_settings(self._overridden(self.automation.get(project_id), settings))  # 404 if gone
             task = self._task(project_id, raw_task)
             for run in self._runs(project_id):
                 if run["status"] in OPEN and run["task"].casefold() == task.casefold():
@@ -740,7 +925,17 @@ class RunStore:
                 pass
             except OSError as exc:
                 LOGGER.warning("Couldn't read the prose of %s: %s", name, exc)
-        return {"run": run, "protocol": json.loads(data.decode("utf-8")), "sha256": record["sha256"], "prose": prose}
+            approved = None  # the approver's edited version, when there is one
+            if record.get("approved_sha256") and record["approved_sha256"] != record["sha256"]:
+                try:
+                    edited = (folder / f"{name}-edited.json").read_bytes()
+                except OSError as exc:
+                    raise AutomationError(500, f"The approved protocol {name}-edited.json can't be read.") from exc
+                if hashlib.sha256(edited).hexdigest() != record["approved_sha256"]:
+                    raise AutomationError(500, f"The approved protocol {name}-edited.json doesn't match its sha256.")
+                approved = json.loads(edited.decode("utf-8"))
+        return {"run": run, "protocol": json.loads(data.decode("utf-8")), "sha256": record["sha256"], "prose": prose,
+                "approved": approved}
 
     @staticmethod
     def _check_waiting(run: dict[str, Any], sha256: str | None) -> None:
@@ -765,9 +960,16 @@ class RunStore:
             self._check_waiting(self._load(project_id, run_id), sha256)
             return self.stored_protocol(project_id, run_id)
 
-    def mark_approved(self, project_id: str, run_id: str, *, sha256: str, by: str, minutes: float) -> dict[str, Any]:
+    def mark_approved(
+        self, project_id: str, run_id: str, *, sha256: str, by: str, minutes: float,
+        edited: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Record the approval once the grant exists; the run goes on to executing.
 
+        ``sha256`` is the submission the approver started from. ``edited`` is the approver's
+        own version, when they changed it: ``{"protocol" (normalized), "sha256", "changes"}``;
+        it is kept as ``<run>-<n>-edited.json`` (its canonical text, so the file's sha256 is
+        ``approved_sha256``), and the record gets ``edited_by`` and the list of changes.
         409 if the run ended meanwhile (the caller then ends the grant it just made).
         """
 
@@ -778,13 +980,28 @@ class RunStore:
                 raise AutomationError(409, f"This run is {run['status']} ({run.get('phase')}); the approval "
                                            "came too late.", run=run)
             record = {**record, "status": "approved", "reviewed_by": by, "reviewed_at": self._stamp(),
-                      "approved_minutes": float(minutes)}
+                      "approved_minutes": float(minutes), "approved_sha256": sha256}
+            if edited is not None:
+                text = canonical(edited["protocol"]).encode("utf-8")
+                if hashlib.sha256(text).hexdigest() != edited["sha256"]:
+                    raise ValueError("The edited protocol doesn't match its sha256.")
+                self._write_bytes(self._protocols_folder(project_id), f"{run_id}-{record['submissions']}-edited.json",
+                                  text)
+                record.update(approved_sha256=edited["sha256"], edited_by=by,
+                              changes=_clip_changes(list(edited["changes"])))
             # The GrantManager may already have moved it on (a grant that ended at once).
             phase = EXECUTING if run["phase"] == AWAITING_APPROVAL else run["phase"]
             run = {**run, "protocol": RunProtocol(**record).model_dump(mode="json"), "phase": phase}
             self._save(run)
-            self._log(run, "approval", f"Protocol {record['submissions']} approved by {by} for {minutes:g} minutes "
-                                       f"(sha256 {sha256[:12]}…).")
+            if edited is None:
+                self._log(run, "approval", f"Protocol {record['submissions']} approved by {by} for {minutes:g} minutes "
+                                           f"(sha256 {sha256[:12]}…).")
+            else:
+                count = len(edited["changes"])
+                self._log(run, "approval", f"Protocol {record['submissions']} approved by {by} for {minutes:g} minutes, "
+                                           f"EDITED ({count} change{'' if count == 1 else 's'}; sha256 "
+                                           f"{edited['sha256'][:12]}…, from {sha256[:12]}…): "
+                                           + "; ".join(record["changes"]))
         return run
 
     def reject(self, project_id: str, run_id: str, *, by: str, note: str, sha256: str | None = None) -> dict[str, Any]:
@@ -975,6 +1192,6 @@ async def sweep_forever(store: RunStore) -> None:
 
 __all__ = [
     "ACTIVE", "ANALYZING", "AWAITING_APPROVAL", "CANCELLED", "ENDED_UNSAFE", "EXECUTING", "FAILED", "FINISHED",
-    "MAX_SUBMISSIONS", "OPEN", "PHASE_MOVES", "PLANNING", "QUEUED", "RUN_ID", "Run", "RunGrant", "RunProtocol",
-    "RunSettings", "RunStore", "sweep_forever",
+    "MAX_SUBMISSIONS", "OPEN", "PHASE_MOVES", "PLANNING", "QUEUED", "RUN_ID", "RUN_OVERRIDES", "Run", "RunGrant",
+    "RunOverrides", "RunProtocol", "RunSettings", "RunStore", "protocol_changes", "sweep_forever",
 ]

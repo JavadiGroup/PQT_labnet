@@ -3,6 +3,7 @@
 from .catalog import DeviceCatalog
 from .central import CentralRegistryClient, HttpCentralRegistryClient
 from .errors import (
+    ArgumentOutsideLimitsError,
     CentralCommunicationError,
     DeviceDeadlineExceededError,
     DeviceManagerError,
@@ -16,6 +17,7 @@ from .errors import (
     DuplicateDeviceIdError,
     InvalidConfigurationError,
     InvalidDeviceArgumentError,
+    InvalidDeviceLimitsError,
     LeaseError,
     LeaseInvalidError,
     LeaseValidationUnavailableError,
@@ -44,6 +46,7 @@ from .security import validate_central_server_url
 from .worker import DeviceWorker
 
 __all__ = [
+    "ArgumentOutsideLimitsError",
     "AuthorizedDeviceSession",
     "CentralCommunicationError",
     "CentralRegistryClient",
@@ -71,6 +74,7 @@ __all__ = [
     "HttpLeaseValidator",
     "InvalidConfigurationError",
     "InvalidDeviceArgumentError",
+    "InvalidDeviceLimitsError",
     "LeaseError",
     "LeaseGrant",
     "LeaseInvalidError",

@@ -15,6 +15,7 @@ from .errors import (
     DeviceQueueFullError,
     DeviceShutdownError,
     InvalidConfigurationError,
+    InvalidDeviceLimitsError,
     ManagerClosedError,
 )
 from .executor import DeviceExecutor
@@ -114,7 +115,29 @@ class DeviceManager:
         return self.catalog.device_ids
 
     async def start(self) -> StartupReport:
-        """Start all devices without failing the manager for one bad device."""
+        """Start all devices without failing the manager for one bad device.
+
+        The exception is a device whose limits are unusable (site limits wider
+        than the driver's own, or malformed driver hints): that is a mistake in
+        the inventory or driver, so every device is stopped again and
+        :class:`InvalidDeviceLimitsError` is raised. The Lab PC refuses to start.
+        """
+        report = await self._start_workers()
+        invalid = _invalid_limits(report.snapshots)
+        if invalid:
+            try:
+                await self.shutdown()
+            except Exception:
+                pass
+            raise InvalidDeviceLimitsError(
+                "Device limits are invalid; fix the Lab PC inventory (site_limits) "
+                "or the driver's hints: "
+                + "; ".join(snapshot.failure.message for snapshot in invalid),
+                details={"device_ids": [snapshot.device_id for snapshot in invalid]},
+            )
+        return report
+
+    async def _start_workers(self) -> StartupReport:
         async with self._lifecycle_lock:
             if self._state is ManagerState.RUNNING:
                 return StartupReport(self.snapshots())
@@ -141,7 +164,8 @@ class DeviceManager:
                     worker.mark_startup_timeout()
             self._state = ManagerState.RUNNING
 
-            if self.central_client is not None:
+            # Never advertise devices when the Lab PC is about to refuse to start.
+            if self.central_client is not None and not _invalid_limits(self.snapshots()):
                 self._stop_event.clear()
                 self._heartbeat_task = asyncio.create_task(
                     self.heartbeat_loop(),
@@ -286,6 +310,15 @@ class DeviceManager:
                 "Central Server registration is not configured."
             )
         return self.central_client, self.host, self.endpoint
+
+
+def _invalid_limits(snapshots: tuple[DeviceSnapshot, ...]) -> list[DeviceSnapshot]:
+    return [
+        snapshot
+        for snapshot in snapshots
+        if snapshot.failure is not None
+        and snapshot.failure.code == InvalidDeviceLimitsError.code
+    ]
 
 
 async def _close_if_supported(value: object | None) -> None:

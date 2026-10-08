@@ -1999,6 +1999,71 @@ canvas.chart {
   overflow-wrap: anywhere;
 }
 
+/* Edit and approve: the approver's own version of the protocol, in the approval card. */
+.approval-spacer { flex: 1; }
+.protocol-editor {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 13px;
+}
+.protocol-editor h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 6px; font-size: 13px; overflow-wrap: anywhere; }
+.protocol-editor h4 .button { margin-left: auto; }
+.protocol-editor .editor-title { margin-top: 0; }
+.protocol-editor .section-note { margin: 0 0 8px; }
+.protocol-editor .muted { color: var(--faint); }
+.editor-device { padding: 4px 0 8px; border-top: 1px solid #eef0f3; }
+.editor-method { margin: 0 0 8px; padding: 6px 8px; border-radius: 8px; background: #fbfcfd; }
+.editor-method-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+.editor-method-head .button { margin-left: auto; }
+.editor-arg { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 4px 0; }
+.editor-arg-name { min-width: 6em; padding-bottom: 6px; font-weight: 600; overflow-wrap: anywhere; }
+.editor-field { display: inline-flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
+.editor-field input, .editor-safe select, .editor-add select {
+  width: 8.5em;
+  padding: 4px 6px;
+  border: 1px solid var(--card-line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: #ffffff;
+}
+.editor-field.wide input { width: 16em; }
+.editor-check { display: inline-flex; align-items: center; gap: 4px; color: var(--text); font-size: 13px; }
+.editor-removed { opacity: 0.6; }
+.editor-removed > code, .editor-removed > h4 > code, .editor-method.editor-removed .review-method { text-decoration: line-through; }
+.editor-safe { margin: 0; padding-left: 22px; }
+.editor-safe-call { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 4px 0; }
+.editor-safe-call > code { padding-bottom: 6px; overflow-wrap: anywhere; }
+.editor-safe-buttons { display: inline-flex; gap: 4px; margin-left: auto; }
+.editor-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+.editor-add select { width: auto; max-width: 100%; }
+.editor-problems { margin: 10px 0 0; padding: 8px 12px 8px 28px; border-radius: 8px; background: #fde8e8; color: #8a1c13; }
+.editor-problems li { overflow-wrap: anywhere; }
+.editor-advanced { margin-top: 10px; }
+.editor-advanced summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.editor-json {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+.edit-changes { margin: 4px 0 8px; padding-left: 22px; font-size: 12.5px; }
+.edit-changes li { overflow-wrap: anywhere; }
+.protocol-edited { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 8px; background: #fffaf2; font-size: 13px; }
+.protocol-submitted { margin: 0 0 12px; }
+.protocol-submitted summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+/* Run and "Run with…" (…) side by side, like one split button. */
+.run-split { gap: 0; }
+.run-split .button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.run-split .run-with-button { margin-left: -1px; padding-left: 6px; padding-right: 6px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
 @media (max-width: 1180px) {
   .automation-editor { grid-template-columns: 220px minmax(0, 1fr) 250px; }
 }

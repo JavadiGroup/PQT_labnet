@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stop the local development network in reverse dependency order:
-#   every Lab PC  ->  Central
+#   safe-state watchdog  ->  Control Center  ->  every Lab PC  ->  Central
 #
 # Processes are found by the ports in scripts/dev/config.sh, so this also stops
 # copies started by hand. Only Python processes are stopped.
@@ -14,6 +14,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 source "$REPO_ROOT/scripts/dev/config.sh"
 
 log "Stopping local network"
+# The watchdog first: it would otherwise take over the grants of a stopped Control
+# Center. Grants left active are marked interrupted at the next start, and a
+# watchdog started after it applies their safe state then.
+stop_process automation-watchdog "$WATCHDOG_PORT"
 stop_process control-center "$CONTROL_CENTER_PORT"
 for entry in "${LAB_PCS[@]}"; do
     read -r lab_pc_id grpc_port http_port _inventory <<< "$entry"

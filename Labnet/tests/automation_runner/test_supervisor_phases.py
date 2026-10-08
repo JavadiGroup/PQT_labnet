@@ -290,3 +290,20 @@ def test_a_run_that_never_submits_finishes_after_one_session(tmp_path: Path) -> 
 
     assert runner.run_once(run_record()) == "done"
     assert len(backend.specs) == 1 and client.run_reads == 1 and client.ended == []
+
+
+def test_an_approved_experiment_whose_grant_ended_before_it_started_fails_not_done(tmp_path: Path) -> None:
+    """Seen live: the Control Center died after the approval, the watchdog applied the safe state, and
+    when it came back the run was 'analyzing' with no experiment run. That must not finish as done."""
+
+    ended_early = {**approved(), "phase": "analyzing",
+                   "grant": {**GRANT, "status": "ended", "calls": 0,
+                             "ended_reason": "applied by the watchdog: the Control Center stopped answering"}}
+    client = PhaseClient([awaiting(), ended_early])
+    backend = FakeBackend(tmp_path, "submit")
+    runner, _tools = _supervisor(tmp_path, client, backend)
+
+    assert runner.run_once(run_record()) == "failed"
+    [(status, summary)] = client.finished
+    assert status == "failed" and "never started" in summary and "watchdog" in summary
+    assert client.tokens_taken == 0 and len(backend.specs) == 1  # never resumed for an experiment

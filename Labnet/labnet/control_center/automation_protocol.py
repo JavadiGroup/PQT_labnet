@@ -16,8 +16,10 @@ here are strict and every refusal says what to change:
   every call (else the driver's default, e.g. channel CH1, would be driven
   although only CH2 was approved). Numbers as ``min``/``max`` (``max_step``
   optional), booleans and strings as ``choices``; never a write's ``unit``. The
-  limits, choices and channels a driver publishes are hard limits: bounds must
-  lie inside them;
+  limits, choices and channels a device publishes (its driver's, narrowed by the
+  Lab PC inventory's ``site_limits``) are hard limits: bounds must lie inside
+  them. No limit, no automation: a number the device publishes no limit for
+  can't be bounded at all, so a person must set a site limit first;
 * ``max_step`` only where the gateway can read where the field is now (a
   ``set_<x>`` with a matching ``read_<x>`` that takes the same choice
   arguments, see :func:`step_reader`): steps are measured from that reading;
@@ -489,7 +491,10 @@ def _device(
                     problems.add(method_path, f"{contract_type} has no method {name!r}. Its methods: "
                                               f"{', '.join(sorted(specs))}.")
                     continue
-                method = _method(item, method_path, problems, described, hints, contract)
+                # Limits are checked only against a device on the network now (one that
+                # isn't is already a problem).
+                method = _method(item, method_path, problems, described, hints, contract,
+                                 device_id if found is not None else None)
                 if method is not None:
                     methods[name] = method
     if len(problems) > before or device_id is None:
@@ -500,7 +505,7 @@ def _device(
 
 
 def _method(raw: Any, path: str, problems: _Problems, described: dict[str, Any], hints: dict[str, Any],
-            contract: DeviceContract) -> dict[str, Any] | None:
+            contract: DeviceContract, device_id: str | None) -> dict[str, Any] | None:
     before = len(problems)
     name, kind = described["name"], described["kind"]
     required = ("max_calls", "max_rate_hz", "stream") if kind == "stream" else ("max_calls", "max_rate_hz")
@@ -544,7 +549,7 @@ def _method(raw: Any, path: str, problems: _Problems, described: dict[str, Any],
                 else:
                     problems.add(field_path, f"{name} takes no arguments; remove {field_name!r}.")
                 continue
-            normalized = _bound(bound, field_path, problems, name, field, described["unit"], hints)
+            normalized = _bound(bound, field_path, problems, name, field, described["unit"], hints, device_id)
             if normalized is not None:
                 args[field_name] = normalized
         for field_name, field in fields.items():
@@ -577,8 +582,14 @@ def _method(raw: Any, path: str, problems: _Problems, described: dict[str, Any],
     return method
 
 
+def _limit_source(hints: dict[str, Any], key: str) -> str:
+    """Where a published limit comes from: "site" (the Lab PC inventory) or "driver"."""
+
+    return "site" if (hints.get("sources") or {}).get(key) == "site" else "driver"
+
+
 def _bound(raw: Any, path: str, problems: _Problems, method: str, field: dict[str, Any], unit: str,
-           hints: dict[str, Any]) -> dict[str, Any] | None:
+           hints: dict[str, Any], device_id: str | None = None) -> dict[str, Any] | None:
     before = len(problems)
     kind = _field_type(field)
     key = f"{method}.{field['name']}"
@@ -599,12 +610,19 @@ def _bound(raw: Any, path: str, problems: _Problems, method: str, field: dict[st
         if low is not None and high is not None and low > high:
             problems.add(_key(path, "min"), f"min ({low:g}) is larger than max ({high:g}).")
         limit = (hints.get("limits") or {}).get(key)
-        if limit is not None:
+        if limit is None:
+            # No limit, no automation: the Lab PC enforces published limits on
+            # every call, so a number without one has no hard bound at all.
+            if device_id is not None:
+                problems.add(path, f"{device_id} publishes no limit for {key}; set one in the Lab PC "
+                                   f"inventory with site_limits(...) before automating it.")
+        else:
             shown = f"{limit[0]:g} to {limit[1]:g}" + (f" {unit}" if unit and unit != "1" else "")
+            whose = "site limit" if _limit_source(hints, key) == "site" else "driver's limit"
             if low is not None and low < limit[0]:
-                problems.add(_key(path, "min"), f"min ({low:g}) is below the driver's limit for {key} ({shown}).")
+                problems.add(_key(path, "min"), f"min ({low:g}) is below the {whose} for {key} ({shown}).")
             if high is not None and high > limit[1]:
-                problems.add(_key(path, "max"), f"max ({high:g}) is above the driver's limit for {key} ({shown}).")
+                problems.add(_key(path, "max"), f"max ({high:g}) is above the {whose} for {key} ({shown}).")
         if len(problems) > before:
             return None
         return {"min": low, "max": high, "max_step": step}
@@ -640,13 +658,19 @@ def _bound(raw: Any, path: str, problems: _Problems, method: str, field: dict[st
             problems.add(choice_path, f"{_describe(value) if kind == 'bool' else repr(value)} is listed twice.")
             continue
         clean.append(value)
+    offered = (hints.get("choices") or {}).get(key)
+    whose = "site choices" if _limit_source(hints, key) == "site" else "driver's choices"
+    if kind == "bool" and offered is not None:
+        for index, value in enumerate(clean):
+            if not any(isinstance(item, bool) and item == value for item in offered):
+                problems.add(f"{choices_path}[{index}]", f"{_describe(value)} isn't one of the {whose} for {key}: "
+                                                         f"{', '.join(_describe(item) for item in offered)}.")
     if kind == "str":
-        offered = (hints.get("choices") or {}).get(key)
         if offered is not None:
             for index, value in enumerate(clean):
                 if value not in offered:
-                    problems.add(f"{choices_path}[{index}]", f"{value!r} isn't one of the driver's choices for {key}: "
-                                                             f"{', '.join(offered)}.")
+                    problems.add(f"{choices_path}[{index}]", f"{value!r} isn't one of the {whose} for {key}: "
+                                                             f"{', '.join(map(str, offered))}.")
         channels = hints.get("channels")
         if field["name"] == "channel" and channels:
             for index, value in enumerate(clean):
@@ -747,7 +771,8 @@ def build_review(protocol: dict[str, Any], live_devices: dict[str, dict[str, Any
     """What the approval card shows, from the normalized protocol and the device contracts only.
 
     One row per device method: its kind and unit, each argument's range or
-    choices and largest step (and the driver's own limit), that every bounded
+    choices and largest step (and the device's published limit with its
+    source, ``"site"`` or ``"driver"``), that every bounded
     argument is always sent, which optional arguments may never be sent, the
     call and rate caps, the stream caps; then the safe state, the duration, and
     warnings worth a second look. Steps are measured from the device's own
@@ -775,21 +800,33 @@ def build_review(protocol: dict[str, Any], live_devices: dict[str, dict[str, Any
                     continue
                 row: dict[str, Any] = {"name": field["name"], "type": _field_type(field), "optional": field["optional"],
                                        "always_sent": True}
+                key = f"{name}.{field['name']}"
                 if "choices" in bound:
                     row["choices"] = bound["choices"]
+                    offered = (hints.get("choices") or {}).get(key)
+                    if offered is None and field["name"] == "channel" and hints.get("channels"):
+                        row["offered"], row["limit_source"] = hints["channels"], "driver"
+                    elif offered is not None:
+                        row["offered"], row["limit_source"] = offered, _limit_source(hints, key)
                 else:
                     row.update(min=bound["min"], max=bound["max"], max_step=bound["max_step"],
                                unit=unit if field["name"] == "value" else "")
                     if bound["max_step"] is not None:
                         row["step_from"] = "the device's reading before the first change"
-                    driver = (hints.get("limits") or {}).get(f"{name}.{field['name']}")
-                    row["driver_limit"] = driver
+                    published = (hints.get("limits") or {}).get(key)
+                    source = _limit_source(hints, key) if published is not None else None
+                    # The device's published limit (the Lab PC enforces it on every call) and
+                    # where it comes from: "site" (the Lab PC inventory) or "driver".
+                    row["limit"] = published
+                    row["limit_source"] = source
+                    row["driver_limit"] = published if source == "driver" else None
+                    row["site_limit"] = published if source == "site" else None
                     if bound["max_step"] is None:
                         warnings.append(f"{device['device_id']}.{name}: {field['name']} may jump anywhere within "
                                         "its range in one call (no max_step).")
-                    if driver is None and described["kind"] in ("write", "command"):
-                        warnings.append(f"{device['device_id']}.{name}: the driver publishes no limit for "
-                                        f"{field['name']}; check the range yourself.")
+                    if published is None:
+                        warnings.append(f"{device['device_id']}.{name}: {device['device_id']} publishes no limit for "
+                                        f"{key} now (offline, or its limits changed); approving re-checks it.")
                 arguments.append(row)
             methods.append({
                 "name": name,

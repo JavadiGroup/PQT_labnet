@@ -22,6 +22,7 @@ state() {
 log "Components"
 state central "$CENTRAL_PORT"
 state control-center "$CONTROL_CENTER_PORT"
+state automation-watchdog "$WATCHDOG_PORT"
 for entry in "${LAB_PCS[@]}"; do
     read -r lab_pc_id _grpc_port http_port _inventory <<< "$entry"
     state "$lab_pc_id" "$http_port"

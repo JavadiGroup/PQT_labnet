@@ -7,14 +7,17 @@
 #
 # Build context: the repository root (compose.yaml: context ../..).
 
-FROM python:3.11-slim-bookworm
+# Base images are pinned by digest (the exact image tested); update the digest deliberately.
+FROM python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89
 
 # Only the docker CLI (a static binary); the daemon is the host's.
-COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker:29-cli@sha256:35cfcf893c20f2931f4909151b5407aaaeab711277de7ce8b8f521f095d54c32 /usr/local/bin/docker /usr/local/bin/docker
 
+# constraints.txt: the exact package versions tested.
 COPY Labnet /src/Labnet
-RUN pip install --no-cache-dir --disable-pip-version-check "/src/Labnet[runner]" \
- && rm -rf /src
+COPY docker/automation/constraints.txt /tmp/constraints.txt
+RUN pip install --no-cache-dir --disable-pip-version-check -c /tmp/constraints.txt "/src/Labnet[runner]" \
+ && rm -rf /src /tmp/constraints.txt
 
 COPY docker/automation/egress-allow.txt /etc/labnet/egress-allow.txt
 

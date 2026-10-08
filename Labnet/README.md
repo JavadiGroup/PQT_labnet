@@ -310,6 +310,10 @@ from the `--wheelhouse` folder).
    Never open port 8008.
 8. **Control Center.** The web interface runs on this same computer; see
    [Control Center](#control-center) for its setup.
+9. **Safe-state watchdog.** Applies an Automation grant's safe state if the
+   Control Center dies mid-grant; see
+   [The safe-state watchdog](#the-safe-state-watchdog) for its user,
+   `watchdog.env` and how to start it.
 
 ### 3. Set up each Lab PC
 
@@ -389,8 +393,9 @@ in this order; to stop one, press Ctrl+C in its window.
 | 1 | `central_server_pc` | Central | `C:\ProgramData\LabNet\central-venv\Scripts\labnet-central.exe --env-file C:\ProgramData\LabNet\central.env` |
 | 2 | `central_server_pc` | Caddy | `caddy run --config C:\ProgramData\LabNet\Caddyfile` |
 | 3 | `central_server_pc` | Control Center | `C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-control-center.exe --env-file C:\ProgramData\LabNet\control-center.env` |
-| 4 | each Lab PC | Lab PC | `C:\ProgramData\LabNet\lab-pc-venv\Scripts\labnet-lab-pc.exe --env-file C:\ProgramData\LabNet\lab-pc.env` |
-| 5 | clients | experiments | your scripts, with `LABNET_ENV_FILE` set |
+| 4 | `central_server_pc` | Safe-state watchdog | `C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-automation-watchdog.exe --env-file C:\ProgramData\LabNet\watchdog.env` (or its [Task Scheduler task](#the-safe-state-watchdog)) |
+| 5 | each Lab PC | Lab PC | `C:\ProgramData\LabNet\lab-pc-venv\Scripts\labnet-lab-pc.exe --env-file C:\ProgramData\LabNet\lab-pc.env` |
+| 6 | clients | experiments | your scripts, with `LABNET_ENV_FILE` set |
 
 Only Central has to come first; everything else recovers if it starts early.
 Lab PCs keep retrying their registration, and the Control Center shows a
@@ -760,7 +765,12 @@ simply wait in the queue.
 **On the page:**
 - **Tasks panel:** each task has *Run*, which is disabled (with a tooltip
   saying why) while that task has a queued or active run. *Run all* queues
-  every task without one, in name order (`Task2` before `Task10`).
+  every task without one, in name order (`Task2` before `Task10`), with the
+  project's run settings.
+- **Run with…** (the *…* beside *Run*) queues the task with its own model,
+  effort, max turns and budget, for this run only. The dialog starts from the
+  project's settings; *Default* there means the Control Center's own default.
+  The project's settings don't change.
 - **Runs list**, newest first: the status, the task, who queued it, the
   runner, when it started and finished, and how much it uploaded of its
   quota. A queued run says *Waiting for a runner*. Queued and active runs
@@ -786,12 +796,19 @@ simply wait in the queue.
 - A save that leaves these fields out keeps them, so an older open page
   can't reset them. Projects saved before these settings existed get the
   defaults.
+- **A run's own settings** (*Run with…*): `POST …/runs` may carry
+  `"settings": {"model", "effort", "max_turns", "max_budget_usd"}`. Each one
+  given replaces the project's for this run only; one left out or `null`
+  keeps the project's. They are checked exactly like the project's (a model
+  `LABNET_AGENT_MODELS` doesn't offer, an unknown effort, a range or an
+  unknown key answers 422 naming `settings.<field>`), and Haiku still gets no
+  effort. The run's `settings` record what was used.
 
 Through the API:
 
 | Request | Does |
 | --- | --- |
-| `POST /api/automation/projects/<id>/runs` `{"task": "Tasks/Task1.md"}` | Queues the task (201). The task must be a Markdown file in `Tasks/`; one that is already queued or active is refused (409) |
+| `POST /api/automation/projects/<id>/runs` `{"task": "Tasks/Task1.md", "settings"?}` | Queues the task (201). The task must be a Markdown file in `Tasks/`; one that is already queued or active is refused (409). `settings`: this run's own model, effort, max turns or budget |
 | `GET …/projects/<id>/runs` | The project's runs, newest first |
 | `GET …/projects/<id>/runs/<run_id>` | The run and its last 500 events |
 | `POST …/projects/<id>/runs/<run_id>/cancel` `{}` | Cancels a queued or active run; the runner notices on its next request |
@@ -1253,10 +1270,19 @@ and says what to change:
   `dummy_laser`; not `dummy_device.write_value`, the `sacher_laser` methods
   or `simulated_wavemeter.set_exposure`, where the check says to drop
   `max_step` (any value in range is then allowed) or narrow the range.
-- **Driver hints are hard limits.** `[min, max]` must lie within the
-  driver's `limits["<method>.<argument>"]`. Choices must be among its
-  `choices`, and a `channel` among its `channels`, whenever the driver
-  publishes them.
+- **Published limits are hard limits.** A device publishes the driver's
+  hints narrowed by its Lab PC's [site limits](#site-limits). `[min, max]`
+  must lie within its `limits["<method>.<argument>"]`. Choices (text or
+  true/false) must be among its `choices`, and a `channel` among its
+  `channels`, whenever it publishes them. Each refusal says whether the limit
+  is the site's or the driver's.
+- **No limit, no automation.** Every number a protocol bounds needs a
+  published limit. Without one the protocol is refused (a problem, not a
+  warning): *"dev05-sacher publishes no limit for
+  go_to_wavelength_nm.wavelength_nm; set one in the Lab PC inventory with
+  site_limits(...) before automating it."* A person sets that limit in the
+  inventory and restarts the Lab PC. Text arguments without published choices
+  still need explicit `choices` in the protocol.
 - **The safe state:** up to 16 calls, each one the protocol itself allows:
   a listed method (not a stream), every argument it sends and every argument
   the protocol bounds (e.g. its `channel`), and values within the bounds.
@@ -1289,12 +1315,13 @@ list) shows:
   device contracts, never from the agent's words. Each device shows its
   type and live state. Each method shows every argument's range or choices,
   its largest step (the first measured from the device's own reading) and
-  the driver's own limit, that each bounded argument is always sent, which
+  the device's published limit with its source (`limit`, `limit_source`:
+  `site` or `driver`; choices as `offered`), that each bounded argument is always sent, which
   optional arguments may never be sent, its call and rate caps, and its
   stream caps. Agent-written text (the title, choices) is clipped to its own
   line, so it can't draw over the rest. Then come the
-  safe state and warnings: no safe state, no `max_step`, or no driver limit
-  for a write.
+  safe state and warnings: no safe state, no `max_step`, or a limit no
+  longer published (the device went offline; approving checks again).
 - **The agent's explanation:** the `.md`, in a box labelled as the agent's,
   shown as plain text only.
 
@@ -1319,6 +1346,52 @@ required. The Control Center then:
 One approval runs at a time. If the run ends while its grant is being
 created, the grant is ended again.
 
+**Editing before approving** (*Edit…* on the approval card). The approver
+may change the protocol and approve their own version instead of rejecting
+it:
+- **What can be edited,** with plain fields: each argument's `min`, `max`
+  and `max_step` (empty: any step) or its choices; `max_calls`,
+  `max_rate_hz` and the stream caps; removing a method or a whole device; the
+  duration it asks for; and the safe state (change a value, remove a call,
+  move it earlier, or add a call to a method the protocol lists).
+  *Advanced: edit as JSON* shows the whole edited protocol for anything else.
+- **The same checks as the agent's.** The approver is trusted to widen or
+  narrow anything, but only within the device's and the lab's limits:
+  `validate_protocol` runs on the edit against the project and the live
+  network, and a removed method still used by the safe state is refused (the
+  page drops those calls itself and lists them). The duration may be raised
+  up to `LABNET_AUTOMATION_GRANT_MAX_MINUTES`; the grant may then be as long
+  as the edit asks.
+- ***Review changes…*** sends the edit to `POST …/protocol/preview`
+  `{"sha256", "protocol"}`, which checks it without approving and answers
+  `{"normalized", "sha256", "problems", "changes", "review"}`. Problems are
+  shown beside the fields. Otherwise a confirmation lists the changes the
+  server found, one line each (`dev01-aom.set_frequency.value.max: 90 → 85`,
+  `dev01-aom.read_diffraction_efficiency: removed (may not be called)`,
+  `safe_state: added dev01-aom.set_frequency(value=75)`).
+- **Approving** sends `{"sha256", "duration_minutes", "protocol",
+  "edited_sha256"}`: `sha256` is the submission the edit started from (409 if
+  another one is waiting now), `protocol` the previewed version and
+  `edited_sha256` its sha256 (409 if the server's normalized copy differs).
+  The server checks the edit again: one that no longer passes answers 422
+  with `problems`, and nothing changes. An edit that changes nothing is a
+  plain approval.
+- **What is kept.** The edit is normalized and stored as
+  `state/<project>/protocols/<run>-<n>-edited.json` (its canonical text, so
+  the file's sha256 is its own); the agent's `<run>-<n>.json` stays as it
+  was. The grant is created from the edit, under the edit's sha256, so
+  `grant/token` hands the runner the edited protocol. The run's `protocol`
+  record gains `approved_sha256` (the edit's), `edited_by` and `changes` (at
+  most 60 lines, each clipped to 240 characters); the log says *approved …
+  EDITED* with the changes.
+- **The agent is told.** On resume the runner's prompt says the protocol was
+  approved WITH EDITS, quotes the changes from the run record, and gives the
+  edited bounds (the runner checks the protocol it got against
+  `approved_sha256`). `grant_status` shows them too.
+- Afterwards the run's page shows *Edited by … before approval* with the
+  changes, the approved version's review, and the agent's submission under
+  *As the agent submitted it*.
+
 **Rejecting** (`{"note"}`, up to 2000 characters) returns the run to
 `planning`. The note is in the run record (`protocol.note`), where the
 runner reads it, and the agent may submit again, up to 3 protocols per run.
@@ -1329,8 +1402,9 @@ runner keeps heartbeating; the 10-minute rule still applies.
 
 **The run record** gains `phase` and `protocol`: `{submissions, status
 (submitted | approved | rejected), sha256, title, duration_minutes,
-submitted_at, reviewed_by, reviewed_at, approved_minutes, note}` for the
-latest submission. It also gains `grant`, written by the GrantManager: `{id,
+submitted_at, reviewed_by, reviewed_at, approved_minutes, approved_sha256,
+edited_by, changes, note}` for the latest submission. `approved_sha256` is
+the version the grant enforces: `sha256` unless the approver edited it. It also gains `grant`, written by the GrantManager: `{id,
 status (active | ending | ended | ended_unsafe | interrupted), approved_by,
 starts_at, ends_at, devices, calls, refused_calls, ended_reason, ended_at}`.
 - A run whose grant ended `ended_unsafe` ends `ended_unsafe` however it
@@ -1341,8 +1415,9 @@ starts_at, ends_at, devices, calls, refused_calls, ended_reason, ended_at}`.
 | Request | Does |
 | --- | --- |
 | `POST /api/automation/runner/runs/<run>/protocol` `{}` | Checks `Protocols/<task>.protocol.json` and sends it for approval (runner token) |
-| `GET /api/automation/projects/<id>/runs/<run>/protocol` | `{"protocol" (normalized), "sha256", "review", "prose" (the agent's, untrusted), "status", "submission", "phase", "run_status", "max_minutes"}` |
-| `POST …/runs/<run>/protocol/approve` `{"sha256", "duration_minutes", "approved_by"?}` | Approves; starts the grant; `{"run", "grant"}` |
+| `GET /api/automation/projects/<id>/runs/<run>/protocol` | `{"protocol" (normalized), "sha256", "review", "prose" (the agent's, untrusted), "status", "submission", "phase", "run_status", "max_minutes", "approved_sha256", "edited_by", "changes"}`; with an edit also `"approved_protocol"`, `"approved_review"` |
+| `POST …/runs/<run>/protocol/preview` `{"sha256", "protocol"}` | Checks an approver's edit without approving: `{"normalized", "sha256", "problems", "changes", "review"}` |
+| `POST …/runs/<run>/protocol/approve` `{"sha256", "duration_minutes", "approved_by"?, "protocol"?, "edited_sha256"?}` | Approves (the edit, if sent); starts the grant; `{"run", "grant"}` |
 | `POST …/runs/<run>/protocol/reject` `{"note", "sha256"?, "rejected_by"?}` | Rejects; the run is planning again |
 
 #### Device grants and the gateway
@@ -1453,9 +1528,12 @@ It always ends the same way:
    check those devices by hand.
 6. The run moves on to `analyzing`, unless it has already ended.
 
-If the Control Center stops without shutting down cleanly, no safe state is
-applied, and the leases lapse about a minute later. At the next start, grants
-left `active` are marked `interrupted`.
+If the Control Center dies or hangs mid-grant, it can't do any of this
+itself: its leases lapse about a minute later. The
+[safe-state watchdog](#the-safe-state-watchdog), a separate process, then
+applies the safe state. At the Control Center's next start, grants left
+`active` are marked `interrupted`, unless the watchdog has already finished
+with them; then its `ended`/`ended_unsafe` stands.
 
 **While a grant holds a device:**
 - The Network and Devices pages show *Automation: <project>/<task> · ends in
@@ -1471,6 +1549,121 @@ left `active` are marked `interrupted`.
 | `POST /api/automation/runner/gateway/calls` | One device call, with the grant token (above) |
 | `POST /api/automation/projects/<id>/runs/<run>/grant/stop` `{}` | Stop from the project page (anyone; same-origin JSON) |
 | `POST /api/automation/grants/<grant_id>/stop` `{}` | Stop from the Network/Devices page (anyone; same-origin JSON) |
+
+##### The safe-state watchdog
+
+`labnet-automation-watchdog` is a small separate process on
+`central_server_pc` (`labnet/automation_watchdog/`). If the Control Center
+dies, or its event loop hangs, while a grant holds devices, the watchdog
+applies that grant's safe state. It never fights a live Control Center:
+Central lets only one of them hold a device's lease at a time.
+
+**What the Control Center writes for it.** While a grant holds its leases
+(`active` or `ending`), a task on the Control Center's event loop rewrites
+`state/<project>/grants/<id>.json` every 5 s with a fresh `alive_at`, so a
+hung loop stops the heartbeat. The record holds everything the watchdog
+needs: the approved normalized protocol (devices, types, safe-state calls),
+its sha256, `ends_at` and the status. If the heartbeat can't be written
+three times in a row, the Control Center ends the grant itself, with its safe
+state.
+
+**When the watchdog acts.** It reads every grant record every 2 s:
+- A grant is taken over when its heartbeat hasn't changed for 20 s (timed on
+  the watchdog's own clock) and either:
+  - the Control Center's `/health/live` hasn't answered for 20 s either (it
+    died); or
+  - it answers but the heartbeat stays stale for 40 s (its loop hung).
+- A grant the Control Center marked `interrupted` at a restart is taken over
+  at once: the process that held it is gone.
+- Never:
+  - an `ended` or `ended_unsafe` grant;
+  - one it has already finished;
+  - one with no heartbeat for more than an hour, which is only logged
+    (`LABNET_WATCHDOG_MAX_AGE_MINUTES`; check those devices by hand).
+- Expired grants (time ran out while the Control Center was dead) are safed
+  like the others.
+
+**Taking over.** The watchdog writes only its own claim file,
+`<id>.watchdog.json` next to the record, and lines of `"kind": "watchdog"`
+in the grant's audit file. Two processes never write the same file.
+1. The claim becomes `claimed`.
+2. It asks Central for each device the safe state needs, every 3 s for up to
+   120 s. Central refuses while the Control Center's lease lives.
+3. If the Control Center's heartbeat comes back before a lease is taken, or
+   it ends the grant itself, the watchdog **stands down** (`stood_down`).
+   The same happens when nothing was leased in 120 s and the Control Center
+   still answers.
+4. With the first lease, the claim becomes `safing`. From then on the grant
+   is the watchdog's, and a Control Center that comes back hands it over: it
+   refuses calls, cancels calls in flight and releases its leases without a
+   safe state of its own.
+5. The protocol's sha256 is checked against the approved one, and each
+   safe-state call is checked against its bounds as the gateway checks it.
+   Each call gets up to three tries, re-taking a lost lease once. Then every
+   lease is released.
+6. The claim ends `ended` (*applied by the watchdog: the Control Center stopped
+   answering*) or `ended_unsafe` (a call failed, or a device couldn't be
+   leased in time: check it by hand).
+7. The Control Center copies the outcome into the grant's record
+   (`safe_state_by: "watchdog"`) and into the run, whose red banner shows an
+   `ended_unsafe`. If it is down, its next start does this.
+
+A watchdog stopped mid-takeover releases what it holds. If its claim was
+`safing`, the next watchdog finishes it.
+
+**Set it up on `central_server_pc`:**
+1. Its own Central user (role `user`, never the Control Center's key):
+
+   ```powershell
+   $admin = "C:\ProgramData\LabNet\central-venv\Scripts\labnet-central-admin.exe"
+   & $admin --env-file C:\ProgramData\LabNet\central.env setup `
+       --user automation-watchdog --write-env C:\LabNet-Keys --server-url http://127.0.0.1:8008
+   ```
+
+2. Move `C:\LabNet-Keys\automation-watchdog.env` to
+   `C:\ProgramData\LabNet\watchdog.env`, then delete `C:\LabNet-Keys`. Add
+   the lines from [`site/watchdog.env.example`](../site/watchdog.env.example):
+   at least `LABNET_AUTOMATION_DIR`, the Control Center's own (default
+   `C:\ProgramData\LabNet\automation`), and `LABNET_CA_FILE` if
+   `control-center.env` sets one.
+3. Run it as the same Windows account as the Control Center, which owns that
+   folder. The command is installed with the Control Center:
+
+   ```powershell
+   C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-automation-watchdog.exe --env-file C:\ProgramData\LabNet\watchdog.env
+   Invoke-RestMethod http://127.0.0.1:8081/health/ready
+   ```
+
+   Start it by hand in its own window, after the Control Center (see
+   [Starting the lab by hand](#starting-the-lab-by-hand)). To start it
+   automatically at logon instead, register a Task Scheduler task. It has no
+   window, so it writes a log file:
+
+   ```powershell
+   New-Item -ItemType Directory -Force C:\ProgramData\LabNet\logs | Out-Null
+   $exe = "C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-automation-watchdog.exe"
+   $action = New-ScheduledTaskAction -Execute "cmd.exe" `
+       -Argument "/c $exe --env-file C:\ProgramData\LabNet\watchdog.env >> C:\ProgramData\LabNet\logs\watchdog.log 2>&1"
+   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+       -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+   Register-ScheduledTask -TaskName "LabNet safe-state watchdog" -Action $action -Trigger $trigger -Settings $settings
+   ```
+
+   `Start-ScheduledTask "LabNet safe-state watchdog"` starts it now, and
+   `Stop-ScheduledTask` stops it.
+   - Only one watchdog runs per computer: a second one can't take port 8081
+     and exits.
+   - It doesn't matter whether it starts before or after the Control Center.
+     Stop it before an update, like the Control Center.
+
+**In development,** `scripts/dev/seed.sh` creates the user and
+`.devnet/automation-watchdog.env`. `scripts/dev/up.sh` starts the watchdog
+after the Control Center (log: `.devnet/logs/automation-watchdog.log`,
+health: `http://127.0.0.1:8081/health/ready`). `down.sh` stops it first,
+`status.sh` shows it, and `restart.sh watchdog` restarts it. A network seeded
+before the watchdog existed gets its user with `scripts/dev/seed.sh
+--watchdog`, which deletes nothing.
 
 ### Photo-Agent
 
@@ -1928,7 +2121,8 @@ No code generation is needed:
 1. Install the vendor driver on the Lab PC and confirm the family's driver
    supports the model.
 2. Add an instance with a stable, network-wide unique `device_id` to that Lab
-   PC's inventory in `site/inventories/`.
+   PC's inventory in `site/inventories/`, with any [site limits](#site-limits)
+   this bench needs.
 3. Release, run `update_host.sh lab-pc`, and restart the Lab PC.
 4. Confirm Central lists the device and a client can lease it.
 
@@ -1972,8 +2166,10 @@ three-line facade, and exports. The steps are in the
              "choices": {"set_waveform.waveform": ["sine", "square"]}}
    ```
 
-   Drivers must still check their own ranges. Hints only make the forms and
-   warnings helpful.
+   The Lab PC enforces published limits and choices on every remote call
+   (see [Site limits](#site-limits)), and a protocol can bound only numbers
+   that have one. Drivers must still check their own ranges: local use of
+   the driver skips the Lab PC.
 6. **Validate:** `python tools/generate_protos.py --check` and `python -m pytest`.
 
 The four `Dummy*` optics-bench families (`labnet/devices/DummyLaser`,
@@ -1981,6 +2177,74 @@ The four `Dummy*` optics-bench families (`labnet/devices/DummyLaser`,
 boolean and text commands, streams, hints and simple physics.
 
 Deploy Lab PCs that serve a new RPC before clients that call it.
+
+### Site limits
+
+A driver's hints are the instrument's own limits. A bench is often narrower:
+this AOM's mount clips beyond 95 MHz, or this laser may tune only around
+780 nm. The Lab PC inventory says so with `site_limits` and returns the same
+device, so its type and contract don't change:
+
+```python
+from labnet.devices.core import site_limits
+from labnet.devices.SacherLaser.physical import PhysicalSacherLaser
+
+def create_devices():
+    return [
+        site_limits(
+            PhysicalSacherLaser(device_id="lab01-sacher"),
+            limits={"go_to_wavelength_nm.wavelength_nm": (770.0, 790.0),
+                    "jog_steps.relative_steps": (-2000, 2000)},
+            choices={"go_to_wavelength_nm.velocity_mode": ["scan"]},
+        ),
+    ]
+```
+
+- **Keys** are `"<method>.<argument>"`, exactly as in hints and Python
+  clients. `limits` takes `(min, max)` for a number. `choices` takes a list
+  for text or `True`/`False`. Living examples:
+  `scripts/dev/inventories/dev_lab_pc_01.py` (the AOM narrowed to 65–95 MHz,
+  the dummy devices' `write_value` to ±100). `site/inventories/lab_pc_01.py`
+  has a commented Sacher example.
+- **The Lab PC refuses to start** with a clear error when:
+  - a key names no method or argument of the device's contract;
+  - a range is inverted or not finite;
+  - a value has the wrong kind (a range for text, choices for a number);
+  - a site limit isn't inside the driver's own published limit, or a choice
+    isn't among the driver's choices or channels. Site limits may only narrow.
+    This last check runs when the device connects and publishes its hints.
+    Every device is then stopped again, and nothing is advertised to Central.
+
+  A driver whose own hints are malformed also stops the Lab PC.
+- **Every remote call is checked on the Lab PC** before the driver is
+  called, at the one dispatch point all gRPC calls, streams and Control
+  Center calls pass (`DeviceWorker.invoke`). The check uses the effective
+  limits: the driver's published ranges, choices and channels, narrowed by
+  the site's. So hints are never merely advisory.
+  - A call outside them is refused with gRPC `INVALID_ARGUMENT` and
+    `labnet-error-code: ARGUMENT_OUTSIDE_LIMITS`. Python clients raise
+    `InvalidDeviceArgumentError` (`error_code == "ARGUMENT_OUTSIDE_LIMITS"`,
+    not retryable), with a message such as
+    `aom.set_frequency: value=96 is outside the site limit 65 to 95.`
+  - `true` is never a number, and a whole-number argument takes only
+    integers.
+  - Choices match exactly: `"Square"` is refused where `"square"` is
+    published.
+  - An argument with a **site** limit must be sent. Leaving it out would
+    use the driver's default, which may lie outside the limit.
+  - Two RPCs of one physical method share limits. `read_value` and
+    `stream_data` both call `read_value`, so a site choice for
+    `read_value.channel` also limits `stream_data`'s channel.
+  - A stream's own controls (`sample_rate_hz`, `sample_count`) aren't
+    limited here.
+  - A driver used locally, without a Lab PC, is not checked.
+- **Published hints** are the effective values. `metadata()["hints"]` gains
+  `sources`: `{"<method>.<argument>": "site" | "driver"}`. The Control
+  Center names each limit's source in protocol checks, in `DEVICES.md`
+  (`(site limit)`), and in the review (`limit_source`).
+
+To change site limits, edit the inventory and restart that Lab PC
+(`scripts/dev/restart.sh <lab-pc id>` on the dev network).
 
 ### Contract compatibility
 
