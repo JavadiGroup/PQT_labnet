@@ -155,7 +155,7 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     health_stub = health_pb2_grpc.HealthStub(channel)
     health_response = await health_stub.Check(
         health_pb2.HealthCheckRequest(
-            service=server.device_service.SERVICE_NAME,
+            service=server.device_services["dummy_device"].SERVICE_NAME,
         )
     )
     assert health_response.status == health_pb2.HealthCheckResponse.SERVING
@@ -164,7 +164,7 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     assert server.serving is False
     health_response = await health_stub.Check(
         health_pb2.HealthCheckRequest(
-            service=server.device_service.SERVICE_NAME,
+            service=server.device_services["dummy_device"].SERVICE_NAME,
         )
     )
     assert health_response.status == health_pb2.HealthCheckResponse.NOT_SERVING

@@ -10,5 +10,3 @@
 !docker/automation/constraints.txt
 **/__pycache__
 **/*.pyc
-# Windows vendor DLLs for a lab device (46 MB): never needed in a Linux container.
-Labnet/labnet/devices/*/DLLs

@@ -201,10 +201,10 @@ def test_unused_instruments_and_missing_records_are_flagged() -> None:
 def test_a_command_with_one_number_can_be_swept_and_int_widths_are_checked() -> None:
     doc = {
         "name": "Laser scan",
-        "nodes": [{"id": "laser", "kind": "instrument", "device_id": "sacher", "device_type": "sacher_laser",
+        "nodes": [{"id": "laser", "kind": "instrument", "device_id": "laser", "device_type": "simulated_tunable_laser",
                    "settings": [{"id": "s1", "method": "go_to_wavelength_nm",
                                  "sweep": {"field": "wavelength_nm", "start": 770, "stop": 771, "points": 3}},
-                                {"id": "s2", "method": "jog_steps", "args": {"relative_steps": 2**40}}]}],
+                                {"id": "s2", "method": "move_steps", "args": {"relative_steps": 2**40}}]}],
     }
     report = report_for(doc, None)
     assert codes(report["errors"]) == ["argument"]

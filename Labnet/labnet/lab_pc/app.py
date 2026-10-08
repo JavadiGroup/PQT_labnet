@@ -44,7 +44,6 @@ from labnet.grpc import (
 from labnet.identifiers import validate_labnet_identifier
 
 from .config import LabPCSettings
-from .inventory import simulated_devices
 
 
 LOGGER = logging.getLogger(__name__)
@@ -220,16 +219,18 @@ def load_device_factory(spec: str | None) -> DeviceFactory:
 
     ``spec`` is ``package.module:function`` or ``path/to/file.py:function``.
     A file path needs nothing on ``sys.path``, so a reviewed inventory can live
-    anywhere on the Lab PC. With no spec, one simulated dummy device is served;
-    production settings refuse to start without an inventory.
+    anywhere on the Lab PC. A Lab PC serves only what its inventory names, so
+    there is no default.
     """
 
     spec = (spec or "").strip()
     if not spec:
-        LOGGER.warning(
-            "LABNET_DEVICE_INVENTORY is not set; serving one simulated dummy device."
+        raise ValueError(
+            "LABNET_DEVICE_INVENTORY is not set: name the function that creates this "
+            "Lab PC's devices, e.g. C:/ProgramData/LabNet/site/inventories/"
+            "lab_pc_01.py:create_devices. For simulated devices only, use "
+            "scripts/dev/inventories/dev_lab_pc_01.py:create_devices."
         )
-        return simulated_devices
 
     # Split on the last colon so Windows drive letters (C:/...) survive.
     location, separator, attribute = spec.rpartition(":")

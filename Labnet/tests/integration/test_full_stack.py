@@ -22,6 +22,7 @@ from labnet.device_manager import (
 )
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
 from labnet.grpc import GrpcServerConfig, LabnetGrpcServer, StreamPolicy
+from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
 
 
 CENTRAL_URL = "http://127.0.0.1"
@@ -245,7 +246,8 @@ async def test_full_stack_discovery_control_stream_and_release(tmp_path: Path) -
                         f"127.0.0.1:{grpc_server.bound_port}"
                     )
 
-                    remote = await lab.acquire_dummy(
+                    remote = await lab.acquire_device(
+                        DUMMY_DEVICE_CONTRACT,
                         idempotency_key="full-stack-acquisition",
                     )
                     try:
@@ -298,7 +300,8 @@ async def test_auto_renew_keeps_device_usable_beyond_original_ttl(
 ) -> None:
     async with _renewal_stack(tmp_path) as stack:
         async with stack.client() as lab:
-            remote = await lab.acquire_dummy(
+            remote = await lab.acquire_device(
+                DUMMY_DEVICE_CONTRACT,
                 DEVICE_ID,
                 duration_seconds=1,
                 renewal_interval_seconds=0.2,
@@ -332,7 +335,8 @@ async def test_idle_timeout_revokes_quiet_auto_renewing_client_and_frees_slot(
         async with stack.client() as first_lab, stack.client(
             stack.other_user_key
         ) as replacement_lab:
-            quiet = await first_lab.acquire_dummy(
+            quiet = await first_lab.acquire_device(
+                DUMMY_DEVICE_CONTRACT,
                 DEVICE_ID,
                 duration_seconds=2,
                 renewal_interval_seconds=0.2,
@@ -352,7 +356,8 @@ async def test_idle_timeout_revokes_quiet_auto_renewing_client_and_frees_slot(
                     lambda: stack.app.state.lease_service.list_active() == [],
                     "the expired lease's active slot to be freed",
                 )
-                replacement = await replacement_lab.acquire_dummy(
+                replacement = await replacement_lab.acquire_device(
+                    DUMMY_DEVICE_CONTRACT,
                     DEVICE_ID,
                     duration_seconds=2,
                     renewal_interval_seconds=0.2,
@@ -375,7 +380,8 @@ async def test_continuous_stream_stays_authorized_beyond_original_ttl(
         stream_revalidation_seconds=0.15,
     ) as stack:
         async with stack.client() as lab:
-            remote = await lab.acquire_dummy(
+            remote = await lab.acquire_device(
+                DUMMY_DEVICE_CONTRACT,
                 DEVICE_ID,
                 duration_seconds=1,
                 renewal_interval_seconds=0.2,
@@ -407,7 +413,8 @@ async def test_fixed_ttl_without_auto_renew_expires_and_frees_slot(
         async with stack.client() as first_lab, stack.client(
             stack.other_user_key
         ) as replacement_lab:
-            fixed = await first_lab.acquire_dummy(
+            fixed = await first_lab.acquire_device(
+                DUMMY_DEVICE_CONTRACT,
                 DEVICE_ID,
                 duration_seconds=1,
                 auto_renew=False,
@@ -421,7 +428,8 @@ async def test_fixed_ttl_without_auto_renew_expires_and_frees_slot(
                 with pytest.raises(LeaseAuthorityError):
                     await fixed.read_value()
 
-                replacement = await replacement_lab.acquire_dummy(
+                replacement = await replacement_lab.acquire_device(
+                    DUMMY_DEVICE_CONTRACT,
                     DEVICE_ID,
                     duration_seconds=2,
                     renewal_interval_seconds=0.2,

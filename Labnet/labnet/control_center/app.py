@@ -49,7 +49,7 @@ from .experiment_api import create_experiment_router
 from .experiment_schema import EXPERIMENT_ID
 from .experiment_store import ExperimentError, ExperimentStore
 from .ingress import HumanIngress
-from .redaction import redact
+from ..redaction import redact
 from .request_checks import request_user
 from .scripting import MAX_SCRIPT_CHARACTERS
 from .sessions import SessionError, SessionManager

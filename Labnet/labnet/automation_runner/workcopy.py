@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from labnet.control_center.automation_paths import (
+from labnet.safe_paths import (
     AGENT,
     SKELETON,
     NotWritable,

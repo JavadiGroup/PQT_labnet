@@ -7,6 +7,7 @@ import pytest
 
 from labnet.client import AsyncLabClient, AuthenticationError, LabClient
 from labnet.devices.core.remote import RemoteDeviceBinding
+from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
 
 
 NOW = datetime.now(timezone.utc)
@@ -227,7 +228,7 @@ async def test_async_acquire_rolls_back_lease_when_device_construction_fails() -
     )
     try:
         with pytest.raises(ValueError, match="loopback"):
-            await client.acquire_dummy("dummy-1")
+            await client.acquire_device(DUMMY_DEVICE_CONTRACT, "dummy-1")
         assert [(request.method, request.url.path) for request in requests] == [
             ("POST", "/api/v1/leases"),
             ("DELETE", "/api/v1/leases/lease-1"),
@@ -255,7 +256,7 @@ def test_sync_remote_rolls_back_lease_when_grpc_construction_fails() -> None:
     )
     try:
         with pytest.raises(ValueError, match="loopback"):
-            RemoteDeviceBinding(client, device_id="dummy-1")
+            RemoteDeviceBinding(client, device_id="dummy-1", _contract=DUMMY_DEVICE_CONTRACT)
         assert [(request.method, request.url.path) for request in requests] == [
             ("POST", "/api/v1/leases"),
             ("DELETE", "/api/v1/leases/lease-1"),

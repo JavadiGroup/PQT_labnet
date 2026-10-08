@@ -102,7 +102,7 @@ def test_loops_advance_together_or_nest() -> None:
 
 def test_a_command_sweep_uses_its_argument_name() -> None:
     doc = experiment(nodes=[{
-        "id": "sacher", "kind": "instrument", "device_id": "lab-pc-01-laser", "device_type": "sacher_laser",
+        "id": "laser", "kind": "instrument", "device_id": "lab-pc-01-laser", "device_type": "simulated_tunable_laser",
         "settings": [{"id": "s1", "method": "go_to_wavelength_nm",
                       "sweep": {"field": "wavelength_nm", "start": 770, "stop": 771, "points": 3}}],
     }], links=[])

@@ -8,9 +8,9 @@ choices). An inventory can narrow them for one instrument on one bench::
     def create_devices():
         return [
             site_limits(
-                PhysicalSacherLaser(device_id="lab01-sacher", port="USB0"),
+                PhysicalSimulatedTunableLaser(device_id="lab01-laser"),
                 limits={"go_to_wavelength_nm.wavelength_nm": (770.0, 790.0)},
-                choices={"go_to_wavelength_nm.velocity_mode": ["scan"]},
+                choices={"move_steps.velocity_mode": ["slow"]},
             ),
         ]
 

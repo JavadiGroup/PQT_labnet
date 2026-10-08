@@ -23,10 +23,9 @@ from pathlib import Path
 
 import labnet
 from labnet.envfile import load_env_file
+from labnet.runner_api import AGENT_EFFORTS
 
 
-# Claude Code's --effort levels (Haiku has none; see agent.supports_effort).
-AGENT_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Aliases for the latest of each model; full ids such as claude-opus-5-5 work too.
 DEFAULT_AGENT_MODELS = ("fable", "opus", "sonnet", "haiku")
 _MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,99}")

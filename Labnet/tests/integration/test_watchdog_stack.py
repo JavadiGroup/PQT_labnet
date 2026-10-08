@@ -16,6 +16,7 @@ from labnet.client import ResourceConflictError
 from labnet.control_center.automation_grants import GrantManager, watchdog_claim_path
 from labnet.control_center.automation_protocol import protocol_sha256
 from labnet.control_center.automation_store import AutomationStore
+from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
 from test_full_stack import DEVICE_ID, _renewal_stack
 
 
@@ -113,7 +114,7 @@ async def test_the_watchdog_applies_a_dead_control_centers_safe_state_through_ce
             assert claim["status"] == "ended", claim
             assert central.refused >= 1  # Central refused while the old lease lived
             assert stack.app.state.lease_service.list_active() == []  # the watchdog released its lease
-            check = await watchdog_user.acquire_dummy(DEVICE_ID)
+            check = await watchdog_user.acquire_device(DUMMY_DEVICE_CONTRACT, DEVICE_ID)
             try:
                 assert (await check.read_value()).value == 0.0  # the safe state reached the device
             finally:

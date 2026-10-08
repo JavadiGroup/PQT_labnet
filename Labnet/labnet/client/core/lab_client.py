@@ -603,34 +603,6 @@ class AsyncLabClient:
             "DELETE", f"{API_PREFIX}/leases/{_resource_path(lease_id)}"
         )
 
-    async def acquire_dummy(
-        self,
-        device_id: str | None = None,
-        *,
-        duration_seconds: int = DEFAULT_LEASE_DURATION_SECONDS,
-        auto_renew: bool = True,
-        renewal_interval_seconds: float = DEFAULT_RENEWAL_INTERVAL_SECONDS,
-        idempotency_key: str | None = None,
-        tls: GrpcTlsConfig | None = None,
-        connection_timeout_seconds: float = 10.0,
-        default_rpc_timeout_seconds: float = 10.0,
-    ) -> AsyncContractDeviceClient:
-        """Lease and connect a typed async DummyDevice in one safe operation."""
-
-        from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
-
-        return await self.acquire_device(
-            DUMMY_DEVICE_CONTRACT,
-            device_id,
-            duration_seconds=duration_seconds,
-            auto_renew=auto_renew,
-            renewal_interval_seconds=renewal_interval_seconds,
-            idempotency_key=idempotency_key,
-            tls=tls,
-            connection_timeout_seconds=connection_timeout_seconds,
-            default_rpc_timeout_seconds=default_rpc_timeout_seconds,
-        )
-
     async def acquire_device(
         self,
         contract: Any,

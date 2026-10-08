@@ -38,7 +38,7 @@ from labnet.control_center.automation_grants import (
 from labnet.control_center.automation_runs import RunGrant
 from labnet.control_center.automation_store import AutomationStore
 from labnet.control_center.device_calls import STREAM_PATTERN, find_method
-from labnet.control_center.redaction import redact
+from labnet.redaction import redact
 
 from .test_automation import ENDPOINT, _settings
 
@@ -86,11 +86,11 @@ PROTOCOL: dict[str, Any] = {
             },
         },
         {
-            "device_id": "dev01-sacher",
-            "device_type": "sacher_laser",
+            "device_id": "dev01-laser",
+            "device_type": "simulated_tunable_laser",
             "methods": {
-                # No max_step: the Sacher can't report where a jog leaves it (see step_reader).
-                "jog_steps": {"args": {"relative_steps": {"min": -100.0, "max": 100.0}},
+                # No max_step: the laser can't report where a move leaves it (see step_reader).
+                "move_steps": {"args": {"relative_steps": {"min": -100.0, "max": 100.0}},
                               "max_calls": 5.0, "max_rate_hz": 1.0},
             },
         },
@@ -99,7 +99,7 @@ PROTOCOL: dict[str, Any] = {
 }
 AOM_ONLY: dict[str, Any] = {**PROTOCOL, "devices": [PROTOCOL["devices"][0]]}
 AWG_ONLY: dict[str, Any] = {**PROTOCOL, "devices": [PROTOCOL["devices"][1]], "safe_state": []}
-TYPES = {"dev01-aom": "dummy_aom", "dev01-awg": "dummy_awg", "dev01-sacher": "sacher_laser"}
+TYPES = {"dev01-aom": "dummy_aom", "dev01-awg": "dummy_awg", "dev01-laser": "simulated_tunable_laser"}
 
 
 def _req(device: str = "dev01-aom", method: str = "set_frequency", **args: Any) -> dict[str, Any]:
@@ -234,12 +234,12 @@ def test_text_must_be_one_of_the_choices(value, allowed) -> None:
 
 
 def test_whole_number_fields_take_only_json_integers() -> None:
-    jog = functools.partial(_req, "dev01-sacher", "jog_steps")
-    assert _check(jog(relative_steps=5)) is None
-    assert _check(jog(relative_steps=-100)) is None and _check(jog(relative_steps=100)) is None
-    assert "whole number" in _check(jog(relative_steps=5.0))
-    assert "not a boolean" in _check(jog(relative_steps=True))
-    assert "outside" in _check(jog(relative_steps=101))
+    move = functools.partial(_req, "dev01-laser", "move_steps")
+    assert _check(move(relative_steps=5)) is None
+    assert _check(move(relative_steps=-100)) is None and _check(move(relative_steps=100)) is None
+    assert "whole number" in _check(move(relative_steps=5.0))
+    assert "not a boolean" in _check(move(relative_steps=True))
+    assert "outside" in _check(move(relative_steps=101))
 
 
 def test_args_are_exactly_the_bounded_keyword_arguments() -> None:
@@ -572,9 +572,9 @@ async def test_create_takes_every_lease_and_a_call_runs_and_is_audited(tmp_path:
     manager = _manager(tmp_path, lab, runs)
     grant, token = await _grant(manager, PROTOCOL)
 
-    assert lab.held() == {"dev01-aom", "dev01-awg", "dev01-sacher"}
+    assert lab.held() == {"dev01-aom", "dev01-awg", "dev01-laser"}
     assert grant["status"] == "active" and grant["approved_by"] == "alice"
-    assert grant["devices"] == ["dev01-aom", "dev01-awg", "dev01-sacher"]
+    assert grant["devices"] == ["dev01-aom", "dev01-awg", "dev01-laser"]
     assert runs.grants[-1]["status"] == "active" and runs.phases == []  # the approve route moves the phase
     assert token.startswith("lng_") and len(token) > 40
 
@@ -1506,17 +1506,17 @@ async def test_a_device_busy_being_read_is_busy(tmp_path: Path) -> None:
 async def test_a_whole_number_safe_state_is_applied(tmp_path: Path) -> None:
     from labnet.control_center.automation_protocol import validate_protocol
 
-    sacher = {"device_id": "dev01-sacher", "device_type": "sacher_laser", "methods": {
-        "jog_steps": {"args": {"relative_steps": {"min": -10, "max": 10}}, "max_calls": 5, "max_rate_hz": 1}}}
+    laser = {"device_id": "dev01-laser", "device_type": "simulated_tunable_laser", "methods": {
+        "move_steps": {"args": {"relative_steps": {"min": -10, "max": 10}}, "max_calls": 5, "max_rate_hz": 1}}}
     raw = {**{key: PROTOCOL[key] for key in ("schema_version", "task", "title", "duration_minutes")},
-           "devices": [sacher],
-           "safe_state": [{"device_id": "dev01-sacher", "method": "jog_steps", "args": {"relative_steps": 0}}]}
-    # The Sacher driver publishes no limits; the Lab PC inventory gives it site limits.
-    live = {"dev01-sacher": {"id": "dev01-sacher", "type": "sacher_laser", "state": "available", "hints": {
-        "limits": {"jog_steps.relative_steps": [-100.0, 100.0]}, "sources": {"jog_steps.relative_steps": "site"}}}}
-    normalized, problems = validate_protocol(raw, project={"allowed_devices": ["dev01-sacher"]}, live_devices=live,
-                                             canvas_devices=[{"device_id": "dev01-sacher",
-                                                              "device_type": "sacher_laser"}],
+           "devices": [laser],
+           "safe_state": [{"device_id": "dev01-laser", "method": "move_steps", "args": {"relative_steps": 0}}]}
+    # The laser driver publishes no numeric limits; the Lab PC inventory gives it site limits.
+    live = {"dev01-laser": {"id": "dev01-laser", "type": "simulated_tunable_laser", "state": "available", "hints": {
+        "limits": {"move_steps.relative_steps": [-100.0, 100.0]}, "sources": {"move_steps.relative_steps": "site"}}}}
+    normalized, problems = validate_protocol(raw, project={"allowed_devices": ["dev01-laser"]}, live_devices=live,
+                                             canvas_devices=[{"device_id": "dev01-laser",
+                                                              "device_type": "simulated_tunable_laser"}],
                                              task="Tasks/Task1.md")
     assert problems == []
     lab = FakeLab()
@@ -1524,8 +1524,8 @@ async def test_a_whole_number_safe_state_is_applied(tmp_path: Path) -> None:
     grant, _token = await _grant(manager, normalized)
     ended = await manager.stop(grant["id"], reason="Stopped", by="")
     assert ended["status"] == "ended"
-    assert lab.calls_to("jog_steps") == [{"relative_steps": 0}]
-    assert type(lab.calls_to("jog_steps")[0]["relative_steps"]) is int
+    assert lab.calls_to("move_steps") == [{"relative_steps": 0}]
+    assert type(lab.calls_to("move_steps")[0]["relative_steps"]) is int
 
 
 @pytest.mark.asyncio

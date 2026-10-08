@@ -56,7 +56,7 @@ from .automation_runners import RunnerRegistry
 from .automation_runs import RunStore
 from .automation_store import AutomationError, AutomationStore
 from .ingress import RUNNER_PREFIX
-from .redaction import redact
+from ..redaction import redact
 from .request_checks import read_json
 
 

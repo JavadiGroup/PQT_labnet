@@ -14,7 +14,7 @@ from labnet.client import LabPCInfo
 from labnet.client.core.models import DeviceInfo, EndpointDescriptor
 from labnet.control_center.agent import PhotoAgent
 from labnet.control_center.app import create_app
-from labnet.control_center.automation_paths import (
+from labnet.safe_paths import (
     PathRefused,
     check_user_write,
     clean_relative,

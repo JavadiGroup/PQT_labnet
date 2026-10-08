@@ -12,7 +12,7 @@ from labnet.devices.core.limits import resolve_limits
 from labnet.devices.DummyAOM.physical import PhysicalDummyAOM
 from labnet.devices.DummyAWG.physical import PhysicalDummyAWG
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
-from labnet.devices.SacherLaser.physical import PhysicalSacherLaser
+from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
 from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
 
 
@@ -34,37 +34,37 @@ def test_site_limits_returns_the_same_device_with_its_limits() -> None:
     assert get_site_limits(PhysicalDummyAOM("plain")) is None
 
 
-def test_the_lead_example_for_a_sacher_laser_is_accepted() -> None:
+def test_the_lead_example_for_a_tunable_laser_is_accepted() -> None:
     laser = site_limits(
-        PhysicalSacherLaser(device_id="lab01-sacher"),
+        PhysicalSimulatedTunableLaser(device_id="lab01-laser"),
         limits={"go_to_wavelength_nm.wavelength_nm": (770.0, 790.0)},
-        choices={"jog_steps.velocity_mode": ["positioning"]},
+        choices={"move_steps.velocity_mode": ["slow"]},
     )
-    assert get_site_limits(laser).choices == {"jog_steps.velocity_mode": ("positioning",)}
+    assert get_site_limits(laser).choices == {"move_steps.velocity_mode": ("slow",)}
 
 
 @pytest.mark.parametrize("kwargs, message", [
-    ({"limits": {"go_to.wavelength_nm": (1, 2)}}, "sacher_laser has no method 'go_to'"),
+    ({"limits": {"go_to.wavelength_nm": (1, 2)}}, "simulated_tunable_laser has no method 'go_to'"),
     ({"limits": {"go_to_wavelength_nm.wl": (1, 2)}},
-     "go_to_wavelength_nm has no argument 'wl' (its arguments: velocity_mode, wavelength_nm)"),
+     "go_to_wavelength_nm has no argument 'wl' (its arguments: wavelength_nm)"),
     ({"limits": {"wavelength_nm": (1, 2)}}, "must be '<method>.<argument>'"),
     ({"limits": {"go_to_wavelength_nm.wavelength_nm": (790, 770)}}, "is inverted: min 790 is above max 770"),
     ({"limits": {"go_to_wavelength_nm.wavelength_nm": (770, math.inf)}}, "inf is not finite"),
     ({"limits": {"go_to_wavelength_nm.wavelength_nm": (math.nan, 790)}}, "nan is not finite"),
     ({"limits": {"go_to_wavelength_nm.wavelength_nm": (True, 790)}}, "True is not a number"),
     ({"limits": {"go_to_wavelength_nm.wavelength_nm": (770,)}}, "must be (min, max)"),
-    ({"limits": {"go_to_wavelength_nm.velocity_mode": (1, 2)}}, "is str; give it as choices instead"),
+    ({"limits": {"move_steps.velocity_mode": (1, 2)}}, "is str; give it as choices instead"),
     ({"choices": {"go_to_wavelength_nm.wavelength_nm": ["770"]}}, "is float; give it as a (min, max) limit"),
-    ({"choices": {"jog_steps.velocity_mode": []}}, "must be a non-empty list"),
-    ({"choices": {"jog_steps.velocity_mode": "scan"}}, "must be a non-empty list"),
-    ({"choices": {"jog_steps.velocity_mode": ["scan", "scan"]}}, "'scan' is listed twice"),
-    ({"choices": {"jog_steps.velocity_mode": [1]}}, "1 is not non-empty text"),
+    ({"choices": {"move_steps.velocity_mode": []}}, "must be a non-empty list"),
+    ({"choices": {"move_steps.velocity_mode": "slow"}}, "must be a non-empty list"),
+    ({"choices": {"move_steps.velocity_mode": ["slow", "slow"]}}, "'slow' is listed twice"),
+    ({"choices": {"move_steps.velocity_mode": [1]}}, "1 is not non-empty text"),
     ({}, "needs limits or choices"),
 ])
 def test_site_limits_refuses_what_cant_be_a_limit(kwargs, message: str) -> None:
     with pytest.raises(DeviceLimitsError) as caught:
-        site_limits(PhysicalSacherLaser(device_id="lab01-sacher"), **kwargs)
-    assert message in str(caught.value) and str(caught.value).startswith("lab01-sacher: ")
+        site_limits(PhysicalSimulatedTunableLaser(device_id="lab01-laser"), **kwargs)
+    assert message in str(caught.value) and str(caught.value).startswith("lab01-laser: ")
 
 
 def test_bool_choices_and_conflicting_keys() -> None:
@@ -144,10 +144,11 @@ def test_site_choices_must_be_among_the_driver_choices() -> None:
     awg = site_limits(PhysicalDummyAWG("awg"), choices={"set_waveform.waveform": ["sine", "saw"]})
     with pytest.raises(DeviceLimitsError, match="include 'saw', which the driver does not offer"):
         _effective(awg)
-    laser = site_limits(PhysicalSacherLaser(device_id="lab01-sacher"), choices={"jog_steps.velocity_mode": ["slow"]})
-    # What the Sacher driver publishes (its metadata() needs the controller connected).
-    with pytest.raises(DeviceLimitsError, match="include 'slow'"):
-        _effective(laser, {"choices": {"jog_steps.velocity_mode": ["scan", "positioning"]}})
+    laser = site_limits(PhysicalSimulatedTunableLaser(device_id="lab01-laser"),
+                        choices={"move_steps.velocity_mode": ["turbo"]})
+    # The driver publishes "fast" and "slow".
+    with pytest.raises(DeviceLimitsError, match="include 'turbo'"):
+        _effective(laser)
 
 
 @pytest.mark.parametrize("hints, message", [
@@ -214,8 +215,8 @@ def test_a_site_limited_argument_must_be_sent() -> None:
 
 
 def test_whole_numbers_must_be_integers() -> None:
-    laser = site_limits(PhysicalSacherLaser(device_id="lab01-sacher"), limits={"jog_steps.relative_steps": (-5, 5)})
+    laser = site_limits(PhysicalSimulatedTunableLaser(device_id="lab01-laser"), limits={"move_steps.relative_steps": (-5, 5)})
     limits = _effective(laser, {})
-    assert limits.check("jog_steps", {"relative_steps": 3}) is None
-    assert "must be a whole number, not 3.0" in limits.check("jog_steps", {"relative_steps": 3.0})
-    assert "outside the site limit -5 to 5" in limits.check("jog_steps", {"relative_steps": 6})
+    assert limits.check("move_steps", {"relative_steps": 3}) is None
+    assert "must be a whole number, not 3.0" in limits.check("move_steps", {"relative_steps": 3.0})
+    assert "outside the site limit -5 to 5" in limits.check("move_steps", {"relative_steps": 6})

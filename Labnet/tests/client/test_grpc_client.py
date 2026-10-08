@@ -214,7 +214,7 @@ async def test_async_read_write_stream_error_metadata_and_cleanup() -> None:
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     central = FakeCentral()
-    client = AsyncContractDeviceClient(grant_for(port), central=central)
+    client = AsyncContractDeviceClient(grant_for(port), central=central, _contract=DUMMY_DEVICE_CONTRACT)
     try:
         await client.connect()
         read = await client.read_value(operation_id="read-op")
@@ -264,7 +264,8 @@ async def test_async_close_cancels_stream_on_externally_owned_channel() -> None:
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
     central = FakeCentral()
     client = AsyncContractDeviceClient(
-        grant_for(port), central=central, channel=channel
+        grant_for(port), central=central, channel=channel,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
 
     async def consume() -> None:
@@ -357,7 +358,7 @@ def test_remote_dummy_device_sync_context_closes_channel_then_releases() -> None
         transport=httpx.MockTransport(handler),
     )
     try:
-        with RemoteDeviceBinding(client, device_id="dummy-1") as remote:
+        with RemoteDeviceBinding(client, device_id="dummy-1", _contract=DUMMY_DEVICE_CONTRACT) as remote:
             assert remote.read_value() == 3.0
             remote.write_value(8.0)
             assert [item.value for item in remote.stream_data(sample_rate_hz=10, sample_count=2)] == [0.0, 1.0]

@@ -12,7 +12,7 @@ Anything that decides what an agent may do lives in ``state/``, which the
 agent never sees: its runner reaches the project only through the runner API,
 which takes uploads into the agent's folders alone. Files in ``Experiment_layout/`` other
 than LAYOUT.md are mirrors the Control Center rewrites and never reads back.
-Every path is checked by ``automation_paths`` before it touches the disk.
+Every path is checked by ``labnet.safe_paths`` before it touches the disk.
 
 Like the experiments folder, one lock serializes changes; that is enough for
 the single Control Center process that owns the folder.
@@ -38,7 +38,7 @@ from pydantic import AfterValidator, Field, ValidationError, field_validator
 
 from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
 
-from .automation_paths import (
+from ..safe_paths import (
     AGENT,
     LITERATURE_EXTENSIONS,
     MAX_DEPTH,

@@ -27,7 +27,7 @@ from importlib import resources
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from labnet.control_center.config import AGENT_EFFORTS
+from labnet.runner_api import AGENT_EFFORTS
 
 from .config import RunnerSettings
 from .devices_relay import device_ids, seconds_until

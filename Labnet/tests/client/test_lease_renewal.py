@@ -20,6 +20,7 @@ from labnet.client import (
 from labnet.client.core.models import DeviceInfo
 from labnet.devices.core import remote as remote_module
 from labnet.devices.core.remote import RemoteDeviceBinding
+from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
 
 
 def _lease(*, expires_in: float = 2.0, marker: int = 0) -> LeaseInfo:
@@ -104,6 +105,7 @@ def test_sync_remote_renews_and_updates_lease(monkeypatch: pytest.MonkeyPatch) -
         device_id="dummy-1",
         lease_duration=1,
         renewal_interval_seconds=0.01,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     assert central.renewed.wait(timeout=1)
     for _ in range(100):
@@ -125,6 +127,7 @@ def test_sync_terminal_renewal_closes_transport_and_blocks_calls(
         device_id="dummy-1",
         lease_duration=1,
         renewal_interval_seconds=0.01,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     assert remote.grpc.closed.wait(timeout=1)
     with pytest.raises(LeaseAuthorityError, match="can no longer be used"):
@@ -173,6 +176,7 @@ async def test_async_terminal_renewal_closes_transport_and_blocks_calls() -> Non
         lease_duration_seconds=1,
         auto_renew=True,
         renewal_interval_seconds=0.01,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     device._start_auto_renewal()
     await asyncio.wait_for(central.renewed.wait(), timeout=1)
@@ -207,6 +211,7 @@ async def test_async_successful_renewal_updates_grant() -> None:
         lease_duration_seconds=1,
         auto_renew=True,
         renewal_interval_seconds=0.01,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     device._start_auto_renewal()
     assert device._renewal_task is not None
@@ -276,6 +281,7 @@ def test_renewal_interval_validation_only_applies_when_enabled(
             device_id="dummy-1",
             lease_duration=1,
             renewal_interval_seconds=1,
+            _contract=DUMMY_DEVICE_CONTRACT,
         )
     fixed = RemoteDeviceBinding(
         central,  # type: ignore[arg-type]
@@ -283,6 +289,7 @@ def test_renewal_interval_validation_only_applies_when_enabled(
         lease_duration=1,
         auto_renew=False,
         renewal_interval_seconds=float("nan"),
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     fixed.close()
 
@@ -298,6 +305,7 @@ def test_sync_close_never_releases_while_renewal_thread_is_alive(
         device_id="dummy-1",
         lease_duration=1,
         auto_renew=False,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     unblock = threading.Event()
     thread = threading.Thread(target=unblock.wait, daemon=True)
@@ -336,6 +344,7 @@ def test_sync_close_retries_transient_lease_release_failure(
         central,  # type: ignore[arg-type]
         device_id="dummy-1",
         auto_renew=False,
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
 
     with pytest.raises(RuntimeError, match="temporary Central outage"):
@@ -368,6 +377,7 @@ async def test_async_concurrent_close_releases_exactly_once() -> None:
         _grant(),
         central=central,
         channel=_FakeAsyncChannel(),  # type: ignore[arg-type]
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
     first = asyncio.create_task(device.aclose())
     await asyncio.wait_for(central.release_started.wait(), timeout=1)
@@ -397,6 +407,7 @@ async def test_async_close_retries_transient_lease_release_failure() -> None:
         _grant(),
         central=central,
         channel=_FakeAsyncChannel(),  # type: ignore[arg-type]
+        _contract=DUMMY_DEVICE_CONTRACT,
     )
 
     with pytest.raises(RuntimeError, match="temporary Central outage"):
@@ -517,7 +528,7 @@ async def test_async_lab_client_close_drains_in_flight_acquire(
         transport=httpx.MockTransport(handler),
     )
     acquire = asyncio.create_task(
-        client.acquire_dummy("dummy-1", duration_seconds=60)
+        client.acquire_device(DUMMY_DEVICE_CONTRACT, "dummy-1", duration_seconds=60)
     )
     await asyncio.wait_for(connect_started.wait(), timeout=1)
     close = asyncio.create_task(client.aclose())
@@ -531,7 +542,7 @@ async def test_async_lab_client_close_drains_in_flight_acquire(
     assert device.closed is True
     assert delete_count == 1
     with pytest.raises(RuntimeError, match="closing or closed"):
-        await client.acquire_dummy("dummy-1")
+        await client.acquire_device(DUMMY_DEVICE_CONTRACT, "dummy-1")
 
 
 @pytest.mark.asyncio
@@ -594,7 +605,8 @@ async def test_async_acquire_releases_a_wrong_family_grant_before_client_creatio
     )
     try:
         with pytest.raises(ValueError, match="LeaseGrant device_type") as caught:
-            await client.acquire_dummy(
+            await client.acquire_device(
+                DUMMY_DEVICE_CONTRACT,
                 "dummy-1",
                 auto_renew=False,
             )

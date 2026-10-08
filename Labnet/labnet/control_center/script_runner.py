@@ -10,7 +10,7 @@ The worker also starts with a cleaned environment (:func:`worker_environment`):
 only the variables Python itself needs, never the Control Center's settings
 (``LABNET_*``, with Central's key) or an Anthropic credential. Errors sent back
 to the script, and the outcome shown on the page, pass through
-:func:`~labnet.control_center.redaction.redact`, so a lease id quoted by a Lab PC
+:func:`~labnet.redaction.redact`, so a lease id quoted by a Lab PC
 never reaches the script or the browser.
 """
 
@@ -25,7 +25,7 @@ import threading
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from .redaction import redact
+from ..redaction import redact
 from .scripting import contract_method_names
 
 

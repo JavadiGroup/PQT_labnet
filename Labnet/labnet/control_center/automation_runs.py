@@ -72,13 +72,13 @@ from typing import Annotated, Any, BinaryIO, Literal
 from pydantic import Field, ValidationError
 
 from .agent import supports_effort
-from .automation_paths import PathRefused, clean_relative, open_inside, zone_of
+from ..safe_paths import PathRefused, clean_relative, open_inside, zone_of
 from .automation_protocol import MAX_NOTE_CHARACTERS, MAX_PROSE_BYTES, canonical
 from .automation_store import PROJECT_ID, AutomationError, AutomationStore, ModelName, refusal, write_json_file
 from .config import AGENT_EFFORTS, DEFAULT_AGENT_MODELS
 from .experiment_schema import DeviceId, Text, _Strict, problems_from
 from .experiment_store import replace_with_retry
-from .redaction import redact
+from ..redaction import redact
 
 
 LOGGER = logging.getLogger(__name__)

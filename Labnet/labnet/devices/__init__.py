@@ -17,10 +17,10 @@ _EXPORT_MODULES = {
     "PhysicalDummyEOM": ".DummyEOM",
     "DummyLaser": ".DummyLaser",
     "PhysicalDummyLaser": ".DummyLaser",
+    "SimulatedTunableLaser": ".SimulatedTunableLaser",
+    "PhysicalSimulatedTunableLaser": ".SimulatedTunableLaser",
     "SimulatedWavemeter": ".SimulatedWavemeter",
     "PhysicalSimulatedWavemeter": ".SimulatedWavemeter",
-    "PhysicalSacherLaser": ".SacherLaser",
-    "SacherLaser": ".SacherLaser",
 }
 __all__ = sorted(_EXPORT_MODULES)
 

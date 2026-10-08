@@ -24,7 +24,6 @@ from ...client.core.lab_client import (
 )
 from ...client.core.models import Measurement
 from ...grpc.generated.device_contracts import (
-    DUMMY_DEVICE_CONTRACT,
     DeviceContract,
     RpcSpec,
 )
@@ -104,7 +103,7 @@ class RemoteDeviceBinding:
         connection_timeout_seconds: float = 10.0,
         default_rpc_timeout_seconds: float = 10.0,
         idempotency_key: str | None = None,
-        _contract: DeviceContract = DUMMY_DEVICE_CONTRACT,
+        _contract: DeviceContract,
     ) -> None:
         self._contract = _contract
         self.device_type = _contract.device_type

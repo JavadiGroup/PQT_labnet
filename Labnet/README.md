@@ -223,7 +223,7 @@ certificate.
 scripts/release/build.sh            # --wheelhouse also bundles every dependency for offline hosts
 ```
 
-The release directory `PQT_network_releases/x.y.z/` holds the wheel, `site.zip`
+The release directory `PQT_network_releases/x.y.z/` (git-ignored) holds the wheel, `site.zip`
 (the lab's configuration from `site/`), `client-examples.zip`,
 `update_host.sh`, and `RELEASE.TXT` with the SHA-256 of each file. Copy it to
 a restricted, read-only share such as `\\192.168.50.40\LabNet-Releases\x.y.z`.
@@ -1453,7 +1453,7 @@ and says what to change:
   `read_<x>` taking the same choice arguments (`set_amplitude(value,
   channel)` → `read_amplitude(channel)`; `automation_protocol.step_reader`).
   Today that is every setter of `dummy_aom`, `dummy_awg`, `dummy_eom` and
-  `dummy_laser`; not `dummy_device.write_value`, the `sacher_laser` methods
+  `dummy_laser`; not `dummy_device.write_value`, the `simulated_tunable_laser` methods
   or `simulated_wavemeter.set_exposure`, where the check says to drop
   `max_step` (any value in range is then allowed) or narrow the range.
 - **Published limits are hard limits.** A device publishes the driver's
@@ -1464,7 +1464,7 @@ and says what to change:
   is the site's or the driver's.
 - **No limit, no automation.** Every number a protocol bounds needs a
   published limit. Without one the protocol is refused (a problem, not a
-  warning): *"dev05-sacher publishes no limit for
+  warning): *"dev05-laser publishes no limit for
   go_to_wavelength_nm.wavelength_nm; set one in the Lab PC inventory with
   site_limits(...) before automating it."* A person sets that limit in the
   inventory and restarts the Lab PC. Text arguments without published choices
@@ -2258,7 +2258,7 @@ Two inputs decide how a Lab PC runs:
 | `LABNET_LAB_PC_ID` | the username that owns the key | Stable Central identity; looked up from Central at startup when omitted |
 | `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | Central URL; non-loopback must be `https://` |
 | `LABNET_CA_FILE` | system trust | CA that verifies Central's HTTPS certificate |
-| `LABNET_DEVICE_INVENTORY` | one simulated device (development only) | `package.module:function` or `C:/path/file.py:function` |
+| `LABNET_DEVICE_INVENTORY` | none: the Lab PC refuses to start | `package.module:function` or `C:/path/file.py:function` |
 | `LABNET_GRPC_ADVERTISED_TARGET` | the bind address | `host:port` clients dial; required with TLS; must be in the certificate |
 | `LABNET_GRPC_BIND_HOST` / `LABNET_GRPC_PORT` | see above / `50051` | gRPC listener |
 | `LABNET_GRPC_TLS_SERVER_NAME` | none | Name clients verify, when it differs from the target host |
@@ -2361,6 +2361,9 @@ three-line facade, and exports. The steps are in the
 The four `Dummy*` optics-bench families (`labnet/devices/DummyLaser`,
 `DummyAOM`, `DummyEOM`, `DummyAWG`) are small, complete examples of channels,
 boolean and text commands, streams, hints and simple physics.
+`SimulatedTunableLaser` is a motor-tuned laser whose moves take time: an
+example of whole-number arguments, published choices, and a driver that
+publishes no numeric limits (so its Lab PC must set site limits).
 
 Deploy Lab PCs that serve a new RPC before clients that call it.
 
@@ -2373,15 +2376,15 @@ device, so its type and contract don't change:
 
 ```python
 from labnet.devices.core import site_limits
-from labnet.devices.SacherLaser.physical import PhysicalSacherLaser
+from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
 
 def create_devices():
     return [
         site_limits(
-            PhysicalSacherLaser(device_id="lab01-sacher"),
+            PhysicalSimulatedTunableLaser(device_id="lab01-laser"),
             limits={"go_to_wavelength_nm.wavelength_nm": (770.0, 790.0),
-                    "jog_steps.relative_steps": (-2000, 2000)},
-            choices={"go_to_wavelength_nm.velocity_mode": ["scan"]},
+                    "move_steps.relative_steps": (-2000, 2000)},
+            choices={"move_steps.velocity_mode": ["slow"]},
         ),
     ]
 ```
@@ -2390,8 +2393,7 @@ def create_devices():
   clients. `limits` takes `(min, max)` for a number. `choices` takes a list
   for text or `True`/`False`. Living examples:
   `scripts/dev/inventories/dev_lab_pc_01.py` (the AOM narrowed to 65–95 MHz,
-  the dummy devices' `write_value` to ±100). `site/inventories/lab_pc_01.py`
-  has a commented Sacher example.
+  the dummy devices' `write_value` to ±100).
 - **The Lab PC refuses to start** with a clear error when:
   - a key names no method or argument of the device's contract;
   - a range is inverted or not finite;
@@ -2487,7 +2489,7 @@ restore the `labnet.db.before-<version>.<time>` backup for that.
 | Admin CLI says the schema is not ready | CLI and server read different databases | Pass the same `--env-file` to both |
 | Lab PC cannot register | Wrong key, or Central's certificate not trusted | Recreate or rotate the device_manager key; check `LABNET_CA_FILE` |
 | Lab PC refuses a LAN address | No certificate, or no API key | Set both TLS files and `LABNET_DEVICE_MANAGER_API_KEY` |
-| Lab PC refuses to start in production | No inventory or no key | Set `LABNET_DEVICE_INVENTORY` and `LABNET_DEVICE_MANAGER_API_KEY` |
+| Lab PC refuses to start | No inventory, or no key in production | Set `LABNET_DEVICE_INVENTORY` and `LABNET_DEVICE_MANAGER_API_KEY` |
 | Client sees no available devices | Lab PC down, device unhealthy, or every device leased | Both health endpoints and Central's device list |
 | Client times out connecting to a TLS Lab PC | CA not configured, or IP not in the Lab PC certificate | `LABNET_CA_FILE`; compare `labnet-certs show` with `LABNET_GRPC_ADVERTISED_TARGET` |
 | Proto check reports stale files | Generated bindings do not match the protos | `python tools/generate_protos.py`, then commit every generated change |

@@ -1,4 +1,4 @@
-"""Remove credentials from text that leaves the Control Center.
+"""Remove credentials from text that leaves the Control Center or the Automation runner.
 
 A lease id is enough to drive a device until the lease ends, and errors from
 a Lab PC or Central can quote one (or a key). Anything shown in a browser,

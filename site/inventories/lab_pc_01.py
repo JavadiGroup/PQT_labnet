@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from labnet.devices.SimulatedWavemeter.physical import PhysicalSimulatedWavemeter
 
-# from labnet.devices.SacherLaser.physical import PhysicalSacherLaser
+# The Sacher driver is its own package (separate repository), installed on this Lab PC:
+# from <sacher driver package> import PhysicalSacherLaser
 # from labnet.devices.core import site_limits
 
 

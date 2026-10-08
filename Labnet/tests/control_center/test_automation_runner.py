@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from labnet.control_center import admin, automation_runs
 from labnet.control_center.app import create_app
-from labnet.control_center.automation_paths import NotWritable, check_agent_write, clean_relative
+from labnet.safe_paths import NotWritable, check_agent_write, clean_relative
 from labnet.control_center.automation_runners import RunnerRegistry
 from labnet.control_center.automation_store import AutomationError
 

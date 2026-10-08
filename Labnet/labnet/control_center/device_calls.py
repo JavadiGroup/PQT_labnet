@@ -28,7 +28,7 @@ from labnet.client import DeviceAuthenticationError, DevicePermissionDeniedError
 from labnet.client.core.models import Measurement
 from labnet.grpc.generated.device_contracts import DeviceContract, RpcSpec
 
-from .redaction import redact
+from ..redaction import redact
 
 
 STREAM_PATTERN = "RPC_PATTERN_POLLED_SCALAR_STREAM"

@@ -201,12 +201,12 @@ def test_methods_show_the_python_client_signature() -> None:
     assert methods["stream_data"]["parameters"][0] == "sample_rate_hz: float"
     assert describe_device_type("not_in_this_build") is None
     assert type_label("simulated_wavemeter") == "Simulated Wavemeter"
-    assert type_label("sacher_laser") == "Sacher Laser"
+    assert type_label("simulated_tunable_laser") == "Simulated Tunable Laser"
     assert type_label("not_in_this_build") == "Not In This Build"
 
 
 def test_a_command_with_one_number_can_be_swept() -> None:
-    laser = {method["name"]: method for method in describe_device_type("sacher_laser")}
+    laser = {method["name"]: method for method in describe_device_type("simulated_tunable_laser")}
     assert laser["go_to_wavelength_nm"]["role"] == "command"
     assert laser["go_to_wavelength_nm"]["sweep_field"] == "wavelength_nm"
     assert laser["stop"]["sweep_field"] is None

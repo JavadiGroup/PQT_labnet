@@ -417,11 +417,11 @@ After that, every update follows these steps:
 # bump version = "x.y.z" in Labnet/pyproject.toml, then:
 git commit -am "Release x.y.z"
 scripts/release/build.sh                   # add --wheelhouse for offline hosts
-git add PQT_network_releases/x.y.z && git commit -m "Release artifacts x.y.z"
 ```
 
 `build.sh` refuses to run on uncommitted changes or to overwrite an existing
-version. It checks generated files, runs the tests, and stages:
+version. It checks generated files, runs the tests, and stages (git-ignored;
+the release share is where releases are kept):
 
 ```text
 PQT_network_releases/x.y.z/
@@ -511,7 +511,6 @@ backup if you need to.
 | [`site/`](site/README.md) | The PQT lab's configuration: env templates, the Caddyfile template, and Lab PC inventories |
 | [`examples/`](examples/README.md) | Experiment scripts 01–05 |
 | [`scripts/`](scripts/) | Development, release, and host-update scripts |
-| [`PQT_network_releases/`](PQT_network_releases/) | Built releases with their `RELEASE.TXT` records |
 
 ## Security
 

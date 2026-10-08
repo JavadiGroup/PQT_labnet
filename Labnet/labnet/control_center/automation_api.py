@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from .automation_grants import GRANT_ID
-from .automation_paths import ZONES
+from ..safe_paths import ZONES
 from .automation_protocol import (
     MAX_NOTE_CHARACTERS,
     MAX_PROTOCOL_BYTES,
@@ -47,7 +47,7 @@ from .experiment_store import ExperimentError, ExperimentStore
 from .request_checks import author as _author
 from .request_checks import read_json as _json
 from .request_checks import same_origin
-from .redaction import redact
+from ..redaction import redact
 
 
 NetworkSource = Callable[[], Awaitable[dict[str, Any]]]

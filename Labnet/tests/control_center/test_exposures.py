@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from labnet.control_center import script_runner
 from labnet.control_center.app import create_app
 from labnet.control_center.config import ControlCenterSettings
-from labnet.control_center.redaction import redact
+from labnet.redaction import redact
 from labnet.control_center.script_runner import ScriptProcess, worker_environment
 from labnet.control_center.sessions import DeviceSession, SessionError
 

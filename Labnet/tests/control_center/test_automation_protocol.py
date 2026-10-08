@@ -433,21 +433,21 @@ def test_the_review_is_built_from_the_normalized_copy_and_the_contracts() -> Non
 
 # These drivers publish no limits of their own, so (no limit, no automation) their Lab PC
 # inventories give them site limits, published with the source "site".
-SACHER_SITE = {"go_to_wavelength_nm.wavelength_nm": [0.5, 900.0], "set_velocity_nm_s.velocity_nm_s": [0.0, 5.0],
-               "jog_steps.relative_steps": [-100.0, 100.0]}
+LASER_SITE = {"go_to_wavelength_nm.wavelength_nm": [0.5, 900.0], "set_velocity_nm_s.velocity_nm_s": [0.0, 5.0],
+               "move_steps.relative_steps": [-100.0, 100.0]}
 MORE_LIVE = {
     **LIVE,
-    "dev05-sacher": {"id": "dev05-sacher", "type": "sacher_laser", "state": "available", "hints": {
-        "limits": SACHER_SITE,
-        "sources": {key: "site" for key in SACHER_SITE}}},
+    "dev05-laser": {"id": "dev05-laser", "type": "simulated_tunable_laser", "state": "available", "hints": {
+        "limits": LASER_SITE,
+        "sources": {key: "site" for key in LASER_SITE}}},
     "dev06-dummy": {"id": "dev06-dummy", "type": "dummy_device", "state": "available", "hints": {
         "limits": {"write_value.value": [-10.0, 10.0]}, "sources": {"write_value.value": "site"}}},
     "dev07-wavemeter": {"id": "dev07-wavemeter", "type": "simulated_wavemeter", "state": "available", "hints": {
         "limits": {"set_exposure.value": [1.0, 100.0]}, "sources": {"set_exposure.value": "site"}}},
 }
 MORE_CANVAS = CANVAS + [{"device_id": device_id, "device_type": MORE_LIVE[device_id]["type"]}
-                        for device_id in ("dev05-sacher", "dev06-dummy", "dev07-wavemeter")]
-MORE_PROJECT = {"allowed_devices": ["dev01-aom", "dev02-awg", "dev05-sacher", "dev06-dummy", "dev07-wavemeter"]}
+                        for device_id in ("dev05-laser", "dev06-dummy", "dev07-wavemeter")]
+MORE_PROJECT = {"allowed_devices": ["dev01-aom", "dev02-awg", "dev05-laser", "dev06-dummy", "dev07-wavemeter"]}
 AWG_CH2 = _awg({
     "set_amplitude": {"args": {"value": {"min": 0, "max": 1, "max_step": 0.1}, "channel": {"choices": ["CH2"]}},
                       "max_calls": 100, "max_rate_hz": 5},
@@ -518,9 +518,9 @@ def test_the_setters_whose_position_the_gateway_can_read() -> None:
 
 @pytest.mark.parametrize("device_id, method, field", [
     ("dev06-dummy", "write_value", "value"),
-    ("dev05-sacher", "set_velocity_nm_s", "velocity_nm_s"),
-    ("dev05-sacher", "go_to_wavelength_nm", "wavelength_nm"),
-    ("dev05-sacher", "jog_steps", "relative_steps"),
+    ("dev05-laser", "set_velocity_nm_s", "velocity_nm_s"),
+    ("dev05-laser", "go_to_wavelength_nm", "wavelength_nm"),
+    ("dev05-laser", "move_steps", "relative_steps"),
     ("dev07-wavemeter", "set_exposure", "value"),
 ])
 def test_max_step_needs_a_reading_of_where_the_field_is_now(device_id: str, method: str, field: str) -> None:
@@ -539,9 +539,9 @@ def test_max_step_needs_a_reading_of_where_the_field_is_now(device_id: str, meth
 
 
 def test_a_whole_number_in_the_safe_state_stays_a_whole_number_and_passes_the_gateway() -> None:
-    sacher = {"device_id": "dev05-sacher", "device_type": "sacher_laser", "methods": {
-        "jog_steps": {"args": {"relative_steps": {"min": -10, "max": 10}}, "max_calls": 5, "max_rate_hz": 1}}}
-    protocol = _more([sacher], [{"device_id": "dev05-sacher", "method": "jog_steps", "args": {"relative_steps": 0}}])
+    laser = {"device_id": "dev05-laser", "device_type": "simulated_tunable_laser", "methods": {
+        "move_steps": {"args": {"relative_steps": {"min": -10, "max": 10}}, "max_calls": 5, "max_rate_hz": 1}}}
+    protocol = _more([laser], [{"device_id": "dev05-laser", "method": "move_steps", "args": {"relative_steps": 0}}])
     normalized, problems = _check_more(protocol)
     assert problems == []
     call = normalized["safe_state"][0]

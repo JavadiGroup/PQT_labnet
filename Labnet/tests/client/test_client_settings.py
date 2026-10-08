@@ -143,7 +143,7 @@ def test_sync_devices_inherit_the_client_ca(
     )
     try:
         with pytest.raises(_Captured):
-            remote.RemoteDeviceBinding(client, device_id="dummy-1", auto_renew=False)
+            remote.RemoteDeviceBinding(client, device_id="dummy-1", auto_renew=False, _contract=DUMMY_DEVICE_CONTRACT)
         assert seen["tls"] is client.grpc_tls
     finally:
         client.close()

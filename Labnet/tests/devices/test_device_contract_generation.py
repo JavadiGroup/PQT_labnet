@@ -10,11 +10,10 @@ from textwrap import dedent
 import pytest
 
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
-from labnet.devices.SacherLaser.physical import PhysicalSacherLaser
+from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
 from labnet.grpc.generated import (
     dummy_device_pb2,
     rpc_options_pb2,
-    sacher_laser_pb2,
 )
 from labnet.grpc.generated.device_contracts import (
     DEVICE_CONTRACT_BY_SERVICE,
@@ -194,38 +193,6 @@ def test_reference_device_explicitly_declares_every_required_rpc_option() -> Non
         assert rpc_options.physical_method.strip(), method.full_name
         assert rpc_options.HasField("default_unit"), method.full_name
         assert rpc_options.default_unit.strip(), method.full_name
-
-
-def test_sacher_contract_declares_all_migrated_operations() -> None:
-    service = sacher_laser_pb2.DESCRIPTOR.services_by_name[
-        "SacherLaserService"
-    ]
-    expected = {
-        "GetLiveWavelengthNm",
-        "GetStoredWavelengthNm",
-        "SetStartWavelengthNm",
-        "GetStartWavelengthNm",
-        "SetTargetWavelengthNm",
-        "GetTargetWavelengthNm",
-        "SetVelocityNmS",
-        "GetVelocityNmS",
-        "SetAccelerationNmS2",
-        "GetAccelerationNmS2",
-        "SetDecelerationNmS2",
-        "GetDecelerationNmS2",
-        "GetStoredPositionSteps",
-        "GetPositionOffsetSteps",
-        "GetPositionSteps",
-        "ResetPosition",
-        "JogSteps",
-        "GoToWavelengthNm",
-        "StartScan",
-        "RecalibratePosition",
-        "GetState",
-        "Stop",
-        "GetDeviceErrorCodes",
-    }
-    assert {method.name for method in service.methods} == expected
 
 
 def test_unitless_supported_operation_uses_explicit_dimensionless_unit(
@@ -789,9 +756,9 @@ def test_shared_physical_method_merges_multi_rpc_field_as_optional(
 def test_current_physical_device_satisfies_generated_contract() -> None:
     validate_implementation(PhysicalDummyDevice, _dummy_contract())
     validate_implementation(
-        PhysicalSacherLaser,
+        PhysicalSimulatedTunableLaser,
         DEVICE_CONTRACT_BY_SERVICE[
-            "labnet.devices.v1.SacherLaserService"
+            "labnet.devices.v1.SimulatedTunableLaserService"
         ],
     )
 

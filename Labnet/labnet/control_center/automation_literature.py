@@ -47,7 +47,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import literature_extract
-from .automation_paths import PathRefused, clean_relative, open_inside
+from ..safe_paths import PathRefused, clean_relative, open_inside
 from .automation_store import AutomationError, AutomationStore
 from .experiment_store import replace_with_retry
 from .literature_extract import ExtractorMissing, clean_text

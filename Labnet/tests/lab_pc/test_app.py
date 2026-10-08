@@ -12,7 +12,6 @@ import pytest
 
 from labnet.lab_pc.app import create_app, load_device_factory, resolve_lab_pc_id
 from labnet.lab_pc.config import LabPCSettings
-from labnet.lab_pc.inventory import simulated_devices
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
 from labnet.grpc import LEASE_METADATA_KEY
 from labnet.grpc.generated import dummy_device_pb2, dummy_device_pb2_grpc
@@ -34,7 +33,7 @@ async def test_lab_pc_composes_health_control_and_streaming(tmp_path: Path) -> N
         grpc_port=0,
         grpc_advertised_target="127.0.0.1:0",
     )
-    app = create_app(settings=settings)
+    app = create_app(settings=settings, device_factory=lambda: [PhysicalDummyDevice("dummy_device_1")])
 
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
@@ -196,14 +195,25 @@ async def test_runtime_disconnect_updates_http_and_grpc_readiness(
             await channel.close()
 
 
-def test_missing_inventory_serves_one_simulated_device() -> None:
-    assert load_device_factory(None) is simulated_devices
+@pytest.mark.parametrize("spec", [None, "", "  "])
+def test_a_missing_inventory_is_an_error_with_a_hint(spec: str | None) -> None:
+    with pytest.raises(ValueError, match="LABNET_DEVICE_INVENTORY is not set") as caught:
+        load_device_factory(spec)
+    assert "create_devices" in str(caught.value)
 
 
-def test_inventory_can_be_a_module(monkeypatch: pytest.MonkeyPatch) -> None:
-    devices = load_device_factory("labnet.lab_pc.inventory:simulated_devices")()
+def test_inventory_can_be_a_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "bench_inventory.py").write_text(
+        "from labnet.devices.DummyDevice.physical import PhysicalDummyDevice\n"
+        "def create_devices():\n"
+        "    return [PhysicalDummyDevice('bench-a')]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
 
-    assert [device.device_id for device in devices] == ["dummy_device_1"]
+    devices = load_device_factory("bench_inventory:create_devices")()
+
+    assert [device.device_id for device in devices] == ["bench-a"]
 
 
 def test_inventory_can_be_a_file_path(tmp_path: Path) -> None:
@@ -224,8 +234,8 @@ def test_inventory_can_be_a_file_path(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "spec",
     [
-        "labnet.lab_pc.inventory",
-        "labnet.lab_pc.inventory:missing",
+        "labnet.devices.DummyDevice.physical",
+        "labnet.devices.DummyDevice.physical:missing",
         "C:/does/not/exist.py:create_devices",
     ],
 )

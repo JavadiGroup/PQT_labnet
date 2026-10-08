@@ -107,7 +107,7 @@ from .device_calls import (
     lease_rejected,
     plain,
 )
-from .redaction import redact
+from ..redaction import redact
 
 
 LOGGER = logging.getLogger(__name__)

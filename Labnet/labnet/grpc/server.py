@@ -148,12 +148,6 @@ class LabnetGrpcServer:
 
         self._device_services = MappingProxyType(services)
         self._service_names = tuple(sorted(service_names))
-        # Compatibility for the original one-family tests and applications.
-        # New code should use ``device_services`` keyed by generated device type.
-        self.device_service = services.get(
-            "dummy_device",
-            next(iter(services.values())),
-        )
         health_pb2_grpc.add_HealthServicer_to_server(
             self._health,
             self._server,

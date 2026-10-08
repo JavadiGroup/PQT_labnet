@@ -14,7 +14,7 @@ Network and Devices pages list what the Control Center holds (see
 
 Device errors can quote a lease id, which is enough to drive the device while
 the lease lasts. Everything a browser receives from a session passes through
-:func:`~labnet.control_center.redaction.redact`: :class:`SessionError`
+:func:`~labnet.redaction.redact`: :class:`SessionError`
 messages, state messages and every published event. The log keeps full text.
 """
 
@@ -37,7 +37,7 @@ from .device_calls import SETTING_PATTERNS as _SETTING_PATTERNS
 from .device_calls import STREAM_PATTERN as _STREAM_PATTERN
 from .device_calls import call_device
 from .device_calls import find_method as _method
-from .redaction import redact
+from ..redaction import redact
 from .script_runner import ScriptProcess
 from .scripting import ScriptError, validate_script
 

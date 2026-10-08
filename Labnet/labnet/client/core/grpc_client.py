@@ -24,7 +24,6 @@ from labnet.lease_policy import (
 from labnet.grpc.auth import LEASE_METADATA_KEY
 from labnet.grpc.generated import common_pb2
 from labnet.grpc.generated.device_contracts import (
-    DUMMY_DEVICE_CONTRACT,
     DeviceContract,
     RpcSpec,
 )
@@ -478,7 +477,7 @@ class ContractDeviceGrpcClient(_ContractDeviceRequests):
         tls: GrpcTlsConfig | None = None,
         default_timeout_seconds: float = 10.0,
         channel: grpc.Channel | None = None,
-        _contract: DeviceContract = DUMMY_DEVICE_CONTRACT,
+        _contract: DeviceContract,
     ) -> None:
         validate_endpoint(grant.device.endpoint)
         _validate_grant_contract(grant, _contract)
@@ -622,7 +621,7 @@ class AsyncContractDeviceClient(_ContractDeviceRequests):
         tls: GrpcTlsConfig | None = None,
         default_timeout_seconds: float = 10.0,
         channel: grpc.aio.Channel | None = None,
-        _contract: DeviceContract = DUMMY_DEVICE_CONTRACT,
+        _contract: DeviceContract,
     ) -> None:
         validate_endpoint(grant.device.endpoint)
         _validate_grant_contract(grant, _contract)

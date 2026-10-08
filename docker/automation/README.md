@@ -1,7 +1,7 @@
 # docker/automation: the Automation runner's containers
 
 The build context for every image is the repository root (`compose.yaml` uses `context: ../..`).
-Each Dockerfile has its own `Dockerfile.<name>.dockerignore`, which sends only `Labnet/` (no vendor DLLs) and the files below that the image needs.
+Each Dockerfile has its own `Dockerfile.<name>.dockerignore`, which sends only `Labnet/` and the files below that the image needs.
 
 | File | What it is |
 | --- | --- |

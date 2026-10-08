@@ -42,3 +42,6 @@ literature/
 # (anchored: only the repository root's folders)
 /experiments/
 /automation/
+
+# Release builds (scripts/release/build.sh); releases are kept on the release share
+/PQT_network_releases/

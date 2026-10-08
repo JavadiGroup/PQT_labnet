@@ -30,7 +30,7 @@ While a grant is active, ``run_python`` mounts the device relay's folder into
 the run container; ``end_experiment`` ends the grant early.
 
 Everything the agent sends is untrusted: paths go through the same checks as
-the Control Center's (``automation_paths``), and the log file is created with
+the Control Center's (``labnet.safe_paths``), and the log file is created with
 O_EXCL so a link the agent planted can't redirect it.
 """
 
@@ -52,10 +52,10 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from labnet.control_center.automation_paths import (
+from labnet.safe_paths import (
     PathRefused, check_handle_inside, clean_relative, open_inside, resolve_inside,
 )
-from labnet.control_center.redaction import redact
+from labnet.redaction import redact
 
 from .backend import Backend, PythonRequest
 from .config import RunnerSettings
