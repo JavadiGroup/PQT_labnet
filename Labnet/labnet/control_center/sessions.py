@@ -25,14 +25,18 @@ import logging
 import math
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from labnet.client import AsyncLabClient, ResourceConflictError, ResourceNotFoundError
-from labnet.client.core.models import Measurement
 from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
 
 from .config import ControlCenterSettings
+from .device_calls import SETTING_PATTERNS as _SETTING_PATTERNS
+from .device_calls import STREAM_PATTERN as _STREAM_PATTERN
+from .device_calls import call_device
+from .device_calls import find_method as _method
 from .redaction import redact
 from .script_runner import ScriptProcess
 from .scripting import ScriptError, validate_script
@@ -42,8 +46,6 @@ LOGGER = logging.getLogger(__name__)
 MAX_BUFFERED_SAMPLES = 20_000
 MAX_SAMPLE_RATE_HZ = 200.0
 MAX_SCRIPT_STREAM_SAMPLES = 10_000
-_SETTING_PATTERNS = {"RPC_PATTERN_SCALAR_WRITE", "RPC_PATTERN_UNARY_COMMAND"}
-_STREAM_PATTERN = "RPC_PATTERN_POLLED_SCALAR_STREAM"
 
 
 class SessionError(Exception):
@@ -62,28 +64,19 @@ class Subscriber:
     dropped: bool = False
 
 
-def _method(contract: DeviceContract, name: str) -> RpcSpec | None:
-    return next((spec for spec in contract.methods if spec.python_name == name), None)
-
-
-def _plain(value: Any) -> Any:
-    """Measurements become their value; everything else passes through."""
-
-    if isinstance(value, Measurement):
-        return value.value
-    return value
-
-
 class DeviceSession:
     def __init__(
         self,
         device_id: str,
         client: AsyncLabClient,
         settings: ControlCenterSettings,
+        blocked: Callable[[str], bool] | None = None,
     ) -> None:
         self.device_id = device_id
         self._client = client
         self._settings = settings
+        # True for a device an Automation grant holds (see automation_grants.py).
+        self._blocked = blocked or (lambda _device_id: False)
         self._lock = asyncio.Lock()
         self._contract: DeviceContract | None = None
         self._device: Any = None  # AsyncContractDeviceClient while leased
@@ -193,7 +186,16 @@ class DeviceSession:
 
     # ---- Play / Pause -----------------------------------------------------------
 
+    def _refuse_if_granted(self, device_id: str) -> None:
+        if self._blocked(device_id):
+            raise SessionError(
+                409,
+                f"{device_id} is held by an Automation experiment. Stop it on the Network or "
+                "Devices page (or wait for it to end) before using the device here.",
+            )
+
     async def play(self, request: dict[str, Any]) -> dict[str, Any]:
+        self._refuse_if_granted(self.device_id)
         contract = await self._ensure_contract()
         settings, stream_spec, rate, channel = self._check_play_request(contract, request)
         async with self._lock:
@@ -321,6 +323,7 @@ class DeviceSession:
     # ---- scripts ------------------------------------------------------------------
 
     async def run_script(self, code: str) -> dict[str, Any]:
+        self._refuse_if_granted(self.device_id)
         contract = await self._ensure_contract()
         try:
             validate_script(code)
@@ -367,16 +370,13 @@ class DeviceSession:
                 raise ValueError(
                     f"In scripts, {method}() needs sample_count between 1 and {MAX_SCRIPT_STREAM_SAMPLES}."
                 )
-            stream = getattr(device, method)(*args, **kwargs)
-            try:
-                return [sample.value async for sample in stream]
-            finally:
-                await stream.aclose()
-        return _plain(await getattr(device, method)(*args, **kwargs))
+        return await call_device(device, spec, kwargs, args=args)
 
     async def _script_lease(self, device_id: str) -> dict[str, Any]:
         if device_id == self.device_id:
             raise ValueError("Use `device` for this page's device.")
+        if self._blocked(device_id):
+            raise ValueError(f"{device_id} is held by an Automation experiment.")
         if device_id not in self._script_devices:
             info = await self._client.get_device(device_id)
             contract = DEVICE_CONTRACT_BY_TYPE.get(info.device_type)
@@ -409,14 +409,24 @@ class DeviceSession:
 class SessionManager:
     """One :class:`DeviceSession` per device id, created on first use."""
 
-    def __init__(self, client: AsyncLabClient, settings: ControlCenterSettings) -> None:
+    def __init__(
+        self,
+        client: AsyncLabClient,
+        settings: ControlCenterSettings,
+        blocked: Callable[[str], bool] | None = None,
+    ) -> None:
         self._client = client
         self._settings = settings
         self._sessions: dict[str, DeviceSession] = {}
+        # Devices an Automation grant holds: Play and scripts are refused (409) on them.
+        self._blocked = blocked
+
+    def blocked(self, device_id: str) -> bool:
+        return bool(self._blocked and self._blocked(device_id))
 
     def get(self, device_id: str) -> DeviceSession:
         if device_id not in self._sessions:
-            self._sessions[device_id] = DeviceSession(device_id, self._client, self._settings)
+            self._sessions[device_id] = DeviceSession(device_id, self._client, self._settings, self.blocked)
         return self._sessions[device_id]
 
     def activity(self) -> dict[str, dict[str, Any]]:

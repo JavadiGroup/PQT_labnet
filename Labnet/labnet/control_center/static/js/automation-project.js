@@ -446,7 +446,15 @@
   // A run is one task worked through by an Automation runner. What a runner
   // wrote (its events and summary) is untrusted: it is only ever set as text.
 
-  const RUN_LABELS = { queued: "Queued", active: "Active", done: "Done", failed: "Failed", stopped: "Stopped", cancelled: "Cancelled" };
+  const RUN_LABELS = {
+    queued: "Queued", active: "Active", done: "Done", failed: "Failed", stopped: "Stopped", cancelled: "Cancelled",
+    ended_unsafe: "Ended unsafe",
+  };
+  // While a run is active: what it is doing (see automation_runs.py).
+  const PHASE_LABELS = {
+    planning: "Planning", awaiting_approval: "Waiting for approval", executing: "Controlling devices", analyzing: "Analyzing",
+  };
+  const MAX_SUBMISSIONS = 3; // protocols a run may send for approval
   const RUNS_POLL_MS = 5000; // the list, while any run is queued or active
   const LOG_POLL_MS = 2000; // an open run's log
   const RUN_EVENTS_SHOWN = 500; // what GET .../runs/{id} returns at most
@@ -505,9 +513,15 @@
     return settingsText(model || fallback, effort, project.run_max_turns, project.run_budget_usd);
   }
 
+  function grantLive(run) {
+    return Boolean(run.grant && (run.grant.status === "active" || run.grant.status === "ending"));
+  }
+
   function runFacts(run) {
     return [
       run.status === "queued" ? "Waiting for a runner" : "",
+      run.status === "active" && run.phase ? PHASE_LABELS[run.phase] || run.phase : "",
+      grantLive(run) && run.grant.status === "active" ? "devices held until " + when(run.grant.ends_at) : "",
       run.queued_by ? "by " + run.queued_by : "",
       run.claimed_by ? "on " + run.claimed_by : "",
       run.claimed_at ? "started " + when(run.claimed_at) : "queued " + when(run.queued_at),
@@ -522,9 +536,19 @@
       el("span", { class: "run-task", text: taskName(run) }),
     ]);
     open.addEventListener("click", () => showRunLog(run.id));
-    return el("li", { class: "run-row" }, [
-      el("div", { class: "run-line" }, [open, isOpen(run) ? smallButton("Stop", () => stopRun(run)) : ""]),
+    const waiting = run.status === "active" && run.phase === "awaiting_approval";
+    return el("li", { class: "run-row" + (waiting ? " run-row-waiting" : "") }, [
+      el("div", { class: "run-line" }, [
+        open,
+        el("span", { class: "run-buttons" }, [
+          waiting ? smallButton("Review", () => showRunLog(run.id), true) : "",
+          isOpen(run) ? smallButton("Stop", () => stopRun(run)) : "",
+        ]),
+      ]),
       el("span", { class: "outline-kind run-facts", text: runFacts(run).join(" · ") }),
+      run.status === "ended_unsafe"
+        ? el("span", { class: "run-unsafe-note", text: "Safe state failed: check the devices by hand." })
+        : "",
     ]);
   }
 
@@ -614,7 +638,8 @@
       title: "Stop " + taskName(run) + "?",
       body: el("p", {
         text: run.status === "active"
-          ? "The runner is told on its next request and stops the agent. Files it already uploaded stay."
+          ? (grantLive(run) ? "Its device grant ends first: the safe state is applied and the devices are released. " : "") +
+            "The runner is told on its next request and stops the agent. Files it already uploaded stay."
           : "The run leaves the queue before a runner starts it.",
       }),
       actions: [{ label: "Stop run", value: "stop", danger: true }],
@@ -639,7 +664,7 @@
     node.append(head, body);
     if (!(await viewer.showNode(node))) return;
     stopLog();
-    runLog = { id: runId, head, body, timer: 0, signature: "" };
+    runLog = { id: runId, head, body, timer: 0, signature: "", protocol: null };
     tree.select("", "");
     window.history.replaceState(null, "", "#run=" + encodeURIComponent(runId));
     await refreshLog();
@@ -694,7 +719,13 @@
         el("span", { class: "viewer-root", text: "Runs" }),
         el("span", { class: "viewer-file", text: taskName(run) }),
       ]),
-      el("div", { class: "viewer-meta" }, [runBadge(run.status), el("span", { text: run.id })]),
+      el("div", { class: "viewer-meta" }, [
+        runBadge(run.status),
+        run.status === "active" && run.phase
+          ? el("span", { class: "run-phase run-phase-" + run.phase, text: PHASE_LABELS[run.phase] || run.phase })
+          : "",
+        el("span", { text: run.id }),
+      ]),
       el("div", { class: "viewer-actions" }, [isOpen(run) ? smallButton("Stop", () => stopRun(run)) : ""])
     );
     const box = log.body;
@@ -706,6 +737,9 @@
     }
     if (run.files_uploaded) facts.push(plural(run.files_uploaded, "file") + " uploaded");
     const children = [el("p", { class: "run-log-facts", text: facts.join(" · ") })];
+    if (run.status === "ended_unsafe" || (run.grant && run.grant.status === "ended_unsafe")) children.unshift(unsafeBanner());
+    if (run.grant) children.push(grantCard(run));
+    if (run.protocol) children.push(protocolSection(log, run));
     if (run.summary) {
       children.push(el("h3", { class: "run-log-heading", text: "Summary" }), el("pre", { class: "run-log-text", text: run.summary }));
     }
@@ -731,6 +765,335 @@
     }
     box.replaceChildren(...children);
     if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  // ---- Protocols, approval and the device grant ---------------------------------------
+  // The review is built only from what the server returns as "review" (made from the
+  // normalized protocol and the device contracts). The agent's prose is shown apart,
+  // as plain text in a box that says who wrote it. Nothing here is ever set as HTML.
+
+  let signedInUser = null; // the Caddy login, when there is one (then it is the approver)
+
+  function num(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
+    return Number.isInteger(value) ? String(value) : String(Number(value.toPrecision(10)));
+  }
+
+  function minutesText(minutes) {
+    return num(minutes) + " min";
+  }
+
+  function unsafeBanner() {
+    return el("div", { class: "run-unsafe-banner", role: "alert" }, [
+      el("strong", { text: "Ended unsafe. " }),
+      "The grant's safe state could not be applied when it ended, so the devices may still be as the agent left " +
+        "them. Check them by hand before anyone uses them.",
+    ]);
+  }
+
+  // "12:34 left", kept current by tickCountdowns().
+  function countdownText(endsAt) {
+    const left = Math.round((new Date(endsAt).getTime() - Date.now()) / 1000);
+    if (!Number.isFinite(left)) return "";
+    if (left <= 0) return "time is up";
+    const hours = Math.floor(left / 3600);
+    const minutes = Math.floor((left % 3600) / 60);
+    const seconds = String(left % 60).padStart(2, "0");
+    return (hours ? hours + ":" + String(minutes).padStart(2, "0") : String(minutes)) + ":" + seconds + " left";
+  }
+
+  function tickCountdowns() {
+    for (const node of document.querySelectorAll(".grant-countdown[data-ends]")) {
+      node.textContent = countdownText(node.getAttribute("data-ends"));
+    }
+  }
+
+  function grantCard(run) {
+    const grant = run.grant;
+    const live = grant.status === "active";
+    const facts = [
+      grant.devices && grant.devices.length ? "Devices: " + grant.devices.join(", ") : "",
+      grant.approved_by ? "approved by " + grant.approved_by : "",
+      grant.starts_at ? "from " + when(grant.starts_at) : "",
+      grant.ends_at ? (live ? "until " : "planned until ") + when(grant.ends_at) : "",
+      plural(grant.calls || 0, "device call"),
+      grant.refused_calls ? plural(grant.refused_calls, "refused call") : "",
+    ].filter(Boolean);
+    const labels = {
+      active: "Grant active", ending: "Ending: applying the safe state", ended: "Grant ended",
+      ended_unsafe: "Grant ended UNSAFE", interrupted: "Grant interrupted (the Control Center restarted)",
+    };
+    const stop = live ? smallButton("Stop now", () => stopGrant(run)) : "";
+    if (stop) stop.classList.add("danger");
+    return el("section", { class: "grant-card grant-" + grant.status }, [
+      el("div", { class: "grant-head" }, [
+        el("strong", { text: labels[grant.status] || grant.status }),
+        live && grant.ends_at ? el("span", { class: "grant-countdown", "data-ends": grant.ends_at, text: countdownText(grant.ends_at) }) : "",
+        stop,
+      ]),
+      el("p", { class: "grant-facts", text: facts.join(" · ") }),
+      grant.ended_reason
+        ? el("p", { class: "grant-facts", text: "Ended: " + grant.ended_reason + (grant.ended_at ? " (" + when(grant.ended_at) + ")" : "") })
+        : "",
+    ]);
+  }
+
+  async function stopGrant(run) {
+    const choice = await dialog({
+      title: "Stop the devices now?",
+      body: el("p", {
+        text: "The agent's device calls are refused from now on, the protocol's safe state is applied, and the " +
+          "devices are released. The run goes on to its analysis.",
+      }),
+      actions: [{ label: "Stop now", value: "stop", danger: true }],
+    });
+    if (choice !== "stop") return;
+    const body = author() ? { stopped_by: author() } : {};
+    try {
+      await request(api + "/runs/" + encodeURIComponent(run.id) + "/grant/stop", jsonRequest("POST", body));
+      toast("Grant stopped");
+    } catch (error) {
+      showNotice("Couldn't stop the grant: " + error.message);
+    }
+    await loadRuns();
+    if (runLog && runLog.id === run.id) refreshLog();
+  }
+
+  // The protocol part of a run's log. Kept across log refreshes (the runner heartbeats
+  // every few seconds) while the same submission is in the same state, so a half-typed
+  // duration or note isn't lost.
+  function protocolSection(log, run) {
+    const key = [run.id, run.protocol.sha256, run.protocol.status, run.status, run.phase].join("|");
+    if (log.protocol && log.protocol.key === key) return log.protocol.node;
+    const node = el("section", { class: "protocol-section" }, [
+      el("h3", { class: "run-log-heading", text: "Protocol" }),
+      el("p", { class: "viewer-message", text: "Loading the protocol…" }),
+    ]);
+    log.protocol = { key, node };
+    loadProtocol(log, run, key);
+    return node;
+  }
+
+  async function loadProtocol(log, run, key) {
+    let data;
+    try {
+      data = await request(api + "/runs/" + encodeURIComponent(run.id) + "/protocol");
+    } catch (error) {
+      if (log.protocol && log.protocol.key === key) {
+        log.protocol.node.replaceChildren(
+          el("h3", { class: "run-log-heading", text: "Protocol" }),
+          el("p", { class: "viewer-message error", text: "Couldn't load the protocol: " + error.message })
+        );
+        log.protocol.key = ""; // try again on the next refresh
+      }
+      return;
+    }
+    if (!log.protocol || log.protocol.key !== key) return; // the run moved on meanwhile
+    log.protocol.node.replaceChildren(...renderProtocol(run, data));
+  }
+
+  const PROTOCOL_STATUS = { submitted: "waiting for approval", approved: "approved", rejected: "rejected" };
+
+  function renderProtocol(run, data) {
+    const record = run.protocol;
+    const review = data.review;
+    const parts = [
+      el("h3", { class: "run-log-heading", text: "Protocol" }),
+      el("p", { class: "run-log-facts" }, [
+        "Submission " + data.submission + " of " + MAX_SUBMISSIONS + " · " + (PROTOCOL_STATUS[data.status] || data.status) +
+          " · sha256 ",
+        el("code", { class: "protocol-sha", title: data.sha256, text: data.sha256.slice(0, 16) + "…" }),
+        record.reviewed_by ? " · reviewed by " + record.reviewed_by + (record.reviewed_at ? " " + when(record.reviewed_at) : "") : "",
+        record.approved_minutes ? " · granted " + minutesText(record.approved_minutes) : "",
+      ]),
+    ];
+    if (data.status === "rejected" && record.note) {
+      parts.push(el("div", { class: "protocol-note" }, [
+        el("span", { class: "protocol-note-label", text: "Reviewer's note (sent to the agent)" }),
+        el("pre", { class: "run-log-text", text: record.note }),
+      ]));
+    }
+    if (data.status === "submitted" && data.phase === "awaiting_approval" && data.run_status === "active") {
+      parts.push(approvalCard(run, data));
+    }
+    parts.push(reviewNode(review));
+    parts.push(el("div", { class: "agent-prose" }, [
+      el("div", { class: "agent-prose-label", text: "Written by the agent: its explanation, not checked by the Control Center" }),
+      data.prose
+        ? el("pre", { class: "agent-prose-text", text: data.prose })
+        : el("p", { class: "viewer-message", text: "The agent sent no explanation." }),
+    ]));
+    return parts;
+  }
+
+  function boundText(arg) {
+    // Every bounded argument is sent in every call (leaving one out would drive the driver's default).
+    const always = arg.always_sent ? "; always sent" : "";
+    if (arg.choices) return arg.choices.map((choice) => JSON.stringify(choice)).join(", ") + always;
+    const unit = arg.unit ? " " + arg.unit : "";
+    let text = num(arg.min) + " to " + num(arg.max) + unit;
+    if (arg.max_step !== null && arg.max_step !== undefined) {
+      text += ", steps of at most " + num(arg.max_step) + unit;
+      if (arg.step_from) text += " (the first measured from " + arg.step_from + ")";
+    } else {
+      text += ", any step";
+    }
+    if (arg.driver_limit) text += " (driver allows " + num(arg.driver_limit[0]) + " to " + num(arg.driver_limit[1]) + ")";
+    return text + always;
+  }
+
+  function reviewNode(review) {
+    const devices = review.devices.map((device) => {
+      const rows = device.methods.map((method) => {
+        const args = method.args.map((arg) =>
+          el("div", { class: "review-arg" }, [el("code", { text: arg.name }), ": " + boundText(arg)])
+        );
+        for (const name of method.never_sent) {
+          args.push(el("div", { class: "review-arg muted" }, [el("code", { text: name }), ": never sent"]));
+        }
+        if (!args.length) args.push(el("span", { class: "muted", text: "no arguments" }));
+        const limits = ["at most " + plural(method.max_calls, "call"), num(method.max_rate_hz) + " per second at most"];
+        if (method.stream) {
+          limits.push("streams of up to " + num(method.stream.max_samples) + " samples at up to " +
+            num(method.stream.max_sample_rate_hz) + " per second");
+        }
+        return el("tr", {}, [
+          el("td", {}, [el("code", { class: "review-method", text: method.name }), el("div", { class: "muted", text: method.kind + (method.unit ? ", " + method.unit : "") })]),
+          el("td", {}, args),
+          el("td", { text: limits.join("; ") }),
+        ]);
+      });
+      return el("div", { class: "review-device" }, [
+        el("h4", {}, [
+          el("code", { text: device.device_id }),
+          " · " + device.type_label + " · " + device.state,
+        ]),
+        el("table", { class: "review-table" }, [
+          el("thead", {}, [el("tr", {}, [
+            el("th", { text: "Method" }), el("th", { text: "Arguments it may send" }), el("th", { text: "Limits" }),
+          ])]),
+          el("tbody", {}, rows),
+        ]),
+      ]);
+    });
+    const safe = review.safe_state.length
+      ? el("ol", { class: "review-safe" }, review.safe_state.map((call) => el("li", {}, [el("code", { text: call.text })])))
+      : el("p", { class: "review-warning", text: "No safe state: nothing is set when the grant ends." });
+    return el("div", { class: "protocol-review" }, [
+      el("div", { class: "review-title" }, [
+        el("span", { class: "muted", text: "Title: " }), el("span", { text: review.title }),
+        el("span", { class: "muted", text: " · for " + review.task + " · asks for " + minutesText(review.duration_minutes) }),
+      ]),
+      ...devices,
+      el("h4", { text: "Safe state (applied when the grant ends, in this order)" }),
+      safe,
+      review.warnings.length
+        ? el("ul", { class: "review-warnings" }, review.warnings.map((text) => el("li", { text })))
+        : "",
+    ]);
+  }
+
+  function approvalCard(run, data) {
+    const requested = data.protocol.duration_minutes;
+    const sha256 = data.sha256; // exactly what this card shows is what gets approved
+    const minutes = el("input", { type: "number", min: "1", max: String(requested), step: "any", value: String(requested) });
+    const name = el("input", { type: "text", maxlength: "64", value: author(), autocomplete: "name" });
+    const nameField = el("label", { class: "field approval-name" }, [el("span", { class: "field-label", text: "Your name" }), name]);
+    if (signedInUser) nameField.hidden = true;
+    window.PQT.me.then((me) => {
+      if (me && me.user) {
+        signedInUser = me.user;
+        nameField.hidden = true;
+      }
+    }).catch(() => {});
+    const note = el("textarea", { rows: "3", maxlength: "2000", placeholder: "What should the agent change? (needed to reject; the agent reads it)" });
+    const error = el("p", { class: "dialog-error", role: "alert", hidden: true });
+    const approveButton = el("button", { class: "button primary", type: "button", text: "Approve" });
+    const rejectButton = el("button", { class: "button danger", type: "button", text: "Reject" });
+    const deviceList = data.review.devices.map((device) => device.device_id).join(", ");
+
+    function fail(text) {
+      error.textContent = text;
+      error.hidden = false;
+    }
+
+    function who() {
+      return signedInUser || name.value.trim();
+    }
+
+    async function send(path, body, done) {
+      approveButton.disabled = rejectButton.disabled = true;
+      try {
+        await request(api + "/runs/" + encodeURIComponent(run.id) + "/protocol/" + path, jsonRequest("POST", body));
+        if (!signedInUser && name.value.trim()) store.set("localStorage", AUTHOR_KEY, name.value.trim());
+        toast(done);
+        await loadRuns();
+        if (runLog && runLog.id === run.id) refreshLog();
+      } catch (error_) {
+        let text = error_.message;
+        const problems = error_.body && Array.isArray(error_.body.problems) ? error_.body.problems : [];
+        if (problems.length) text += " " + problems.map((item) => (item.path ? item.path + ": " : "") + item.message).join(" ");
+        fail(text);
+        approveButton.disabled = rejectButton.disabled = false;
+        if (error_.status === 409 && runLog && runLog.id === run.id) refreshLog();
+      }
+    }
+
+    approveButton.addEventListener("click", async () => {
+      error.hidden = true;
+      const value = Number(minutes.value);
+      if (!minutes.value || !Number.isFinite(value) || value < 1 || value > requested) {
+        fail("Grant between 1 and " + num(requested) + " minutes: an approval can shorten the time, never lengthen it.");
+        return;
+      }
+      if (!who()) {
+        fail("Type your name: an approval records who gave it.");
+        return;
+      }
+      const choice = await dialog({
+        title: "Approve this protocol?",
+        body: el("p", {
+          text: "The agent may then control " + deviceList + " for " + minutesText(value) + ", calling only the methods " +
+            "in the review, within its bounds. Protocol sha256 " + sha256.slice(0, 16) + "…",
+        }),
+        actions: [{ label: "Approve for " + minutesText(value), value: "approve", primary: true }],
+      });
+      if (choice !== "approve") return;
+      await send("approve", { sha256, duration_minutes: value, approved_by: who() }, "Approved: the grant has started");
+    });
+
+    rejectButton.addEventListener("click", async () => {
+      error.hidden = true;
+      const text = note.value.trim();
+      if (!text) {
+        fail("Write a note for the agent first: what should change?");
+        note.focus();
+        return;
+      }
+      await send("reject", { sha256, note: text, rejected_by: who() }, "Rejected: the agent gets your note");
+    });
+
+    return el("section", { class: "approval-card" }, [
+      el("h3", { text: "Approval needed" }),
+      el("p", {
+        text: "The agent asks to control " + deviceList + ". If you approve, it may call only the methods below, " +
+          "within the bounds shown, until the time runs out; then the safe state is applied and the devices are released.",
+      }),
+      el("dl", { class: "approval-facts" }, [
+        el("dt", { text: "Protocol" }), el("dd", {}, [el("code", { title: sha256, text: "sha256 " + sha256.slice(0, 16) + "…" })]),
+        el("dt", { text: "Asks for" }), el("dd", { text: minutesText(requested) + " (at most " + minutesText(data.max_minutes) + " here)" }),
+      ]),
+      el("div", { class: "approval-fields" }, [
+        el("label", { class: "field" }, [
+          el("span", { class: "field-label", text: "Grant for (minutes)" }), minutes,
+          el("span", { class: "field-help", text: "You can shorten it, not lengthen it." }),
+        ]),
+        nameField,
+      ]),
+      el("label", { class: "field" }, [el("span", { class: "field-label", text: "Note for the agent" }), note]),
+      error,
+      el("div", { class: "approval-actions" }, [rejectButton, approveButton]),
+    ]);
   }
 
   function experimentsSection() {
@@ -1126,6 +1489,8 @@
       metaLine.textContent = error.message;
       return;
     }
+    window.PQT.me.then((me) => { signedInUser = (me && me.user) || null; }).catch(() => {});
+    window.setInterval(tickCountdowns, 1000); // a grant's time left
     await loadLibrary();
     loadExperiments();
     loadRuns();

@@ -82,6 +82,12 @@ class RunFolder:
         return self.root / "sock"
 
     @property
+    def devices(self) -> Path:
+        """The device relay's folder (gateway.sock), created when a grant starts; mounted into run containers."""
+
+        return self.root / "devices"
+
+    @property
     def transcript(self) -> Path:
         return self.root / "transcript.jsonl"
 

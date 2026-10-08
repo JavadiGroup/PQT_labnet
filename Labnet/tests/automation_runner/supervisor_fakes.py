@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from labnet.automation_runner.backend import AgentSpec, PythonRequest, PythonResult
 from labnet.automation_runner.client import ControlCenterClient, RunnerApiError
 from labnet.automation_runner.config import RunnerSettings
+from labnet.automation_runner.protocol_text import protocol_sha256
 from labnet.control_center.app import create_app
 from labnet.control_center.config import ControlCenterSettings
 
@@ -103,26 +104,38 @@ class LocalAgent:
 
 
 class FakeBackend:
-    """Runs fake_claude.py with cwd = the working copy, as the agent container would run claude."""
+    """Runs fake_claude.py with cwd = the working copy, as the agent container would run claude.
 
-    def __init__(self, tmp_path: Path, scenario: str = "work") -> None:
-        self.scenario = scenario
-        self.record = tmp_path / "claude-record.json"
+    ``scenario`` is one scenario for every session, or a list: one per session (the last one repeats).
+    """
+
+    def __init__(self, tmp_path: Path, scenario: str | list[str] = "work", *, cost: float = 0.5) -> None:
+        self.scenarios = [scenario] if isinstance(scenario, str) else list(scenario)
+        self.cost = cost
+        self.tmp_path = tmp_path
+        self.record = tmp_path / "claude-record-1.json"
         self.specs: list[AgentSpec] = []
         self.config_files: dict[str, str] = {}
         self.stopped: list[str] = []
         self.agents: dict[str, LocalAgent] = {}
         self.on_start: Any = None
 
+    @property
+    def scenario(self) -> str:
+        return self.scenarios[0]
+
     def start_agent(self, spec: AgentSpec) -> LocalAgent:
         self.specs.append(spec)
         self.config_files = {path.name: path.read_text(encoding="utf-8") for path in spec.config.iterdir()}
+        scenario = self.scenarios[min(len(self.specs), len(self.scenarios)) - 1]
+        self.record = self.tmp_path / f"claude-record-{len(self.specs)}.json"
         env = {
             **spec.env,
             # What a local Python needs to start; the container gets spec.env only.
             "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""), "PATH": os.environ.get("PATH", ""),
             "PYTHONIOENCODING": "utf-8",
-            "FAKE_CLAUDE_RECORD": str(self.record), "FAKE_CLAUDE_SCENARIO": self.scenario,
+            "FAKE_CLAUDE_RECORD": str(self.record), "FAKE_CLAUDE_SCENARIO": scenario,
+            "FAKE_CLAUDE_COST": str(self.cost),
         }
         popen = subprocess.Popen(
             [sys.executable, str(FAKE_CLAUDE), *spec.argv[1:]], cwd=spec.work, env=env,
@@ -147,8 +160,11 @@ class FakeBackend:
         if agent is not None and agent.popen.poll() is None:
             agent.kill()
 
-    def started(self) -> dict[str, Any]:
-        return json.loads(self.record.read_text(encoding="utf-8"))
+    def started(self, session: int | None = None) -> dict[str, Any]:
+        """What fake_claude was started with: the latest session, or session 1, 2, …"""
+
+        record = self.record if session is None else self.tmp_path / f"claude-record-{session}.json"
+        return json.loads(record.read_text(encoding="utf-8"))
 
 
 class Clock:
@@ -223,13 +239,37 @@ class FakeTools:
 
 
 class ToolsFactory:
-    def __init__(self) -> None:
+    """Makes FakeTools; ``submissions`` are recorded into the run's Experiment at start, as the real tools
+    server records what submit_protocol uploaded."""
+
+    def __init__(self, submissions: list[tuple[str, dict[str, Any]]] | None = None) -> None:
         self.made: list[FakeTools] = []
+        self.submissions = submissions or []
 
     def __call__(self, **kwargs: Any) -> FakeTools:
         tools = FakeTools(**kwargs)
+        for sha256, protocol in self.submissions:
+            kwargs["experiment"].record_submission(sha256, protocol)
         self.made.append(tools)
         return tools
+
+
+class FakeRelay:
+    """Stands in for DeviceRelay (no Unix sockets needed): records how it was made, started and stopped."""
+
+    made: list["FakeRelay"] = []
+
+    def __init__(self, experiment: Any, client: Any, socket_path: Path, on_event: Any, *, run_id: str = "") -> None:
+        self.experiment, self.client, self.socket_path, self.run_id = experiment, client, socket_path, run_id
+        self.started = self.stopped = False
+        self.fail = False
+        FakeRelay.made.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 class Check:
@@ -257,6 +297,11 @@ class FakeClient:
         self.raise_409_on_events = False
         self.claims = 0
         self.on_empty_queue: Any = None
+        self.run_reads = 0
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        self.run_reads += 1
+        return {"id": run_id, "status": self.status, "phase": "planning", "protocol": None, "grant": None}
 
     def whoami(self) -> str:
         return "test-runner"
@@ -329,6 +374,88 @@ def control_center(tmp_path: Path, **overrides: Any) -> Iterator[tuple[TestClien
     with TestClient(create_app(ControlCenterSettings(**values), client_factory=lambda _: FakeCentral())) as people:
         token = people.app.state.runners.add("lab-runner")
         yield people, token
+
+
+# ---- a Control Center with run phases (Phase 3), as the supervisor sees it -----------------------------
+
+GRANT_TOKEN = "lng_" + "G" * 43
+# The protocol as the agent wrote it (what the tools server records at submission)...
+PROTOCOL = {
+    "schema_version": 1, "task": "Tasks/Task1.md", "title": "AOM efficiency vs RF frequency", "duration_minutes": 20,
+    "devices": [{"device_id": "dev01-aom", "device_type": "dummy_aom", "methods": {
+        "set_frequency": {"args": {"value": {"min": 70, "max": 90, "max_step": 2}}, "max_calls": 200, "max_rate_hz": 5},
+        "set_rf_enabled": {"args": {"enabled": {"choices": [True, False]}}, "max_calls": 10, "max_rate_hz": 1},
+    }}],
+    "safe_state": [{"device_id": "dev01-aom", "method": "set_rf_enabled", "args": {"enabled": False}}],
+}
+# ...and as the Control Center normalized and a person approved it (sent with the grant's token).
+APPROVED = {
+    "schema_version": 1, "task": "Tasks/Task1.md", "title": "AOM efficiency vs RF frequency", "duration_minutes": 20.0,
+    "devices": [{"device_id": "dev01-aom", "device_type": "dummy_aom", "methods": {
+        "set_frequency": {"args": {"value": {"min": 70.0, "max": 90.0, "max_step": 2.0}}, "max_calls": 200,
+                          "max_rate_hz": 5.0},
+        "set_rf_enabled": {"args": {"enabled": {"choices": [True, False]}}, "max_calls": 10, "max_rate_hz": 1.0},
+    }}],
+    "safe_state": [{"device_id": "dev01-aom", "method": "set_rf_enabled", "args": {"enabled": False}}],
+}
+SHA = protocol_sha256(APPROVED)
+GRANT = {"id": "grant-7", "status": "active", "approved_by": "alice", "starts_at": "2026-10-07T12:00:00Z",
+         "ends_at": "2026-10-07T12:20:00Z", "devices": ["dev01-aom"], "calls": 0, "refused_calls": 0}
+
+
+def awaiting(submissions: int = 1, sha256: str = SHA) -> dict[str, Any]:
+    return {"phase": "awaiting_approval", "protocol": {"submissions": submissions, "status": "submitted",
+                                                       "sha256": sha256, "title": PROTOCOL["title"]}}
+
+
+def approved(submissions: int = 1, sha256: str = SHA) -> dict[str, Any]:
+    return {"phase": "executing", "grant": GRANT,
+            "protocol": {"submissions": submissions, "status": "approved", "sha256": sha256,
+                         "reviewed_by": "alice", "reviewed_at": "2026-10-07T12:00:00Z"}}
+
+
+def rejected(submissions: int = 1, note: str = "Too fast: at most 1 call/s.") -> dict[str, Any]:
+    return {"phase": "planning", "protocol": {"submissions": submissions, "status": "rejected", "sha256": SHA,
+                                              "reviewed_by": "bob", "note": note}}
+
+
+class PhaseClient(FakeClient):
+    """FakeClient whose run moves through phases: ``phases`` are what get_run answers in turn (the last one
+    repeats); plus the grant token and grant/end."""
+
+    def __init__(self, phases: list[dict[str, Any]], archive: bytes | None = None) -> None:
+        super().__init__(archive)
+        self.phases = list(phases)
+        self.tokens_taken = 0
+        self.token_error: Exception | None = None
+        self.ended: list[str] = []
+        self.end_error: Exception | None = None
+        self.on_read: Any = None  # called with the read count before answering
+        self.approved: dict[str, Any] | None = APPROVED  # the protocol sent with the token
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        self.run_reads += 1
+        if self.on_read is not None:
+            self.on_read(self.run_reads)
+        phase = self.phases.pop(0) if len(self.phases) > 1 else self.phases[0]
+        return {"id": run_id, "status": self.status, "protocol": None, "grant": None, **phase}
+
+    def take_grant_token(self, run_id: str) -> tuple[str, dict[str, Any], dict[str, Any] | None]:
+        self.tokens_taken += 1
+        if self.token_error is not None:
+            raise self.token_error
+        if self.tokens_taken > 1:
+            raise RunnerApiError(409, "The grant's token was already taken.")
+        return GRANT_TOKEN, dict(GRANT), self.approved
+
+    def end_grant(self, run_id: str, reason: str) -> dict[str, Any]:
+        self.ended.append(reason)
+        if self.end_error is not None:
+            raise self.end_error
+        return {**GRANT, "status": "ended", "ended_reason": reason, "ended_at": "2026-10-07T12:10:00Z"}
+
+    def gateway_call(self, token: str, body: dict[str, Any], *, timeout: float | None = None) -> tuple[int, dict]:
+        raise AssertionError("the supervisor tests use a FakeRelay")
 
 
 def runner_client(people: TestClient, token: str, tmp_path: Path, **kwargs: Any) -> ControlCenterClient:

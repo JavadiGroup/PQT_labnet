@@ -1,8 +1,9 @@
 """The Control Center's runner API, as the runner sees it (synchronous httpx).
 
-Every request carries ``Authorization: Bearer <runner token>``. The token is
-never logged and never handed to the agent: only the supervisor and its tools
-server hold this client.
+Every request carries ``Authorization: Bearer <runner token>``, except a
+device call (``gateway_call``), which carries the grant's token instead. Neither
+token is logged or handed to the agent: only the supervisor, its tools server
+and its device relay hold this client.
 
 Retries (with backoff) happen only when the Control Center could not answer:
 a connection that failed to open, or 502/503/504 from Caddy. A 4xx is the
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
@@ -37,6 +39,10 @@ MAX_EVENT_TEXT_BYTES = 16 * 1024
 # Leaves room for the JSON around the events.
 _EVENTS_BODY_BUDGET = MAX_EVENTS_REQUEST_BYTES - 4 * 1024
 
+# A grant's token (POST runs/{id}/grant/token), sent only to the gateway.
+GRANT_TOKEN = re.compile(r"lng_[A-Za-z0-9_-]{16,128}")
+GATEWAY_TIMEOUT_SECONDS = 130 * 60.0  # a stream may take the grant's whole time; the relay passes less
+
 RETRY_STATUSES = frozenset({502, 503, 504})
 DEFAULT_RETRY_DELAYS = (0.5, 1.0, 2.0, 4.0)
 CHUNK_BYTES = 256 * 1024
@@ -56,11 +62,13 @@ class RunnerApiError(Exception):
     status a 409 carries (``cancelled``, ``failed``, …), else None.
     """
 
-    def __init__(self, status_code: int, detail: str, *, run_status: str | None = None) -> None:
+    def __init__(self, status_code: int, detail: str, *, run_status: str | None = None,
+                 body: dict[str, Any] | None = None) -> None:
         super().__init__(f"{status_code or 'no answer'}: {detail}")
         self.status_code = status_code
         self.detail = detail
         self.run_status = run_status
+        self.body = body  # the error's JSON object, when it was one (e.g. a 422's "problems")
 
 
 def truncate_text(text: str, limit: int = MAX_EVENT_TEXT_BYTES) -> str:
@@ -134,7 +142,8 @@ class ControlCenterClient:
                 run_status = body["status"]
         elif response.text:
             detail = response.text[:500]
-        return RunnerApiError(response.status_code, detail, run_status=run_status)
+        return RunnerApiError(response.status_code, detail, run_status=run_status,
+                              body=body if isinstance(body, dict) else None)
 
     def _send(self, method: str, url: str, *, stream: bool = False, body: Callable[[], dict[str, Any]] | None = None,
               **kwargs: Any) -> httpx.Response:
@@ -274,5 +283,87 @@ class ControlCenterClient:
         return self._json("GET", f"{PREFIX}/runs/{_run(run_id)}/literature/pages", params=params,
                           timeout=httpx.Timeout(90.0, connect=10.0))
 
+    # ---- Phase 3: the protocol, the grant, the gateway ----------------------------------------
 
-__all__ = ["ControlCenterClient", "MAX_EVENT_TEXT_BYTES", "RunnerApiError", "truncate_text"]
+    def submit_protocol(self, run_id: str) -> dict[str, Any]:
+        """Ask the Control Center to validate the protocol the runner uploaded for this run.
+
+        200: the reply (``{"phase": "awaiting_approval", "sha256"}``). 422: ``{"problems": [...],
+        "detail"}`` is *returned*, not raised, so the agent can fix the file and submit again.
+        Anything else (409 after 3 submissions or in the wrong phase, …) raises RunnerApiError.
+        Never retried after it may have been sent: each submission counts.
+        """
+
+        try:
+            return self._json("POST", f"{PREFIX}/runs/{_run(run_id)}/protocol", json={},
+                              timeout=httpx.Timeout(90.0, connect=10.0))  # validation asks the live network
+        except RunnerApiError as exc:
+            if exc.status_code != 422:
+                raise
+            body = exc.body or {}
+            problems = body.get("problems")
+            if not isinstance(problems, list):
+                # FastAPI's own 422 (a malformed request) carries its problems in "detail".
+                problems = body.get("detail") if isinstance(body.get("detail"), list) else []
+            detail = body.get("detail") if isinstance(body.get("detail"), str) else exc.detail
+            return {"problems": problems, "detail": detail}
+
+    def take_grant_token(self, run_id: str) -> tuple[str, dict[str, Any], dict[str, Any] | None]:
+        """The grant's token (once per grant, while the run is executing), the grant, and the protocol
+        the person approved, as the Control Center normalized it (None if it sent none)."""
+
+        reply = self._json("POST", f"{PREFIX}/runs/{_run(run_id)}/grant/token", json={})
+        token, grant, protocol = reply.get("token"), reply.get("grant"), reply.get("protocol")
+        if not isinstance(token, str) or GRANT_TOKEN.fullmatch(token) is None:
+            raise RunnerApiError(200, "The Control Center sent no usable grant token.")
+        return token, grant if isinstance(grant, dict) else {}, protocol if isinstance(protocol, dict) else None
+
+    def end_grant(self, run_id: str, reason: str) -> dict[str, Any]:
+        """End the run's grant now (the Control Center applies the safe state); the grant as it ended."""
+
+        reason = reason if len(reason) <= 500 else reason[:497] + "…"
+        reply = self._json("POST", f"{PREFIX}/runs/{_run(run_id)}/grant/end", json={"reason": reason},
+                           timeout=httpx.Timeout(120.0, connect=10.0))  # the safe state may take a while
+        grant = reply.get("grant")
+        return grant if isinstance(grant, dict) else {}
+
+    def gateway_call(self, token: str, body: dict[str, Any], *,
+                     timeout: float = GATEWAY_TIMEOUT_SECONDS) -> tuple[int, dict[str, Any]]:
+        """One device call through the gateway, with the GRANT token (never the runner token).
+
+        (HTTP status, JSON object) exactly as the gateway answered, refusals included. A device call
+        is never sent twice: only a connection that never opened is retried. Raises RunnerApiError
+        (status 0) when the Control Center couldn't be reached.
+        """
+
+        if GRANT_TOKEN.fullmatch(token) is None:
+            raise ValueError("Not a grant token.")
+        # Replaces the client's Authorization header for this request only.
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{PREFIX}/gateway/calls"
+        attempt = 0
+        while True:
+            try:
+                response = self._http.post(url, json=body, headers=headers,
+                                           timeout=httpx.Timeout(timeout, connect=10.0))
+                break
+            except _NOT_SENT as exc:
+                if attempt >= len(self._retry_delays):
+                    raise RunnerApiError(0, f"The Control Center didn't answer the device call: {exc!r}") from exc
+                LOGGER.warning("gateway call failed (%s); retrying", type(exc).__name__)
+            except httpx.TransportError as exc:
+                raise RunnerApiError(0, f"The device call broke off ({type(exc).__name__}); it may or may not "
+                                        "have reached the device.") from exc
+            self._sleep(self._retry_delays[attempt])
+            attempt += 1
+        try:
+            data = response.json()
+        except (ValueError, UnicodeDecodeError):
+            data = None
+        if not isinstance(data, dict):
+            data = {"detail": f"The Control Center answered {response.status_code} without a JSON object.",
+                    "code": "unavailable" if response.status_code >= 500 else "refused"}
+        return response.status_code, data
+
+
+__all__ = ["ControlCenterClient", "GRANT_TOKEN", "MAX_EVENT_TEXT_BYTES", "RunnerApiError", "truncate_text"]

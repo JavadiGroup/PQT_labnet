@@ -8,7 +8,9 @@ scenario ($FAKE_CLAUDE_SCENARIO):
   files in the agent's folders and, wrongly, in people's folders;
 * ``slow``: init, then a line every 50 ms for up to 30 s (to be stopped);
 * ``crash``: some stderr and exit 3 without a result;
-* ``unsigned``: an authentication failure, as Claude Code reports it.
+* ``unsigned``: an authentication failure, as Claude Code reports it;
+* ``submit``: writes a protocol, "calls" submit_protocol and ends its turn;
+* ``measure``: "runs" an experiment: writes Data/new_data/scan.csv, no analysis.
 """
 
 from __future__ import annotations
@@ -66,6 +68,21 @@ def main() -> int:
         say({"type": "result", "subtype": "success", "is_error": True, "num_turns": 1,
              "result": "Invalid API key · Please run /login", "total_cost_usd": 0, "session_id": SESSION})
         return 1
+    if scenario == "submit":
+        write("Protocols/Task1.protocol.json", '{"schema_version": 1}\n')
+        write("Protocols/Task1.protocol.md", "# Method\n")
+        assistant({"type": "tool_use", "id": "toolu_9", "name": "mcp__labnet__submit_protocol", "input": {}})
+        tool_result("toolu_9", "Protocol submitted for approval. END YOUR TURN NOW.")
+        assistant({"type": "text", "text": "I proposed a frequency scan; waiting for approval."})
+        say({"type": "result", "subtype": "success", "is_error": False, "num_turns": 4, "result": "Submitted.",
+             "total_cost_usd": float(os.environ.get("FAKE_CLAUDE_COST", "0.5")), "session_id": SESSION})
+        return 0
+    if scenario == "measure":
+        write("ScriptsUtilized/src/scan.py", "import labnet_devices\n")
+        write("Data/new_data/scan.csv", "f_mhz,eff\n80,0.42\n")
+        say({"type": "result", "subtype": "success", "is_error": False, "num_turns": 6, "result": "Measured.",
+             "total_cost_usd": 0.5, "session_id": SESSION})
+        return 0
     if scenario == "slow":
         deadline = time.monotonic() + 30
         n = 0

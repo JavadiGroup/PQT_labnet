@@ -21,6 +21,8 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
+from .protocol_text import device_lines, safe_state_lines
+
 
 SOCKET_ENV = "LABNET_TOOLS_SOCKET"
 DEFAULT_SOCKET = "/run/labnet/tools.sock"
@@ -28,12 +30,15 @@ REQUEST_TIMEOUT_SECONDS = 120.0
 # On top of a script's own time limit: starting and removing its container.
 RUN_OVERHEAD_SECONDS = 120.0
 MAX_RUN_SECONDS = 6 * 3600.0
+PROTOCOL_TIMEOUT_SECONDS = 240.0  # two uploads, then validation against the live network
+END_TIMEOUT_SECONDS = 240.0  # the Control Center applies the safe state before it answers
 MARK_START, MARK_END = "\x02", "\x03"  # how the Control Center marks matched words in snippets
 
 INSTRUCTIONS = (
     "The PQT lab's tools for this run: search and read the project's literature (cite pages as "
-    "`path p.N`, exactly as the results give them), and run the Python scripts you write under "
-    "ScriptsUtilized/ in a sandbox without network."
+    "`path p.N`, exactly as the results give them), run the Python scripts you write under "
+    "ScriptsUtilized/ in a sandbox without network, and, for tasks that need lab devices, submit a "
+    "protocol for a person's approval, check the grant and end the experiment."
 )
 
 SEARCH_DESCRIPTION = """Search the lab literature this project may use (its share of the lab library plus its own Literature/ papers) by keywords.
@@ -57,6 +62,18 @@ RUN_DESCRIPTION = """Run a Python script you wrote under ScriptsUtilized/ (e.g. 
 The sandbox: Python 3.11 with numpy, scipy, pandas and matplotlib (Agg backend: save figures, don't show them); the project's working copy is the current directory (/work), so use relative paths: read e.g. Data/example_data/scan.csv, write results to Data/new_data/, Analysis/outputs/ and so on.
 It has NO network, no lab devices and no credentials, and limits on CPU, memory, processes and time (timeout_seconds, capped by the runner). The container is deleted afterwards; only files written under /work remain.
 `args` become sys.argv[1:]. Scripts run isolated (`python -I`): the script's own folder is not on sys.path, so to import a helper module you wrote, first `sys.path.insert(0, "ScriptsUtilized/src")`. Scripts run one at a time. You get the exit code and the last ~8 KB of stdout and stderr; the full output is saved in the log file named in the result (ScriptsUtilized/logs/...), which you can Read."""
+
+
+SUBMIT_DESCRIPTION = """Submit this task's protocol for a person's approval: Protocols/<task>.protocol.json (the devices, methods and bounds; the format is in your briefing) and Protocols/<task>.protocol.md (your method in prose, for the reviewer).
+
+Both files are uploaded as they are now and checked by the Control Center against the live lab network. If there are problems you get them as a list: fix the JSON and submit again (a run can have at most 3 protocols reviewed).
+If it is accepted, END YOUR TURN at once: the run waits for a person's decision and resumes this conversation with it."""
+
+GRANT_DESCRIPTION = """Show this run's protocol and device grant: the phase (planning, awaiting_approval, executing, analyzing), the review decision and note, and while a grant is active the approved devices, methods and bounds, the time left and the calls made so far."""
+
+END_DESCRIPTION = """End the experiment now: the Control Center refuses further device calls, puts the devices in the protocol's safe state and releases them.
+
+Call it as soon as the measurements are done, or when something goes wrong (a refused call you can't fix, readings that look unsafe or wrong). `reason`: one sentence, recorded with the grant. It can't be undone."""
 
 
 class ToolsClient:
@@ -174,6 +191,90 @@ def format_run(data: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _problem(item: Any) -> str:
+    if isinstance(item, dict):
+        where = str(item.get("path") or item.get("loc") or "").strip()
+        message = str(item.get("message") or item.get("msg") or item).strip()
+        return f"- {where}: {message}" if where else f"- {message}"
+    return f"- {item}"
+
+
+def format_submit(data: dict[str, Any]) -> str:
+    if data.get("status") == "submitted":
+        title = data.get("title")
+        named = f": “{title}”" if title else ""
+        return (
+            f"Protocol submitted for approval{named} (sha256 {data.get('sha256')}).\n\n"
+            "A person must now review it in the Control Center. END YOUR TURN NOW: don't call any more tools; "
+            "finish with a short summary of what you proposed and why. This run will be resumed in this same "
+            "conversation with the decision: if approved, with the approved devices, bounds and end time; "
+            "if rejected, with the reviewer's note.\n"
+        )
+    problems = data.get("problems") or []
+    lines = [f"The protocol was NOT accepted: {len(problems)} problem(s)." if problems
+             else "The protocol was NOT accepted."]
+    if data.get("detail"):
+        lines.append(str(data["detail"]))
+    lines += ["", *(_problem(item) for item in problems)]
+    lines += ["", "Fix Protocols/<task>.protocol.json (and the .md if needed), then call submit_protocol again."]
+    if not data.get("submitted"):
+        lines.append("(It wasn't sent to the Control Center.)")
+    lines.append("A run can have at most 3 protocols reviewed: get this one right before it goes to a person.")
+    return "\n".join(lines) + "\n"
+
+
+def _seconds(value: Any) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return "unknown"
+    minutes, seconds = divmod(int(value), 60)
+    return f"{minutes} min {seconds:02d} s" if minutes else f"{seconds} s"
+
+
+def format_grant(data: dict[str, Any]) -> str:
+    lines = [f"Phase: {data.get('phase') or 'unknown'} (run {data.get('run_status') or 'unknown'})"]
+    protocol = data.get("protocol") or {}
+    if protocol:
+        text = f"Protocol: {protocol.get('status', '?')}"
+        if protocol.get("title"):
+            text += f" “{protocol['title']}”"
+        if protocol.get("submissions") is not None:
+            text += f", submission {protocol['submissions']} of at most 3"
+        if protocol.get("reviewed_by"):
+            text += f", reviewed by {protocol['reviewed_by']}"
+        lines.append(text)
+        if protocol.get("note"):
+            lines.append(f"Reviewer's note: {protocol['note']}")
+    else:
+        lines.append("Protocol: none submitted yet.")
+    grant = data.get("grant") or {}
+    if data.get("active"):
+        lines.append(f"Grant: ACTIVE until {grant.get('ends_at', '?')} ({_seconds(data.get('seconds_left'))} left); "
+                     f"calls so far {grant.get('calls', '?')}, refused {grant.get('refused_calls', '?')}.")
+        lines += ["", "Approved devices and bounds (hard limits, checked on every call):",
+                  *device_lines(data.get("devices"))]
+        safe = safe_state_lines(data.get("safe_state"))
+        if safe:
+            lines += ["", "Safe state applied when the grant ends:", *safe]
+        lines += ["", "Use them from a run_python script: `import labnet_devices; devices = labnet_devices.connect()`."]
+    elif grant:
+        reason = data.get("ended_reason") or grant.get("ended_reason") or ""
+        lines.append(f"Grant: {grant.get('status', 'ended')}" + (f" ({reason})" if reason else "")
+                     + ". No device calls are possible any more.")
+    else:
+        lines.append("Grant: none. No device calls are possible.")
+    if data.get("note"):
+        lines += ["", f"Note: {data['note']}"]
+    return "\n".join(lines) + "\n"
+
+
+def format_end(data: dict[str, Any]) -> str:
+    if data.get("ended"):
+        return ("The experiment has ended: the Control Center refuses further device calls, applied the safe "
+                "state and released the devices. Now analyse what you measured and write Analysis/Analysis.md "
+                "and Data/new_data/DATA_SUMMARY.md.\n")
+    return f"{data.get('detail') or 'The experiment had already ended.'} No device calls are possible any more.\n"
+
+
 # ---- the server ------------------------------------------------------------------------------
 
 
@@ -217,6 +318,18 @@ def build_server(client: ToolsClient | None = None) -> FastMCP:
         wait = min(max(limit, 1.0), MAX_RUN_SECONDS) + RUN_OVERHEAD_SECONDS
         return format_run(await call("run_python", payload, timeout=wait))
 
+    @server.tool(description=SUBMIT_DESCRIPTION, structured_output=False)
+    async def submit_protocol() -> str:
+        return format_submit(await call("submit_protocol", {}, timeout=PROTOCOL_TIMEOUT_SECONDS))
+
+    @server.tool(description=GRANT_DESCRIPTION, structured_output=False)
+    async def grant_status() -> str:
+        return format_grant(await call("grant_status", {}))
+
+    @server.tool(description=END_DESCRIPTION, structured_output=False)
+    async def end_experiment(reason: str) -> str:
+        return format_end(await call("end_experiment", {"reason": reason}, timeout=END_TIMEOUT_SECONDS))
+
     return server
 
 
@@ -228,4 +341,7 @@ if __name__ == "__main__":
     main()
 
 
-__all__ = ["ToolsClient", "build_server", "format_pages", "format_papers", "format_run", "format_search", "main"]
+__all__ = [
+    "ToolsClient", "build_server", "format_end", "format_grant", "format_pages", "format_papers", "format_run",
+    "format_search", "format_submit", "main",
+]

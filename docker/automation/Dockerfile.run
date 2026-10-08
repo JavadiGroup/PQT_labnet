@@ -2,7 +2,9 @@
 #
 # The supervisor starts it with --network none, --read-only, --cap-drop ALL, no-new-privileges,
 # --user 1000:1000, CPU/memory/pid limits and only the run's working copy mounted at /work
-# (see labnet/automation_runner/docker_backend.py). It holds no labnet code and no credentials.
+# (see labnet/automation_runner/docker_backend.py). It holds no credentials, and of labnet only
+# labnet_devices.py: a stdlib-only module that talks to /run/labnet-devices/gateway.sock, which the
+# supervisor mounts only while an approved experiment's grant is active.
 #
 # Build context: the repository root (compose.yaml: context ../..).
 
@@ -15,6 +17,9 @@ COPY docker/automation/requirements-run.txt /tmp/requirements-run.txt
 RUN pip install --only-binary=:all: -r /tmp/requirements-run.txt \
  && rm /tmp/requirements-run.txt \
  && useradd --uid 1000 --user-group --no-create-home --home-dir /tmp --shell /usr/sbin/nologin runner
+
+# `import labnet_devices` works under `python -I` too (site-packages stays on the path).
+COPY --chmod=644 docker/automation/labnet_devices.py /usr/local/lib/python3.11/site-packages/labnet_devices.py
 
 # Figures are saved, never shown. The root file system is read-only at run time, so matplotlib's
 # cache and HOME live on the /tmp tmpfs. (`python -I` ignores PYTHON* variables, not these.)

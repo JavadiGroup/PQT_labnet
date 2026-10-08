@@ -77,6 +77,11 @@ except OSError as exc:
     out["internet"] = "blocked (%s)" % type(exc).__name__
 out["inside"] = os.path.isfile("/work/inside.txt")
 out["visible"] = [p for p in sys.argv[1:] if os.path.exists(p)]
+try:
+    import labnet_devices
+    out["shim"] = callable(getattr(labnet_devices, "connect", None))
+except Exception as exc:
+    out["shim"] = "%s: %s" % (type(exc).__name__, exc)
 print(json.dumps(out))
 '''
 
@@ -272,7 +277,7 @@ def run_all(settings: RunnerSettings, backend: Any, client: Any) -> list[Check]:
             outside.write_text("outside\n", encoding="utf-8")
             (work / "ScriptsUtilized" / "selfcheck_probe.py").write_text(RUN_PROBE, encoding="utf-8")
             hidden = [s.work_dir.as_posix(), outside.as_posix(), work.as_posix(), "/var/run/docker.sock",
-                      "/run/docker.sock", "/claude", "/run/labnet"]
+                      "/run/docker.sock", "/claude", "/run/labnet", "/run/labnet-devices"]
             result = backend.run_python(PythonRequest(
                 run_id=SELFCHECK_RUN_ID, work=work, script="ScriptsUtilized/selfcheck_probe.py", args=hidden,
                 timeout_seconds=60))
@@ -287,7 +292,9 @@ def run_all(settings: RunnerSettings, backend: Any, client: Any) -> list[Check]:
                                               "(is LABNET_RUNNER_WORK_DIR mounted at the same path in the runner?).")
         _require(not found.get("visible"), f"A run container can see {', '.join(found['visible'])}.")
         _require(found.get("uid") == 1000, f"A run container runs as uid {found.get('uid')}, not 1000.")
-        return f"no network ({found['internet']}); sees only its working copy; uid 1000."
+        _require(found.get("shim") is True, f"{s.run_image} has no usable labnet_devices module "
+                                            f"({found.get('shim')}): rebuild the images.")
+        return f"no network ({found['internet']}); sees only its working copy; uid 1000; labnet_devices installed."
 
     def agent_network() -> str:
         proxy = urlsplit(s.egress_proxy)

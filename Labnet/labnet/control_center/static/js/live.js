@@ -41,11 +41,24 @@
     return minutes < 1 ? "<1 min" : minutes < 90 ? minutes + " min" : (minutes / 60).toFixed(1) + " h";
   }
 
-  // Who holds a leased device, e.g. "Live in the Control Center · 12 min".
-  // Empty for devices nobody holds.
+  // "ends in 12 min" for an Automation grant's end time (epoch seconds).
+  function endsIn(epochSeconds) {
+    const seconds = Math.max(0, Math.round(epochSeconds - Date.now() / 1000));
+    if (seconds < 60) return seconds <= 0 ? "ending now" : "ends in <1 min";
+    const minutes = Math.ceil(seconds / 60);
+    return "ends in " + (minutes < 90 ? minutes + " min" : (minutes / 60).toFixed(1) + " h");
+  }
+
+  // Who holds a leased device, e.g. "Live in the Control Center · 12 min" or
+  // "Automation: aom-study-k7q2mx/Task1 · ends in 14 min". Empty for devices nobody holds.
   function holderText(device) {
     const held = device.control_center;
     if (!held) return device.state === "leased" ? "Leased by another LabNet client" : "";
+    if (held.automation) {
+      const grant = held.automation;
+      if (grant.status === "ending") return "Automation: " + grant.label + " · ending (safe state)";
+      return "Automation: " + grant.label + " · " + endsIn(grant.ends_at);
+    }
     let what;
     if (held.session !== device.id) what = "Used by a script on " + held.session;
     else if (held.streaming) what = "Live in the Control Center";
@@ -59,6 +72,23 @@
   async function releaseDevice(sessionId) {
     const response = await fetch("/api/devices/" + encodeURIComponent(sessionId) + "/release", {
       method: "POST",
+    });
+    if (!response.ok) {
+      let detail = "HTTP " + response.status;
+      try {
+        detail = (await response.json()).detail || detail;
+      } catch (_ignored) {}
+      throw new Error(detail);
+    }
+  }
+
+  // Ends an Automation grant now: its safe state is applied and the leases released.
+  // Like Pause, open to anyone viewing the Network or Devices page.
+  async function stopGrant(stopUrl) {
+    const response = await fetch(stopUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
     });
     if (!response.ok) {
       let detail = "HTTP " + response.status;
@@ -118,6 +148,7 @@
       ]);
     }
     const message = el("span", { class: "holder-text", text: holderText(device) });
+    if (held.automation) return automationStrip(held, message);
     const pause = el("button", { class: "button small", type: "button", text: "Pause" });
     pause.title = "Stop " + (held.session === device.id ? "this device's" : held.session + "'s") +
       " live view and script, and release the lease";
@@ -138,6 +169,32 @@
       message,
       pause,
       el("a", { href: held.page, text: "Open page" }),
+    ]);
+  }
+
+  // The strip for a device an Automation grant holds: project/task, time left, Stop.
+  function automationStrip(held, message) {
+    const grant = held.automation;
+    const stop = el("button", { class: "button small danger", type: "button", text: "Stop" });
+    stop.title = "End this Automation experiment now: its safe state is applied and the devices released";
+    stop.disabled = grant.status === "ending";
+    stop.addEventListener("click", async () => {
+      stop.disabled = true;
+      stop.textContent = "Stopping…";
+      try {
+        await stopGrant(grant.stop_url);
+        refreshNow();
+      } catch (error) {
+        message.textContent = "Could not stop: " + error.message;
+        stop.disabled = false;
+        stop.textContent = "Stop";
+      }
+    });
+    return el("div", { class: "holder automation" }, [
+      el("span", { class: "holder-dot", "aria-hidden": "true" }),
+      message,
+      stop,
+      el("a", { href: held.page, text: "Open project" }),
     ]);
   }
 

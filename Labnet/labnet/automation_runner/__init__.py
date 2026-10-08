@@ -11,8 +11,11 @@ project's agent folders: the Control Center checks every upload.
       │     network: an internal Docker network whose only way out is the
       │     egress proxy (Anthropic's API, nothing else); talks to the
       │     supervisor through a Unix socket in its run folder (no token)
-      └─ run container per run_python call: the working copy only,
-            no network, no credentials, CPU/memory/process limits
+      ├─ run container per run_python call: the working copy only,
+      │     no network, no credentials, CPU/memory/process limits; while a
+      │     device grant is active, also the device relay's socket
+      └─ device relay (Phase 3): relays scripts' device calls to the Control
+            Center's gateway, adding the grant's token itself
 
 Modules:
 
@@ -23,6 +26,8 @@ Modules:
 * ``events``        Claude Code's stream-json → run events
 * ``tools_server``  what the agent's tools call (over the Unix socket)
 * ``mcp_server``    the MCP server inside the agent container
+* ``devices_relay`` the run's protocol submissions and grant; the device relay
+* ``protocol_text``  a protocol's devices and bounds as text for the agent
 * ``egress_proxy``  the allow-listing HTTPS proxy (its own container)
 * ``selfcheck``     refuses to start unless the isolation really holds
 * ``supervisor``    the claim → run → upload loop; ``labnet-runner``

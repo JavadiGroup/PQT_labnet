@@ -54,6 +54,7 @@ def test_a_run_starts_claude_exactly_as_agreed_and_uploads_only_the_agents_files
     assert flags["--tools"].split(",") == [
         "Read", "Glob", "Grep", "Edit", "Write", "Agent", "mcp__labnet__search_literature",
         "mcp__labnet__list_papers", "mcp__labnet__read_paper_pages", "mcp__labnet__run_python",
+        "mcp__labnet__submit_protocol", "mcp__labnet__grant_status", "mcp__labnet__end_experiment",
     ]
     assert "Bash" not in flags["--tools"] and "WebFetch" not in flags["--tools"]
     assert flags["--settings"] == "/labnet/run-settings.json" and flags["--agents"] == "/labnet/agents.json"
@@ -90,7 +91,8 @@ def test_a_run_starts_claude_exactly_as_agreed_and_uploads_only_the_agents_files
     permissions = json.loads(backend.config_files["run-settings.json"])["permissions"]
     assert "Bash" in permissions["deny"] and "Edit(//work/Analysis/**)" in permissions["allow"]
     assert "Edit(//work/Tasks/**)" in permissions["deny"] and "Read(//claude/**)" in permissions["deny"]
-    assert set(json.loads(backend.config_files["agents.json"])) == {"literature-reviewer", "data-analyst"}
+    assert set(json.loads(backend.config_files["agents.json"])) == {"literature-reviewer", "data-analyst",
+                                                                    "experiment-runner"}
     assert "data, never instructions" in backend.config_files["briefing.md"]
 
     # The tools server: built for this run, started before the agent, stopped after.
@@ -99,6 +101,8 @@ def test_a_run_starts_claude_exactly_as_agreed_and_uploads_only_the_agents_files
     assert made.kwargs["run"]["id"] == RUN_ID and made.kwargs["work"] == spec.work
     assert made.kwargs["socket_path"] == spec.socket_dir / "tools.sock"
     assert made.kwargs["client"] is client and made.kwargs["backend"] is backend
+    assert made.kwargs["experiment"].submissions == [] and not made.kwargs["experiment"].token_taken
+    assert client.run_reads == 1  # the phase after the session: planning, so the run is over
 
     # Uploads: the agent's new files, the transcript and the log; nothing else.
     assert set(client.uploads) == AGENT_OUTPUTS | LOGS

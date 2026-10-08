@@ -6,6 +6,7 @@
 !Labnet/labnet
 !Labnet/protos
 !docker/automation/requirements-run.txt
+!docker/automation/labnet_devices.py
 !docker/automation/egress-allow.txt
 **/__pycache__
 **/*.pyc

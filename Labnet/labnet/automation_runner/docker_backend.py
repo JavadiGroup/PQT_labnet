@@ -20,6 +20,9 @@ run container (``run_python``): one script, then gone.
     * the working copy only, same user and hardening as the agent, and the
       run's CPU / memory (no swap) / pid limits and a time limit; on the time
       limit the container is killed by name;
+    * only while a device grant is active: the device relay's folder at
+      /run/labnet-devices (its gateway.sock; the supervisor adds the grant's
+      token to each call, so the container still holds no credentials);
     * no logging driver: what it prints is captured here, with caps, instead
       of piling up in Docker's log files.
 
@@ -53,6 +56,7 @@ LOGGER = logging.getLogger("labnet.automation_runner.docker")
 RUN_ID = re.compile(r"run-[0-9]{8}-[0-9]{6}-[a-z2-9]{4}")
 CONTAINER_USER = "1000:1000"  # "node" in the agent image, "runner" in the run image
 LABEL = "labnet.run"
+DEVICES_MOUNT = "/run/labnet-devices"  # labnet_devices.connect()'s default socket is in here
 
 AGENT_MEMORY = "4g"
 AGENT_CPUS = "2"
@@ -376,6 +380,10 @@ class DockerBackend:
         for arg in request.args:
             if not isinstance(arg, str) or "\0" in arg:
                 raise DockerError("Script arguments must be text without NUL characters.")
+        devices: list[str] = []
+        if request.devices_socket_dir is not None:
+            # Read-write, so the script can connect to the relay's socket; it holds nothing else.
+            devices = ["-v", f"{host_path(request.devices_socket_dir)}:{DEVICES_MOUNT}"]
         return [
             "run", "--rm",
             "--name", name,
@@ -385,12 +393,19 @@ class DockerBackend:
             *_hardening(["/tmp:rw,nosuid,size=256m"], str(settings.python_pids),
                         f"{settings.python_memory_mb}m", f"{settings.python_cpus:g}"),
             "-v", f"{host_path(request.work)}:/work",
+            *devices,
             "-w", "/work",
             settings.run_image,
             "python", "-I", script_path(request.script), *request.args,
         ]
 
     def run_python(self, request: PythonRequest) -> PythonResult:
+        with self._lock:
+            # stop_run is only ever called as a run ends: a request still on its way in may not start
+            # a container after the sweep, where nothing would kill it.
+            if check_run_id(request.run_id) in self._stopped:
+                return PythonResult(exit_code=None, stdout="", stderr="[labnet: the run was stopped]\n",
+                                    seconds=0.0, timed_out=False)
         name = f"labnet-py-{check_run_id(request.run_id)}-{next(self._counter)}"
         argv = self.python_argv(name, request)
         timeout = min(float(request.timeout_seconds), self.settings.python_timeout_seconds)

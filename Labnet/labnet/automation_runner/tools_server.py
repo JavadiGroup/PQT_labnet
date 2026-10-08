@@ -10,6 +10,9 @@ the container (``mcp_server``) forwards each tool call here:
     POST /v1/read_paper_pages    {paper, first, last}       → up to 20 pages' text
     POST /v1/run_python          {script, args?, timeout_seconds?}
                                  → {exit_code, timed_out, seconds, stdout_tail, stderr_tail, log}
+    POST /v1/submit_protocol     {}  → {status: submitted, sha256, phase} | {status: problems, problems, detail}
+    POST /v1/grant_status        {}  → {phase, protocol, grant, devices, seconds_left, ...}
+    POST /v1/end_experiment      {reason}                   → {ended, grant}
 
 Errors are ``{"error": "<message for the agent>"}`` with a 4xx/5xx status.
 The literature tools forward to the Control Center with the runner's token,
@@ -18,6 +21,13 @@ under ``ScriptsUtilized/`` in a fresh run container (``Backend.run_python``):
 one at a time per run, with the time limit capped by the runner's settings.
 Its whole output goes to ``ScriptsUtilized/logs/<run id>/<NN>-<script>.log``
 (uploaded with the run's results); the agent gets the tails.
+
+``submit_protocol`` uploads ``Protocols/<task stem>.protocol.json`` and ``.md``
+from the working copy, then asks the Control Center to validate them; an
+accepted submission is recorded in the run's :class:`~.devices_relay.Experiment`
+(the supervisor and the device relay read the approved bounds from there).
+While a grant is active, ``run_python`` mounts the device relay's folder into
+the run container; ``end_experiment`` ends the grant early.
 
 Everything the agent sends is untrusted: paths go through the same checks as
 the Control Center's (``automation_paths``), and the log file is created with
@@ -34,19 +44,26 @@ import shlex
 import socket
 import socketserver
 import stat
+import tempfile
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from labnet.control_center.automation_paths import PathRefused, check_handle_inside, clean_relative, resolve_inside
+from labnet.control_center.automation_paths import (
+    PathRefused, check_handle_inside, clean_relative, open_inside, resolve_inside,
+)
 from labnet.control_center.redaction import redact
 
 from .backend import Backend, PythonRequest
 from .config import RunnerSettings
 from .docker_backend import RUN_ID
+
+
+if TYPE_CHECKING:
+    from .devices_relay import Experiment
 
 
 LOGGER = logging.getLogger("labnet.automation_runner.tools")
@@ -61,6 +78,9 @@ MAX_QUERY_CHARS = 1000
 TAIL_CHARS = 8000
 DEFAULT_TIMEOUT_SECONDS = 300.0
 MAX_UNIX_PATH_BYTES = 107  # sun_path is 108 bytes on Linux, with the NUL
+PROTOCOLS = "Protocols"
+MAX_PROTOCOL_BYTES = 64 * 1024  # the Control Center's limit, for the JSON and for the prose
+MAX_REASON_CHARS = 500
 
 EventSink = Callable[[str, str], None]
 
@@ -118,23 +138,34 @@ class Tools:
         backend: Backend,
         settings: RunnerSettings,
         on_event: EventSink,
+        experiment: "Experiment | None" = None,
     ) -> None:
         run_id = run.get("id") if isinstance(run, dict) else None
         if not isinstance(run_id, str) or RUN_ID.fullmatch(run_id) is None:
             raise ValueError(f"Not a run: {run_id!r}")
         self.run_id = run_id
+        self.task = run.get("task") if isinstance(run.get("task"), str) else ""
         self.work = Path(work)
         self.client = client
         self.backend = backend
         self.settings = settings
         self.on_event = on_event
+        if experiment is None:
+            from .devices_relay import Experiment
+
+            experiment = Experiment()
+        self.experiment = experiment
         self._python_lock = threading.Lock()
+        self._protocol_lock = threading.Lock()
         self._next_log = 1
         self.routes: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "/v1/search_literature": self.search_literature,
             "/v1/list_papers": self.list_papers,
             "/v1/read_paper_pages": self.read_paper_pages,
             "/v1/run_python": self.run_python,
+            "/v1/submit_protocol": self.submit_protocol,
+            "/v1/grant_status": self.grant_status,
+            "/v1/end_experiment": self.end_experiment,
         }
 
     def call(self, path: str, data: Any) -> tuple[int, dict[str, Any]]:
@@ -280,8 +311,10 @@ class Tools:
         with self._python_lock:  # one run container at a time per run
             started = datetime.now(timezone.utc)
             try:
+                devices = self.experiment.devices_dir()  # only while a grant is active
                 result = self.backend.run_python(PythonRequest(
-                    run_id=self.run_id, work=self.work, script=shown, args=args, timeout_seconds=timeout))
+                    run_id=self.run_id, work=self.work, script=shown, args=args, timeout_seconds=timeout,
+                    devices_socket_dir=devices))
             except Exception as exc:  # noqa: BLE001
                 LOGGER.exception("run_python %s could not run", shown)
                 self._emit("tool", f"run_python {shown} → could not start: {type(exc).__name__}")
@@ -312,7 +345,7 @@ class Tools:
                 shown_log = None
                 stderr += f"\n[labnet: the log file could not be written: {getattr(exc, 'message', exc)}]\n"
                 outcome += " (no log file)"
-        self._emit("tool", f"run_python {shown} → {outcome}")
+        self._emit("tool", f"run_python {shown} → {outcome}{' (with devices)' if devices else ''}")
         return {
             "exit_code": result.exit_code,
             "timed_out": result.timed_out,
@@ -321,6 +354,149 @@ class Tools:
             "stderr_tail": tail(stderr, where=shown_log or ""),
             "log": shown_log,
         }
+
+
+    # ---- the protocol and the experiment ----------------------------------------------
+
+    def _ask(self, call: Callable[[], Any], what: str) -> Any:
+        """A Control Center call for a tool; its refusals become ToolErrors the agent reads."""
+
+        try:
+            return call()
+        except Exception as exc:  # noqa: BLE001
+            status = getattr(exc, "status_code", None)
+            if status == 409:
+                run_status = getattr(exc, "run_status", None)
+                detail = getattr(exc, "detail", None) or str(exc)
+                raise ToolError(409, f"{what}: the Control Center refused ({detail})"
+                                     + (f"; the run is {run_status}." if run_status else ".")) from None
+            if isinstance(status, int) and status > 0:
+                detail = getattr(exc, "detail", None) or str(exc)
+                raise ToolError(status if 400 <= status < 500 else 502,
+                                f"{what}: the Control Center answered {status}: {detail}") from None
+            LOGGER.warning("%s failed: %r", what, exc)
+            raise ToolError(502, f"{what}: the Control Center couldn't be reached ({type(exc).__name__}); "
+                                 "try again shortly.") from None
+
+    def _protocol_paths(self) -> tuple[PurePosixPath, PurePosixPath]:
+        task = PurePosixPath(self.task) if self.task.startswith("Tasks/") else None
+        if task is None or not task.stem:
+            raise ToolError(400, "This run has no task file, so it can't have a protocol.")
+        return (PurePosixPath(PROTOCOLS, f"{task.stem}.protocol.json"),
+                PurePosixPath(PROTOCOLS, f"{task.stem}.protocol.md"))
+
+    def _read_protocol_file(self, relative: PurePosixPath) -> bytes:
+        try:
+            file, info = open_inside(self.work, relative)
+        except FileNotFoundError:
+            raise ToolError(404, f"{relative.as_posix()} doesn't exist. Write it first (the format is in your "
+                                 "briefing), then call submit_protocol again.") from None
+        except PathRefused as exc:
+            raise ToolError(400, f"{relative.as_posix()}: {exc}") from None
+        with file:
+            data = file.read(MAX_PROTOCOL_BYTES + 1)
+        if len(data) > MAX_PROTOCOL_BYTES or info.st_size > MAX_PROTOCOL_BYTES:
+            raise ToolError(413, f"{relative.as_posix()} is larger than {MAX_PROTOCOL_BYTES // 1024} KiB.")
+        return data
+
+    def _upload_bytes(self, relative: PurePosixPath, data: bytes) -> None:
+        """Upload exactly ``data`` (read once, so what is validated is what was checked here)."""
+
+        handle, name = tempfile.mkstemp(prefix="labnet-protocol-")
+        try:
+            with os.fdopen(handle, "wb") as file:
+                file.write(data)
+            self._ask(lambda: self.client.upload(self.run_id, relative.as_posix(), Path(name)),
+                      f"uploading {relative.as_posix()}")
+        finally:
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _not_submitted(relative: PurePosixPath, message: str) -> dict[str, Any]:
+        return {"status": "problems", "submitted": False,
+                "problems": [{"path": relative.as_posix(), "message": message}],
+                "detail": "Not submitted: fix this first (it didn't count as a submission)."}
+
+    def submit_protocol(self, data: dict[str, Any]) -> dict[str, Any]:
+        _only(data)
+        json_path, prose_path = self._protocol_paths()
+        with self._protocol_lock:
+            if self.experiment.token_taken:
+                raise ToolError(409, "This run's protocol was already approved and its experiment has started "
+                                     "(or ended); a run gets one experiment. Use grant_status.")
+            raw = self._read_protocol_file(json_path)
+            prose = self._read_protocol_file(prose_path)
+            try:
+                protocol = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError) as exc:
+                return self._not_submitted(json_path, f"isn't valid JSON ({exc}). Comments aren't allowed in JSON.")
+            if not isinstance(protocol, dict):
+                return self._not_submitted(json_path, "must be one JSON object (see the format in your briefing).")
+            if not prose.strip():
+                return self._not_submitted(prose_path, "is empty: explain the method, why these bounds, and what "
+                                                       "will be measured, for the person who approves it.")
+            self._upload_bytes(json_path, raw)
+            self._upload_bytes(prose_path, prose)
+            reply = self._ask(lambda: self.client.submit_protocol(self.run_id), "submit_protocol")
+            if not isinstance(reply, dict):
+                raise ToolError(502, "submit_protocol: the Control Center sent an unexpected answer.")
+            sha256 = reply.get("sha256")
+            if not isinstance(sha256, str) or not sha256:
+                problems = [item for item in reply.get("problems") or [] if isinstance(item, (dict, str))]
+                self._emit("tool", f"submit_protocol → not accepted ({len(problems)} problem(s))")
+                return {"status": "problems", "submitted": True, "problems": problems[:200],
+                        "detail": redact(str(reply.get("detail") or "The protocol was not accepted."))}
+            self.experiment.record_submission(sha256, protocol)
+            self._emit("tool", f"submit_protocol → submitted for approval (sha256 {sha256[:12]}…)")
+            return {"status": "submitted", "sha256": sha256, "phase": reply.get("phase"),
+                    "title": protocol.get("title") if isinstance(protocol.get("title"), str) else None}
+
+    def grant_status(self, data: dict[str, Any]) -> dict[str, Any]:
+        _only(data)
+        summary = self.experiment.summary()
+        note = ""
+        try:
+            run = self.client.get_run(self.run_id)
+        except Exception as exc:  # noqa: BLE001  (what the runner knows is still worth answering)
+            LOGGER.warning("grant_status: get_run failed: %r", exc)
+            run, note = {}, "The Control Center couldn't be asked just now; this is what the runner knows."
+        run = run if isinstance(run, dict) else {}
+        grant = run.get("grant") if isinstance(run.get("grant"), dict) else {}
+        if grant:
+            summary["grant"] = {**summary["grant"], **grant}
+        if summary["active"] and grant.get("status") not in (None, "active"):
+            summary["active"] = False
+        if summary["active"]:
+            from .devices_relay import seconds_until
+
+            left = seconds_until(summary["grant"].get("ends_at"))
+            summary["seconds_left"] = None if left is None else round(left, 1)
+        protocol = run.get("protocol") if isinstance(run.get("protocol"), dict) else {}
+        return {
+            "phase": run.get("phase"),
+            "run_status": run.get("status"),
+            "protocol": {key: protocol.get(key) for key in ("status", "submissions", "sha256", "title",
+                                                             "reviewed_by", "reviewed_at", "note") if key in protocol},
+            **summary,
+            "note": note,
+        }
+
+    def end_experiment(self, data: dict[str, Any]) -> dict[str, Any]:
+        _only(data, "reason")
+        reason = _text(data, "reason", limit=MAX_REASON_CHARS)
+        if not self.experiment.token_taken:
+            raise ToolError(409, "No experiment is running in this run (no approved protocol has started).")
+        if not self.experiment.active:
+            return {"ended": False, "detail": "The experiment had already ended.", **self.experiment.summary()}
+        self.experiment.end(f"The agent ended the experiment: {reason}")  # no call goes out from now on
+        grant = self._ask(lambda: self.client.end_grant(self.run_id, reason), "end_experiment")
+        self.experiment.end("", grant if isinstance(grant, dict) else None, confirmed=True)
+        self._emit("tool", f"end_experiment → the grant ended ({str(reason)[:200]})")
+        return {"ended": True, "detail": "The experiment has ended: the Control Center applied the safe state.",
+                **self.experiment.summary()}
 
 
 def make_handler(tools: Tools) -> type[BaseHTTPRequestHandler]:
@@ -396,8 +572,9 @@ class ToolsServer:
         backend: Backend,
         settings: RunnerSettings,
         on_event: EventSink,
+        experiment: "Experiment | None" = None,
     ) -> None:
-        self.tools = Tools(run, work, client, backend, settings, on_event)
+        self.tools = Tools(run, work, client, backend, settings, on_event, experiment)
         self.socket_path = Path(socket_path)
         self._server: Any = None
         self._thread: threading.Thread | None = None

@@ -84,6 +84,26 @@ EOF
     ok "Runner '$RUNNER_NAME' issued; its token is in $RUNNER_ENV"
 }
 
+# WSL stops a distribution (and its Docker containers) soon after the last
+# Windows program attached to it exits. While the runner is up, a hidden
+# `wsl.exe ... sleep` keeps it running, as Docker Desktop does.
+KEEPALIVE_TAG="labnet-runner-keepalive"
+
+keepalive_running() {
+    powershell.exe -NoProfile -Command "@(Get-CimInstance Win32_Process -Filter \"Name='wsl.exe'\" | Where-Object { \$_.CommandLine -like '*$KEEPALIVE_TAG*' }).Count" 2> /dev/null | tr -d '\r' | grep -qv '^0$'
+}
+
+start_keepalive() {
+    keepalive_running && return
+    # One argument string: Start-Process joins a list with spaces and no quoting.
+    powershell.exe -NoProfile -Command "Start-Process wsl.exe -WindowStyle Hidden -ArgumentList '-d $WSL_DISTRO -e bash -c \"exec -a $KEEPALIVE_TAG sleep infinity\"'" \
+        || die "Couldn't start the hidden process that keeps WSL running."
+}
+
+stop_keepalive() {
+    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='wsl.exe'\" | Where-Object { \$_.CommandLine -like '*$KEEPALIVE_TAG*' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" > /dev/null 2>&1 || true
+}
+
 case "${1:-}" in
     build)
         check_wsl
@@ -99,12 +119,14 @@ case "${1:-}" in
         check_wsl
         write_env
         log "Starting the egress proxy and the runner"
+        start_keepalive
         compose up -d egress runner
-        ok "Runner started. It checks its isolation first: scripts/dev/runner.sh logs" ;;
+        ok "Runner started (WSL is kept running until runner.sh down). It checks its isolation first: scripts/dev/runner.sh logs" ;;
     down)
         check_wsl
         compose down
-        ok "Runner stopped" ;;
+        stop_keepalive
+        ok "Runner stopped; WSL may stop again when idle" ;;
     logs)
         compose logs -f --tail 100 runner ;;
     self-check)

@@ -18,6 +18,7 @@ that works on them has its own API (``automation_runner_api.py``).
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import tempfile
 from collections.abc import Awaitable, Callable
@@ -28,14 +29,23 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from .automation_grants import GRANT_ID
 from .automation_paths import ZONES
-from .automation_runs import RunStore
+from .automation_protocol import (
+    MAX_NOTE_CHARACTERS,
+    build_review,
+    network_devices,
+    protocol_sha256,
+    validate_protocol,
+)
+from .automation_runs import SHA256, RunStore
 from .automation_store import RUN_SETTINGS, AutomationError, AutomationStore, etag, parse_settings
 from .experiment_schema import EXPERIMENT_ID
 from .experiment_store import ExperimentError, ExperimentStore
 from .request_checks import author as _author
 from .request_checks import read_json as _json
 from .request_checks import same_origin
+from .redaction import redact
 
 
 NetworkSource = Callable[[], Awaitable[dict[str, Any]]]
@@ -329,6 +339,151 @@ def create_automation_router(network: NetworkSource, *, max_file_bytes: int) -> 
             runs(request).cancel, project_id, run_id, author=_author(request, data, "cancelled_by")
         )
         return {"run": run}
+
+    # ---- protocols: a person reviews, approves or rejects (see automation_protocol.py) ----
+    # The review is built from the normalized protocol the Control Center stored and the
+    # device contracts; the agent's prose is returned apart from it, as untrusted text.
+
+    approvals = asyncio.Lock()  # one approval at a time: two people can't both start a grant
+
+    @router.get("/projects/{project_id}/runs/{run_id}/protocol")
+    async def get_protocol(request: Request, project_id: str, run_id: str) -> JSONResponse:
+        """{"protocol" (normalized), "sha256", "review", "prose" (the agent's, untrusted), "status", ...}."""
+
+        stored = await asyncio.to_thread(runs(request).stored_protocol, project_id, run_id)
+        run, record = stored["run"], stored["run"]["protocol"]
+        review = build_review(stored["protocol"], await network_devices(network))
+        return JSONResponse({
+            "protocol": stored["protocol"],
+            "sha256": stored["sha256"],
+            "review": review,
+            "prose": stored["prose"],
+            "status": record["status"],
+            "submission": record["submissions"],
+            "phase": run["phase"],
+            "run_status": run["status"],
+            "max_minutes": runs(request).grant_max_minutes,
+        }, headers={"Cache-Control": "no-store"})
+
+    @router.post("/projects/{project_id}/runs/{run_id}/protocol/approve", dependencies=changes)
+    async def approve_protocol(request: Request, project_id: str, run_id: str) -> dict[str, Any]:
+        """{"sha256": the one reviewed, "duration_minutes": at most what it asks for}.
+
+        The protocol is checked again against the project and the live network, then the
+        grant takes its leases; only then is the run executing. 409 for another sha256, a
+        run not waiting for approval, a protocol the network no longer allows, or a busy device.
+        """
+
+        data = await _json(request)
+        sha256, minutes = data.get("sha256"), data.get("duration_minutes")
+        if not isinstance(sha256, str) or SHA256.fullmatch(sha256) is None:
+            raise AutomationError(422, "Send the sha256 of the protocol you reviewed.")
+        try:  # an integer too large for a float (JSON allows 10**400) is refused, not a 500
+            minutes = None if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) else float(minutes)
+        except OverflowError:
+            minutes = None
+        if minutes is None or not math.isfinite(minutes) or minutes < 1:
+            raise AutomationError(422, "duration_minutes must be a number of minutes, at least 1.")
+        approver = _author(request, data, "approved_by")
+        if not approver:
+            raise AutomationError(422, "Type your name: an approval records who gave it.")
+        run_store = runs(request)
+        async with approvals:
+            stored = await asyncio.to_thread(run_store.approval_target, project_id, run_id, sha256)
+            protocol, run = stored["protocol"], stored["run"]
+            if minutes > protocol["duration_minutes"]:
+                raise AutomationError(
+                    422, f"The protocol asks for {protocol['duration_minutes']:g} minutes; an approval can shorten "
+                         "that, never lengthen it.")
+            live = await network_devices(network)
+            if live is None:
+                raise AutomationError(503, "Central can't be reached now, so the devices can't be checked. "
+                                           "Try again in a minute.")
+            project = await asyncio.to_thread(run_store.automation.get, project_id)
+            canvas = await asyncio.to_thread(run_store.automation.snapshot_devices, project_id)
+            normalized, problems = validate_protocol(
+                protocol, project=project, live_devices=live, canvas_devices=canvas,
+                max_minutes=run_store.grant_max_minutes, task=run["task"],
+            )
+            if problems or normalized is None or protocol_sha256(normalized) != sha256:
+                raise AutomationError(
+                    409, "The project or the network changed since this protocol was submitted, and it no longer "
+                         "passes the checks. Reject it so the agent can write a new one.",
+                    problems=problems,
+                )
+            grants = getattr(request.app.state, "grants", None)
+            if grants is None:
+                raise AutomationError(503, "Device grants aren't available in this Control Center.")
+            try:
+                grant = await grants.create(
+                    project_id=project_id, run_id=run_id, protocol=normalized, sha256=sha256,
+                    duration_minutes=float(minutes), approved_by=approver,
+                )
+            except AutomationError:
+                raise  # GrantError is one: its status (409 for a busy device) and code; nothing changed
+            except Exception as exc:
+                status = getattr(exc, "status_code", None)
+                if isinstance(status, int) and 400 <= status < 600:
+                    raise AutomationError(status, redact(str(getattr(exc, "detail", exc))),
+                                          code=getattr(exc, "code", None)) from None
+                raise
+            try:
+                run = await asyncio.to_thread(run_store.mark_approved, project_id, run_id, sha256=sha256, by=approver,
+                                              minutes=float(minutes))
+            except AutomationError:
+                # The run ended (cancelled, timed out) while the leases were being taken.
+                await grants.end_for_run(run_id, reason="the run ended while it was being approved")
+                raise
+        return {"run": run, "grant": grant}
+
+    @router.post("/projects/{project_id}/runs/{run_id}/protocol/reject", dependencies=changes)
+    async def reject_protocol(request: Request, project_id: str, run_id: str) -> dict[str, Any]:
+        """{"note": what to change (shown to the agent), "sha256"?}: the run is planning again."""
+
+        data = await _json(request)
+        note = data.get("note")
+        if not isinstance(note, str) or not note.strip():
+            raise AutomationError(422, "Write a note for the agent: what should change in the protocol?")
+        note = note.replace("\r\n", "\n").strip()
+        if len(note) > MAX_NOTE_CHARACTERS:
+            raise AutomationError(422, f"The note may be at most {MAX_NOTE_CHARACTERS} characters.")
+        sha256 = data.get("sha256")
+        if sha256 is not None and (not isinstance(sha256, str) or SHA256.fullmatch(sha256) is None):
+            raise AutomationError(422, "sha256: send the sha256 of the protocol you reviewed, or leave it out.")
+        reviewer = _author(request, data, "rejected_by")
+        async with approvals:
+            run = await asyncio.to_thread(
+                runs(request).reject, project_id, run_id, by=reviewer, note=note, sha256=sha256
+            )
+        return {"run": run}
+
+    # ---- device grants: anyone viewing may stop one (see automation_grants.py) ----------
+
+    @router.post("/projects/{project_id}/runs/{run_id}/grant/stop", dependencies=changes)
+    async def stop_run_grant(request: Request, project_id: str, run_id: str) -> dict[str, Any]:
+        """End the run's grant now: safe state, then the leases are released. {"grant"}."""
+
+        data = await _json(request)
+        by = _author(request, data, "stopped_by")
+        await asyncio.to_thread(runs(request).get, project_id, run_id)  # 404 unless the project's run
+        grants = request.app.state.grants
+        grant_id = grants.grant_id_for_run(run_id)
+        if grant_id is None:
+            grant = grants.grant_for_run(run_id)  # already over: say how it ended
+            if grant is None:
+                raise AutomationError(409, "This run has no active grant.", code="ended")
+            return {"grant": grant}
+        return {"grant": await grants.stop(grant_id, reason="Stopped from the project page", by=by)}
+
+    @router.post("/grants/{grant_id}/stop", dependencies=changes)
+    async def stop_grant(request: Request, grant_id: str) -> dict[str, Any]:
+        """The Stop button on the Network and Devices pages. {"grant"}."""
+
+        data = await _json(request)
+        by = _author(request, data, "stopped_by")
+        if GRANT_ID.fullmatch(grant_id) is None:
+            raise AutomationError(404, "No such grant.", code="ended")
+        return {"grant": await request.app.state.grants.stop(grant_id, reason="Stopped from the device list", by=by)}
 
     # ---- the lab library ------------------------------------------------------------
 

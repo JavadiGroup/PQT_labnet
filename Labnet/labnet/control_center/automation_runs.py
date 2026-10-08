@@ -23,11 +23,30 @@ the runner was heard from (``last_seen_at``). An active run not heard from for
 ``stale_minutes`` is marked failed: whenever runs are read, and by
 ``sweep_forever`` once a minute. The clock starts no earlier than this process,
 so runners get a full window to reconnect after the Control Center restarts.
+
+Phase 3 (protocols and grants). While a run is active its ``phase`` says what
+it is doing: ``planning`` from the claim; ``awaiting_approval`` once the
+Control Center accepted its protocol (``accept_protocol``; at most
+MAX_SUBMISSIONS per run); back to ``planning`` when a person rejects it, with
+the note in ``protocol.note``; ``executing`` once a person approved it and the
+grant took its leases; ``analyzing`` once the grant ended. A protocol not
+approved or rejected within ``approval_hours`` fails the run. The normalized
+protocol a person reviews is kept as ``state/<project>/protocols/<run>-<n>.json``
+(its canonical text, so its sha256 is the file's), the agent's prose beside it
+as ``<run>-<n>.md``.
+
+The ``grant`` field belongs to the GrantManager (``automation_grants.py``),
+which writes it with :meth:`RunStore.set_grant` and moves the phase with
+:meth:`RunStore.set_phase`. A grant whose safe state failed (``ended_unsafe``)
+makes the run end ``ended_unsafe`` however it finishes. ``on_run_ended`` is
+called after a run stops being active (cancelled, timed out, finished), so the
+GrantManager can end its grant.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -37,6 +56,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, BinaryIO, Literal
@@ -45,9 +65,11 @@ from pydantic import Field, ValidationError
 
 from .agent import supports_effort
 from .automation_paths import PathRefused, clean_relative, open_inside, zone_of
+from .automation_protocol import MAX_NOTE_CHARACTERS, MAX_PROSE_BYTES, canonical
 from .automation_store import PROJECT_ID, AutomationError, AutomationStore, ModelName, refusal, write_json_file
 from .config import AGENT_EFFORTS, DEFAULT_AGENT_MODELS
-from .experiment_schema import Text, _Strict
+from .experiment_schema import DeviceId, Text, _Strict
+from .experiment_store import replace_with_retry
 from .redaction import redact
 
 
@@ -56,8 +78,19 @@ RUN_ID = re.compile(r"run-[0-9]{8}-[0-9]{6}-[a-z2-9]{4}")
 _ID_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
 SCHEMA_VERSION = 1
 QUEUED, ACTIVE, DONE, FAILED, STOPPED, CANCELLED = "queued", "active", "done", "failed", "stopped", "cancelled"
+ENDED_UNSAFE = "ended_unsafe"  # the run's grant couldn't put its devices in their safe state
 OPEN = frozenset({QUEUED, ACTIVE})
 FINISHED = (DONE, FAILED, STOPPED)  # how a runner may end a run
+PLANNING, AWAITING_APPROVAL, EXECUTING, ANALYZING = "planning", "awaiting_approval", "executing", "analyzing"
+# How an active run's phase may move (set_phase); staying put is always fine.
+PHASE_MOVES = {
+    PLANNING: frozenset({AWAITING_APPROVAL}),
+    AWAITING_APPROVAL: frozenset({PLANNING, EXECUTING, ANALYZING}),
+    EXECUTING: frozenset({ANALYZING}),
+    ANALYZING: frozenset(),
+}
+MAX_SUBMISSIONS = 3  # protocols a run may send for approval (ones the checks refused don't count)
+SHA256 = re.compile(r"[0-9a-f]{64}")
 EVENT_KIND = re.compile(r"[a-z][a-z0-9_]{0,31}")
 MAX_EVENT_TEXT_BYTES = 16 * 1024
 MAX_EVENTS_PER_REQUEST = 100
@@ -77,12 +110,47 @@ class RunSettings(_Strict):
     max_budget_usd: float = Field(gt=0, le=100)
 
 
+Stamp = Annotated[str, Field(max_length=40)]
+
+
+class RunProtocol(_Strict):
+    """The run's latest protocol submission (the protocol itself is in state/<project>/protocols/)."""
+
+    submissions: int = Field(ge=1, le=MAX_SUBMISSIONS)
+    status: Literal["submitted", "approved", "rejected"]
+    sha256: Annotated[str, Field(pattern=rf"^{SHA256.pattern}$")]
+    title: Text(120) = ""
+    duration_minutes: float = Field(gt=0)  # as requested
+    submitted_at: Stamp
+    reviewed_by: Text(64) | None = None
+    reviewed_at: Stamp | None = None
+    approved_minutes: float | None = Field(default=None, gt=0)  # what the approver granted (≤ requested)
+    note: Text(MAX_NOTE_CHARACTERS, multiline=True) | None = None  # the reviewer's, on a rejection
+
+
+class RunGrant(_Strict):
+    """The run's device grant, as the GrantManager reports it (``RunStore.set_grant``)."""
+
+    id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+    status: Literal["active", "ending", "ended", "ended_unsafe", "interrupted"]
+    approved_by: Text(64) = ""
+    starts_at: Stamp | None = None
+    ends_at: Stamp | None = None
+    devices: list[DeviceId] = Field(default_factory=list, max_length=16)
+    calls: int = Field(default=0, ge=0)
+    refused_calls: int = Field(default=0, ge=0)
+    ended_reason: Text(500, multiline=True) | None = None
+    ended_at: Stamp | None = None
+
+
 class Run(_Strict):
     schema_version: Literal[1] = SCHEMA_VERSION
     id: Annotated[str, Field(pattern=rf"^{RUN_ID.pattern}$")]
     project_id: Annotated[str, Field(pattern=rf"^{PROJECT_ID.pattern}$")]
     task: Annotated[str, Field(max_length=240)]
-    status: Literal["queued", "active", "done", "failed", "stopped", "cancelled"]
+    status: Literal["queued", "active", "done", "failed", "stopped", "cancelled", "ended_unsafe"]
+    # While active: planning → awaiting_approval → executing → analyzing (None before the claim).
+    phase: Literal["planning", "awaiting_approval", "executing", "analyzing"] | None = None
     queued_by: Text(64) = ""
     queued_at: Annotated[str, Field(max_length=40)]
     claimed_by: Annotated[str, Field(max_length=32)] | None = None
@@ -95,6 +163,8 @@ class Run(_Strict):
     files_uploaded: int = Field(default=0, ge=0)
     summary: Text(MAX_SUMMARY_CHARACTERS, multiline=True) = ""
     settings: RunSettings | None = None  # None only in records from before run settings
+    protocol: RunProtocol | None = None
+    grant: RunGrant | None = None
 
 
 def _parse_stamp(value: str) -> datetime:
@@ -117,10 +187,23 @@ class RunStore:
         models: tuple[str, ...] = DEFAULT_AGENT_MODELS,
         default_model: str = "sonnet",
         default_effort: str = "high",
+        approval_hours: float = 24.0,
+        grant_max_minutes: float = 120.0,
+        on_run_ended: Callable[[str, str, str], None] | None = None,
     ) -> None:
         self.automation = automation
         self.quota_bytes = quota_bytes
         self.stale_minutes = stale_minutes
+        self.approval_hours = approval_hours  # LABNET_AUTOMATION_APPROVAL_HOURS
+        self.grant_max_minutes = grant_max_minutes  # LABNET_AUTOMATION_GRANT_MAX_MINUTES: a protocol's longest duration
+        # Called as on_run_ended(project_id, run_id, status) right after a run stops being
+        # active: cancelled, failed for going quiet or waiting too long for approval, or
+        # finished by its runner. It is called from whichever thread made the change (a
+        # worker thread of asyncio.to_thread, the sweeper's, or the event loop's), possibly
+        # with this store's lock held: it must not block or call back into the store; it
+        # should only schedule the work (loop.call_soon_threadsafe). Its errors are logged.
+        # The GrantManager may set it after the store is made.
+        self.on_run_ended = on_run_ended
         self.models = models  # LABNET_AGENT_MODELS: what a project may choose
         self.default_model = default_model  # LABNET_AGENT_MODEL and _EFFORT: when it chooses nothing
         self.default_effort = default_effort
@@ -193,26 +276,62 @@ class RunStore:
             streamed = self._streamed.get(run["id"])  # an upload still coming in counts too
         return max(heard, streamed or heard, self._started)
 
-    def _expire(self, run: dict[str, Any]) -> dict[str, Any]:
-        """``run``, or (call with the lock held) the same run marked failed if its runner went quiet."""
+    def _waited_too_long(self, run: dict[str, Any]) -> bool:
+        """True when the run's protocol has waited for a person longer than approval_hours."""
 
-        if run["status"] != ACTIVE or self._now() - self._last_heard(run) <= timedelta(minutes=self.stale_minutes):
+        protocol = run.get("protocol")
+        if run.get("phase") != AWAITING_APPROVAL or not protocol or protocol["status"] != "submitted":
+            return False
+        return self._now() - _parse_stamp(protocol["submitted_at"]) > timedelta(hours=self.approval_hours)
+
+    def _expire(self, run: dict[str, Any]) -> dict[str, Any]:
+        """``run``, or (call with the lock held) the same run marked failed if its runner went quiet
+        or its protocol waited for approval longer than ``approval_hours``."""
+
+        if run["status"] != ACTIVE:
             return run
-        minutes = f"{self.stale_minutes:g} minute{'' if self.stale_minutes == 1 else 's'}"
-        run = {
-            **run, "status": FAILED, "finished_at": self._stamp(),
-            "summary": f"The runner stopped reporting (nothing for {minutes}).",
-        }
+        if self._waited_too_long(run):
+            hours = f"{self.approval_hours:g} hour{'' if self.approval_hours == 1 else 's'}"
+            summary = f"Nobody approved or rejected the protocol within {hours}."
+            line = ("approval", f"The protocol waited more than {hours} for approval: the run is marked failed.")
+            reason = "waited too long for approval"
+        elif self._now() - self._last_heard(run) > timedelta(minutes=self.stale_minutes):
+            minutes = f"{self.stale_minutes:g} minute{'' if self.stale_minutes == 1 else 's'}"
+            summary = f"The runner stopped reporting (nothing for {minutes})."
+            last = run["last_seen_at"] or run["claimed_at"]
+            line = ("timeout", f"Nothing from {run['claimed_by']} since {last} "
+                               f"(more than {minutes}): the run is marked failed.")
+            reason = f"{run['claimed_by']} went quiet"
+        else:
+            return run
+        run = {**run, "status": self._final(run, FAILED), "finished_at": self._stamp(), "summary": summary}
         self._save(run)
         self._forget_usage(run["id"])
-        last = run["last_seen_at"] or run["claimed_at"]
         try:
-            self._write_events(run, [("timeout", f"Nothing from {run['claimed_by']} since {last} "
-                                                 f"(more than {minutes}): the run is marked failed.")])
+            self._write_events(run, [line])
         except (AutomationError, OSError) as exc:  # a full log: the run still fails
-            LOGGER.warning("Couldn't log the timeout of %s: %s", run["id"], exc)
-        LOGGER.warning("Run %s failed: %s went quiet", run["id"], run["claimed_by"])
+            LOGGER.warning("Couldn't log the end of %s: %s", run["id"], exc)
+        LOGGER.warning("Run %s failed: %s", run["id"], reason)
+        self._ended(run)
         return run
+
+    @staticmethod
+    def _final(run: dict[str, Any], status: str) -> str:
+        """The status a run ends with: ended_unsafe whenever its grant's safe state failed."""
+
+        grant = run.get("grant")
+        return ENDED_UNSAFE if grant and grant["status"] == ENDED_UNSAFE else status
+
+    def _ended(self, run: dict[str, Any]) -> None:
+        """Tell on_run_ended that ``run`` is no longer active."""
+
+        hook = self.on_run_ended
+        if hook is None:
+            return
+        try:
+            hook(run["project_id"], run["id"], run["status"])
+        except Exception:  # noqa: BLE001 - the run has ended either way
+            LOGGER.exception("on_run_ended failed for %s", run["id"])
 
     def sweep(self) -> list[dict[str, Any]]:
         """Mark every active run whose runner went quiet as failed; returns those runs."""
@@ -342,9 +461,12 @@ class RunStore:
             run = self._load(project_id, run_id)
             if run["status"] not in OPEN:
                 raise AutomationError(409, f"This run has already ended ({run['status']}).", status=run["status"])
-            run = {**run, "status": CANCELLED, "cancelled_by": author, "finished_at": self._stamp()}
+            was_active = run["status"] == ACTIVE
+            run = {**run, "status": self._final(run, CANCELLED), "cancelled_by": author, "finished_at": self._stamp()}
             self._save(run)
         self._forget_usage(run_id)
+        if was_active:
+            self._ended(run)
         return run
 
     def delete_project(self, project_id: str, *, version: int | None) -> None:
@@ -426,7 +548,8 @@ class RunStore:
                     LOGGER.warning("Not claiming %s: %s", run["id"], exc)
                     continue
                 stamp = self._stamp()
-                run = {**run, "status": ACTIVE, "claimed_by": runner, "claimed_at": stamp, "last_seen_at": stamp}
+                run = {**run, "status": ACTIVE, "phase": PLANNING, "claimed_by": runner, "claimed_at": stamp,
+                       "last_seen_at": stamp}
                 self._save(run)
                 return run
         return None
@@ -482,7 +605,7 @@ class RunStore:
             run = self.runner_run(run_id, runner, save=False)
             try:
                 run = Run.model_validate({
-                    **run, "status": status, "summary": redact(summary.replace("\r\n", "\n")),
+                    **run, "status": self._final(run, status), "summary": redact(summary.replace("\r\n", "\n")),
                     "finished_at": self._stamp(),
                 }).model_dump(mode="json")
             except ValidationError as exc:
@@ -490,6 +613,242 @@ class RunStore:
                 raise AutomationError(422, f"summary: {message}") from None
             self._save(run)
         self._forget_usage(run_id)
+        self._ended(run)
+        return run
+
+    # ---- protocols: submitted by the runner, approved or rejected by a person -----------
+
+    def _protocols_folder(self, project_id: str) -> Path:
+        """``state/<project>/protocols``: the normalized protocols people reviewed."""
+
+        return self._folder(project_id).parent / "protocols"
+
+    @staticmethod
+    def _write_bytes(folder: Path, name: str, data: bytes) -> None:
+        """Write ``folder/name`` all at once (a temp file, then a replace)."""
+
+        folder.mkdir(parents=True, exist_ok=True)
+        handle, temporary = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".tmp")
+        try:
+            with os.fdopen(handle, "wb") as file:
+                file.write(data)
+                file.flush()
+                os.fsync(file.fileno())
+            replace_with_retry(Path(temporary), folder / name, "The protocol store is busy; try again.")
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
+
+    def _log(self, run: dict[str, Any], kind: str, text: str) -> None:
+        """One line in the run's log from the Control Center itself; a full log doesn't stop anything."""
+
+        try:
+            self._write_events(run, [(kind, text)])
+        except (AutomationError, OSError) as exc:
+            LOGGER.warning("Couldn't log %s for %s: %s", kind, run["id"], exc)
+
+    @staticmethod
+    def _check_can_submit(run: dict[str, Any]) -> None:
+        if run.get("phase") != PLANNING:
+            raise AutomationError(
+                409, f"This run is {run.get('phase') or 'not planning'}; a protocol can be submitted only while it "
+                     "is planning (before one is approved, or after one was rejected).",
+                phase=run.get("phase"),
+            )
+        protocol = run.get("protocol")
+        if protocol and protocol["submissions"] >= MAX_SUBMISSIONS:
+            raise AutomationError(
+                409, f"This run has already sent {MAX_SUBMISSIONS} protocols for approval, the most a run may. "
+                     "Finish the run; a person can queue the task again.",
+                phase=run.get("phase"),
+            )
+
+    def protocol_target(self, run_id: str, runner: str) -> dict[str, Any]:
+        """The run, if ``runner`` may submit a protocol for it now: active, its own, planning,
+        and with submissions left (404/409 otherwise)."""
+
+        with self._lock:
+            run = self.runner_run(run_id, runner)
+            self._check_can_submit(run)
+            return run
+
+    def protocol_refused(self, run_id: str, runner: str, problems: list[dict[str, str]]) -> None:
+        """Log that the checks refused a protocol (it doesn't count as a submission)."""
+
+        with self._lock:
+            run = self.runner_run(run_id, runner)
+            first = problems[0] if problems else {"path": "", "message": ""}
+            where = f"{first['path']}: " if first["path"] else ""
+            self._log(run, "protocol", f"The protocol was refused ({len(problems)} problem"
+                                       f"{'' if len(problems) == 1 else 's'}); first: {where}{first['message']}")
+
+    def accept_protocol(
+        self, run_id: str, runner: str, protocol: dict[str, Any], prose: str | None
+    ) -> dict[str, Any]:
+        """Keep a protocol that passed the checks and put the run up for approval.
+
+        ``protocol`` is the normalized protocol (``validate_protocol``); it is stored as
+        its canonical text, so the file's sha256 is the one a person approves.
+        """
+
+        text = canonical(protocol).encode("utf-8")
+        sha256 = hashlib.sha256(text).hexdigest()
+        with self._lock:
+            run = self.runner_run(run_id, runner, save=False)
+            self._check_can_submit(run)
+            number = (run["protocol"]["submissions"] if run.get("protocol") else 0) + 1
+            folder = self._protocols_folder(run["project_id"])
+            self._write_bytes(folder, f"{run_id}-{number}.json", text)
+            if prose is not None:
+                self._write_bytes(folder, f"{run_id}-{number}.md", prose.encode("utf-8"))
+            record = RunProtocol(
+                submissions=number, status="submitted", sha256=sha256, title=protocol["title"],
+                duration_minutes=float(protocol["duration_minutes"]), submitted_at=self._stamp(),
+            ).model_dump(mode="json")
+            run = {**run, "phase": AWAITING_APPROVAL, "protocol": record}
+            self._save(run)
+            self._log(run, "protocol", f"Protocol {number} of {MAX_SUBMISSIONS} is waiting for approval: "
+                                       f"{protocol['title']} (sha256 {sha256[:12]}…).")
+        return run
+
+    def stored_protocol(self, project_id: str, run_id: str) -> dict[str, Any]:
+        """The run's latest protocol as stored: ``{"run", "protocol", "sha256", "prose"}``.
+
+        404 if the run never submitted one; 500 if the stored copy no longer matches
+        the sha256 recorded when it was submitted (nobody may approve it then).
+        """
+
+        with self._lock:
+            run = self._load(project_id, run_id)
+            record = run.get("protocol")
+            if not record:
+                raise AutomationError(404, "This run hasn't submitted a protocol.")
+            folder = self._protocols_folder(project_id)
+            name = f"{run_id}-{record['submissions']}"
+            try:
+                data = (folder / f"{name}.json").read_bytes()
+            except OSError as exc:
+                raise AutomationError(500, f"The stored protocol {name}.json can't be read.") from exc
+            if hashlib.sha256(data).hexdigest() != record["sha256"]:
+                raise AutomationError(500, f"The stored protocol {name}.json doesn't match its sha256; it can't be "
+                                           "shown or approved.")
+            prose = None
+            try:
+                with open(folder / f"{name}.md", "rb") as file:
+                    prose = file.read(MAX_PROSE_BYTES).decode("utf-8", "replace")
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                LOGGER.warning("Couldn't read the prose of %s: %s", name, exc)
+        return {"run": run, "protocol": json.loads(data.decode("utf-8")), "sha256": record["sha256"], "prose": prose}
+
+    @staticmethod
+    def _check_waiting(run: dict[str, Any], sha256: str | None) -> None:
+        """409 unless ``run`` is active with a protocol waiting for approval (and, if given, this one)."""
+
+        if run["status"] != ACTIVE:
+            raise AutomationError(409, f"This run is {run['status']}; there is nothing to approve.", run=run)
+        record = run.get("protocol")
+        if run.get("phase") != AWAITING_APPROVAL or not record or record["status"] != "submitted":
+            raise AutomationError(409, f"This run has no protocol waiting for approval (it is {run.get('phase')}).",
+                                  run=run)
+        if sha256 is not None and sha256 != record["sha256"]:
+            raise AutomationError(
+                409, "The protocol waiting for approval is not the one you reviewed (its sha256 differs). "
+                     "Reload it and review it again.", run=run, sha256=record["sha256"],
+            )
+
+    def approval_target(self, project_id: str, run_id: str, sha256: str) -> dict[str, Any]:
+        """``stored_protocol``, if exactly that protocol (by sha256) is waiting for approval."""
+
+        with self._lock:
+            self._check_waiting(self._load(project_id, run_id), sha256)
+            return self.stored_protocol(project_id, run_id)
+
+    def mark_approved(self, project_id: str, run_id: str, *, sha256: str, by: str, minutes: float) -> dict[str, Any]:
+        """Record the approval once the grant exists; the run goes on to executing.
+
+        409 if the run ended meanwhile (the caller then ends the grant it just made).
+        """
+
+        with self._lock:
+            run = self._load(project_id, run_id)
+            record = run.get("protocol")
+            if run["status"] != ACTIVE or not record or record["sha256"] != sha256 or record["status"] != "submitted":
+                raise AutomationError(409, f"This run is {run['status']} ({run.get('phase')}); the approval "
+                                           "came too late.", run=run)
+            record = {**record, "status": "approved", "reviewed_by": by, "reviewed_at": self._stamp(),
+                      "approved_minutes": float(minutes)}
+            # The GrantManager may already have moved it on (a grant that ended at once).
+            phase = EXECUTING if run["phase"] == AWAITING_APPROVAL else run["phase"]
+            run = {**run, "protocol": RunProtocol(**record).model_dump(mode="json"), "phase": phase}
+            self._save(run)
+            self._log(run, "approval", f"Protocol {record['submissions']} approved by {by} for {minutes:g} minutes "
+                                       f"(sha256 {sha256[:12]}…).")
+        return run
+
+    def reject(self, project_id: str, run_id: str, *, by: str, note: str, sha256: str | None = None) -> dict[str, Any]:
+        """Send the protocol back to the agent with ``note``: the run is planning again."""
+
+        with self._lock:
+            run = self._load(project_id, run_id)
+            self._check_waiting(run, sha256)
+            record = {**run["protocol"], "status": "rejected", "reviewed_by": by, "reviewed_at": self._stamp(),
+                      "note": note}
+            try:
+                record = RunProtocol(**record).model_dump(mode="json")
+            except ValidationError as exc:
+                message = str(exc.errors()[0]["msg"]).removeprefix("Value error, ")
+                raise AutomationError(422, f"note: {message}") from None
+            run = {**run, "protocol": record, "phase": PLANNING}
+            self._save(run)
+            left = MAX_SUBMISSIONS - record["submissions"]
+            self._log(run, "approval", f"Protocol {record['submissions']} rejected by {by or 'someone'} "
+                                       f"({left} submission{'' if left == 1 else 's'} left): {note}")
+        return run
+
+    # ---- what the GrantManager reports (automation_grants.py) ----------------------------
+
+    def set_phase(self, project_id: str, run_id: str, phase: str) -> dict[str, Any]:
+        """Move an active run's phase (see PHASE_MOVES); 409 for a move that isn't allowed.
+
+        A run that is no longer active is left as it is (its grant may end after it).
+        """
+
+        if phase not in PHASE_MOVES:
+            raise ValueError(f"No such phase: {phase!r}")
+        with self._lock:
+            run = self._load(project_id, run_id)
+            if run["status"] != ACTIVE or run.get("phase") == phase:
+                return run
+            if phase not in PHASE_MOVES.get(run.get("phase"), frozenset()):
+                raise AutomationError(409, f"A run can't go from {run.get('phase')} to {phase}.", run=run)
+            run = {**run, "phase": phase}
+            self._save(run)
+            self._log(run, "phase", f"Phase: {phase.replace('_', ' ')}.")
+        return run
+
+    def set_grant(self, project_id: str, run_id: str, grant: dict[str, Any]) -> dict[str, Any]:
+        """Record the run's grant as it is now (any status of the run).
+
+        A grant that ended ``ended_unsafe`` makes a run that already ended
+        ``ended_unsafe`` too; a run still active becomes so when it finishes.
+        """
+
+        try:
+            clean = RunGrant.model_validate(grant).model_dump(mode="json")
+        except ValidationError as exc:
+            raise ValueError(f"Not a valid grant record for the run: {exc}") from None
+        with self._lock:
+            run = self._load(project_id, run_id)
+            was_unsafe = bool(run.get("grant")) and run["grant"]["status"] == ENDED_UNSAFE
+            run = {**run, "grant": clean}
+            if run["status"] not in OPEN:
+                run["status"] = self._final(run, run["status"])
+            self._save(run)
+            if clean["status"] == ENDED_UNSAFE and not was_unsafe:
+                self._log(run, "grant", "The grant ended UNSAFE: its safe state could not be applied. "
+                                        "Check the devices by hand.")
         return run
 
     # ---- uploads: per-run quota, counted as bytes stream in ---------------------------
@@ -615,6 +974,7 @@ async def sweep_forever(store: RunStore) -> None:
 
 
 __all__ = [
-    "ACTIVE", "CANCELLED", "FAILED", "FINISHED", "OPEN", "QUEUED", "RUN_ID", "Run", "RunSettings", "RunStore",
-    "sweep_forever",
+    "ACTIVE", "ANALYZING", "AWAITING_APPROVAL", "CANCELLED", "ENDED_UNSAFE", "EXECUTING", "FAILED", "FINISHED",
+    "MAX_SUBMISSIONS", "OPEN", "PHASE_MOVES", "PLANNING", "QUEUED", "RUN_ID", "Run", "RunGrant", "RunProtocol",
+    "RunSettings", "RunStore", "sweep_forever",
 ]

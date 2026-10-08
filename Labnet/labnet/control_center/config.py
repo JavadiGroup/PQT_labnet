@@ -71,6 +71,11 @@ class ControlCenterSettings:
     # and how long an active run may go without a word from its runner (a
     # request about it, or a heartbeat) before it is marked failed.
     automation_run_stale_minutes: float = 10.0
+    # Device grants (Phase 3): the longest an approved protocol may hold its
+    # devices, and how long a submitted protocol may wait for a person before
+    # its run is failed.
+    automation_grant_max_minutes: float = 120.0
+    automation_approval_hours: float = 24.0
     # Logins: Caddy adds X-LabNet-Proxy: <secret> and X-LabNet-User to each
     # request; with a secret set, requests without it are refused.
     proxy_secret: str | None = None
@@ -147,6 +152,8 @@ class ControlCenterSettings:
             automation_max_file_mb=float(os.getenv("LABNET_AUTOMATION_MAX_FILE_MB", "100")),
             automation_run_quota_mb=float(os.getenv("LABNET_AUTOMATION_RUN_QUOTA_MB", "500")),
             automation_run_stale_minutes=float(os.getenv("LABNET_AUTOMATION_RUN_STALE_MINUTES", "10")),
+            automation_grant_max_minutes=float(os.getenv("LABNET_AUTOMATION_GRANT_MAX_MINUTES", "120")),
+            automation_approval_hours=float(os.getenv("LABNET_AUTOMATION_APPROVAL_HOURS", "24")),
             proxy_secret=proxy_secret,
             allowed_hosts=allowed_hosts,
             agent_command=optional_path("LABNET_AGENT_COMMAND"),
@@ -201,6 +208,10 @@ class ControlCenterSettings:
             raise ValueError("LABNET_AUTOMATION_MAX_FILE_MB must be between 0 and 2048.")
         if not math.isfinite(self.automation_run_quota_mb) or not 0 < self.automation_run_quota_mb <= 100_000:
             raise ValueError("LABNET_AUTOMATION_RUN_QUOTA_MB must be between 0 and 100000.")
+        if not math.isfinite(self.automation_grant_max_minutes) or not 1 <= self.automation_grant_max_minutes <= 1440:
+            raise ValueError("LABNET_AUTOMATION_GRANT_MAX_MINUTES must be between 1 and 1440.")
+        if not math.isfinite(self.automation_approval_hours) or not 0 < self.automation_approval_hours <= 720:
+            raise ValueError("LABNET_AUTOMATION_APPROVAL_HOURS must be more than 0 and at most 720.")
         if self.proxy_secret is not None and (
             len(self.proxy_secret) < MIN_PROXY_SECRET_CHARACTERS
             or not self.proxy_secret.isascii()

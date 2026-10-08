@@ -36,8 +36,10 @@ from labnet.identifiers import LABNET_IDENTIFIER_REGEX
 
 from .agent import MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, AgentRequestError, PhotoAgent
 from .automation_api import create_automation_router
+from .automation_grants import GrantManager
 from .automation_literature import Literature
 from .automation_runner_api import create_runner_router
+from .automation_runner_api import create_gateway_router
 from .automation_runners import RunnerRegistry
 from .automation_runs import RunStore, sweep_forever
 from .automation_store import PROJECT_ID, AutomationStore
@@ -198,18 +200,20 @@ def _with_activity(snapshot: dict[str, Any], held: dict[str, dict[str, Any]]) ->
     """Mark the devices this Control Center holds, so any viewer can pause them.
 
     ``control_center`` is null for every other device; a leased device without
-    it is held by some other LabNet client.
+    it is held by some other LabNet client. A device an Automation grant holds
+    has ``control_center.automation`` (project, task, end time and the Stop URL).
     """
 
     def device(item: dict[str, Any]) -> dict[str, Any]:
         activity = held.get(item["id"])
         if activity is None:
             return {**item, "control_center": None}
+        automation = activity.get("automation")
         return {
             **item,
             "state": "leased",  # the cached picture may predate the lease
-            "detail": "Held by the Control Center",
-            "control_center": {**activity, "page": f"/{activity['session']}"},
+            "detail": f"Held by Automation ({automation['label']})" if automation else "Held by the Control Center",
+            "control_center": {**activity, "page": activity.get("page") or f"/{activity['session']}"},
         }
 
     pcs = [{**pc, "devices": [device(item) for item in pc["devices"]]} for pc in snapshot["lab_pcs"]]
@@ -370,13 +374,16 @@ def create_app(
     agent_factory: AgentFactory = PhotoAgent,
 ) -> FastAPI:
     async def network_with_activity() -> dict[str, Any]:
-        return _with_activity(await app.state.status.snapshot(), app.state.sessions.activity())
+        # A device a grant holds can't also be a session's (sessions refuse it), but the grant wins.
+        held = {**app.state.sessions.activity(), **app.state.grants.activity()}
+        return _with_activity(await app.state.status.snapshot(), held)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         client = client_factory(settings)
         app.state.status = NetworkStatus(client, settings)
-        app.state.sessions = SessionManager(client, settings)
+        # Play and scripts are refused on a device an Automation grant holds.
+        app.state.sessions = SessionManager(client, settings, blocked=lambda device_id: app.state.grants.blocked(device_id))
         app.state.agent = agent_factory(settings, network_with_activity)
         app.state.experiments = ExperimentStore(settings.experiments_dir)
         app.state.automation = AutomationStore(settings.automation_dir, settings.agent_literature_dir)
@@ -386,7 +393,26 @@ def create_app(
             app.state.automation, quota_bytes=int(settings.automation_run_quota_mb * 2**20),
             stale_minutes=settings.automation_run_stale_minutes, models=settings.agent_models,
             default_model=settings.agent_model, default_effort=settings.agent_effort,
+            approval_hours=settings.automation_approval_hours,
+            grant_max_minutes=settings.automation_grant_max_minutes,
         )
+        # Device grants (automation_grants.py): ones a restart cut off are marked interrupted, and
+        # a run that stops being active (from any thread) has its grant ended on this loop.
+        app.state.grants = GrantManager(client, app.state.automation, app.state.runs, settings)
+        await asyncio.to_thread(app.state.grants.mark_interrupted)
+        loop = asyncio.get_running_loop()
+        grant_endings: set[asyncio.Task[Any]] = set()
+
+        def end_grant_of(_project_id: str, run_id: str, status: str) -> None:
+            def schedule() -> None:
+                task = loop.create_task(app.state.grants.end_for_run(run_id, reason=f"the run ended ({status})"))
+                grant_endings.add(task)
+                task.add_done_callback(grant_endings.discard)
+
+            with suppress(RuntimeError):  # the loop has closed: shutdown ends every grant anyway
+                loop.call_soon_threadsafe(schedule)
+
+        app.state.runs.on_run_ended = end_grant_of
         # Fails runs whose runner went quiet, even when nobody is looking at them.
         app.state.run_sweeper = asyncio.create_task(sweep_forever(app.state.runs), name="automation-run-sweeper")
         try:
@@ -397,6 +423,9 @@ def create_app(
                 await app.state.run_sweeper
             await asyncio.to_thread(app.state.literature.close)  # stops a running PDF extractor
             app.state.agent.close()
+            await app.state.grants.close()  # safe state and release first, while the client is open
+            if grant_endings:
+                await asyncio.gather(*grant_endings, return_exceptions=True)
             await app.state.sessions.close()  # releases every lease
             await client.aclose()
 
@@ -426,7 +455,8 @@ def create_app(
     app.add_middleware(_SecurityHeaders)
     app.include_router(create_experiment_router(network_with_activity))
     app.include_router(create_automation_router(network_with_activity, max_file_bytes=max_file_bytes))
-    app.include_router(create_runner_router(max_file_bytes=max_file_bytes))
+    app.include_router(create_gateway_router())  # grant tokens, not runner tokens
+    app.include_router(create_runner_router(max_file_bytes=max_file_bytes, network=network_with_activity))
 
     @app.exception_handler(SessionError)
     async def session_error(_request: Request, exc: SessionError) -> JSONResponse:

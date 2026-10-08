@@ -384,6 +384,14 @@ a { color: var(--accent); }
   color: var(--muted);
 }
 
+/* Held by an Automation grant: an agent is driving it within approved bounds; Stop ends it. */
+.holder.automation {
+  border-color: #b9cdf3;
+  background: var(--accent-soft);
+}
+
+.holder.automation .holder-dot { background: var(--accent); }
+
 .button.small { padding: 3px 12px; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1893,6 +1901,102 @@ canvas.chart {
 @media (max-width: 640px) {
   .run-event { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .run-settings-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Protocols, approval and grants (Phase 3). The review is the server's; agent prose is boxed apart. */
+.run-badge.run-ended_unsafe { background: var(--bad); color: #ffffff; }
+.run-buttons { display: inline-flex; gap: 6px; flex: none; }
+.outline li.run-row-waiting { box-shadow: inset 3px 0 0 var(--warn); padding-left: 8px; }
+.run-unsafe-note { color: #b42318; font-size: 12px; font-weight: 700; }
+.run-phase {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--detail);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.run-phase-awaiting_approval { background: #fdf0dc; color: #9a5b00; }
+.run-phase-executing { background: #e3ecfc; color: #1d55c0; }
+.run-unsafe-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 2px solid var(--bad);
+  border-radius: 10px;
+  background: #fde8e8;
+  color: #8a1c13;
+  font-size: 13.5px;
+}
+.grant-card, .approval-card {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  background: #ffffff;
+}
+.grant-card.grant-active { border-color: var(--accent); background: #f5f8fe; }
+.grant-card.grant-ending { border-color: var(--warn); }
+.grant-card.grant-ended_unsafe { border: 2px solid var(--bad); background: #fde8e8; }
+.grant-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.grant-head .button { margin-left: auto; }
+.grant-countdown { font-family: var(--mono); font-size: 15px; font-weight: 700; color: #1d55c0; }
+.grant-facts { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.approval-card { border: 2px solid var(--warn); background: #fffaf2; }
+.approval-card h3 { margin: 0 0 6px; font-size: 15px; }
+.approval-card p { margin: 0 0 10px; font-size: 13px; }
+.approval-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0 0 10px; font-size: 13px; }
+.approval-facts dt { color: var(--muted); }
+.approval-facts dd { margin: 0; overflow-wrap: anywhere; }
+.approval-fields { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.approval-fields .field input { width: 12em; }
+.approval-card textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+.approval-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.protocol-sha { font-family: var(--mono); font-size: 12px; }
+.protocol-note { margin: 0 0 12px; }
+.protocol-note-label, .agent-prose-label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.protocol-review { margin: 0 0 12px; font-size: 13px; }
+.protocol-review h4 { margin: 12px 0 6px; font-size: 13px; }
+/* Agent-written text (title, choices, ids) stays inside its own line box: stacked combining marks
+   are clipped instead of drawing over the rest of the review. */
+.review-title { margin-bottom: 6px; overflow-wrap: anywhere; overflow: hidden; line-height: 1.45; }
+.protocol-review h4, .review-arg { overflow: hidden; overflow-wrap: anywhere; line-height: 1.45; }
+.review-safe li > code { display: block; overflow: hidden; overflow-wrap: anywhere; line-height: 1.45; }
+.review-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.review-table th, .review-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #eef0f3;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.review-table th { color: var(--muted); font-weight: 600; }
+.review-method { font-weight: 700; }
+.review-arg + .review-arg { margin-top: 2px; }
+.protocol-review .muted { color: var(--faint); }
+.review-safe { margin: 0; padding-left: 22px; }
+.review-warning { margin: 0; color: #9a5b00; font-weight: 600; }
+.review-warnings { margin: 10px 0 0; padding: 8px 12px 8px 28px; border-radius: 8px; background: #fdf0dc; color: #6b4000; }
+.agent-prose { margin: 0 0 12px; }
+.agent-prose-text {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px dashed var(--faint);
+  border-radius: 8px;
+  background: #f6f7f9;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1180px) {

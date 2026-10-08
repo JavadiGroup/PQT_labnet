@@ -47,6 +47,9 @@ class PythonRequest:
     script: str  # relative to /work, e.g. ScriptsUtilized/analysis_scripts/fit.py
     args: Sequence[str]
     timeout_seconds: float
+    # While a device grant is active: the folder holding the device relay's gateway.sock, mounted
+    # at /run/labnet-devices (``labnet_devices.connect()``). None otherwise: no devices at all.
+    devices_socket_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)

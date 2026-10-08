@@ -47,7 +47,7 @@ class FakeBackend:
                       "example": "403"},
             "version_claude": CommandResult(0, "2.1.285 (Claude Code)\n", ""),
             "help": CommandResult(0, HELP, ""),
-            "run": {"uid": 1000, "internet": "blocked (OSError)", "inside": True, "visible": []},
+            "run": {"uid": 1000, "internet": "blocked (OSError)", "inside": True, "visible": [], "shim": True},
         }
         self.seen_probe = None
 
@@ -158,6 +158,11 @@ def test_selfcheck_run_id_is_a_run_id():
     ({"run": {"uid": 1000, "internet": "blocked (OSError)", "inside": False, "visible": []}},
      "run container isolation", "can't see its working copy"),
     ({"run": {"uid": 0, "internet": "blocked (OSError)", "inside": True, "visible": []}}, "run container isolation", "uid 0"),
+    ({"run": {"uid": 1000, "internet": "blocked (OSError)", "inside": True, "visible": [],
+              "shim": "ModuleNotFoundError: No module named 'labnet_devices'"}},
+     "run container isolation", "no usable labnet_devices"),
+    ({"run": {"uid": 1000, "internet": "blocked (OSError)", "inside": True, "visible": ["/run/labnet-devices"],
+              "shim": True}}, "run container isolation", "can see /run/labnet-devices"),
     ({"run": PythonResult(exit_code=125, stdout="", stderr="Unable to find image", seconds=0.1, timed_out=False)},
      "run container isolation", "Unable to find image"),
     ({"agent": {"direct": "open", "gateway_open": [], "anthropic": "200", "anthropic_tls": "TLSv1.3", "example": "403"}},

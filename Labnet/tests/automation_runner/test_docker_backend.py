@@ -353,3 +353,22 @@ def test_stop_run_from_another_thread_while_a_script_runs(monkeypatch):
     worker.join(10)
     assert results[0].exit_code is None and not results[0].timed_out
     assert "stopped with the run" in results[0].stderr
+
+
+def test_no_script_container_starts_after_the_run_was_stopped(monkeypatch, tmp_path) -> None:
+    """A run_python request still on its way in when the run stops must not start a container."""
+
+    from labnet.automation_runner import docker_backend as module
+    from labnet.automation_runner.backend import PythonRequest
+    from labnet.automation_runner.config import RunnerSettings
+
+    settings = RunnerSettings(control_center_url="http://127.0.0.1:8080", token="lnr_" + "a" * 43, dev=True)
+    backend = module.DockerBackend(settings)
+    monkeypatch.setattr(backend, "run_containers", lambda run_id: [])
+    spawned = []
+    monkeypatch.setattr(backend, "_spawn", lambda argv: spawned.append(argv))
+    run_id = "run-20261007-120000-abcd"
+    backend.stop_run(run_id)
+    result = backend.run_python(PythonRequest(run_id=run_id, work=tmp_path, script="ScriptsUtilized/x.py",
+                                              args=(), timeout_seconds=5))
+    assert spawned == [] and result.exit_code is None and "stopped" in result.stderr

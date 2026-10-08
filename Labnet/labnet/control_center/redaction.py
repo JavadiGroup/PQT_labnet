@@ -14,6 +14,7 @@ _SECRETS = re.compile(
     r"lease_[0-9a-fA-F]{32}"  # Central's lease ids
     r"|labnet_[A-Za-z0-9_-]{20,}"  # Central's API keys
     r"|lnr_[A-Za-z0-9_-]{20,}"  # Automation runner tokens
+    r"|lng_[A-Za-z0-9_-]{20,}"  # Automation grant tokens (the device gateway)
 )
 
 
@@ -22,7 +23,7 @@ def _hide(match: re.Match[str]) -> str:
 
 
 def redact(text: str) -> str:
-    """``text`` with every lease id, API key and runner token replaced by ``<prefix>_…``."""
+    """``text`` with every lease id, API key, runner token and grant token replaced by ``<prefix>_…``."""
 
     return _SECRETS.sub(_hide, text)
 
