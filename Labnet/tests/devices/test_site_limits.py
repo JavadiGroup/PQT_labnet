@@ -13,11 +13,11 @@ from labnet.devices.DummyAOM.physical import PhysicalDummyAOM
 from labnet.devices.DummyAWG.physical import PhysicalDummyAWG
 from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
 from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+from labnet.contracts import registry
 
 
 def _effective(device, hints=None):
-    contract = DEVICE_CONTRACT_BY_TYPE[device.device_type]
+    contract = registry.get(device.device_type)
     driver = device.metadata().get("hints") if hints is None else hints
     return resolve_limits(contract, driver, get_site_limits(device), device_id=device.device_id)
 

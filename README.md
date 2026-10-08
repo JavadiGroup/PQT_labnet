@@ -113,7 +113,9 @@ validates every RPC option, and writes:
 - `device_contracts.py`: one `DeviceContract` per family. It records each RPC's
   pattern, the driver method it maps to, and the request fields forwarded as
   arguments, plus a `Protocol` describing the method signatures `physical.py`
-  must have.
+  must have. The types themselves live in `labnet.contracts`, and code finds a
+  contract through `labnet.contracts.registry` (`registry.get("dummy_aom")`),
+  never by importing the generated module.
 
 That generated contract is the single source of truth. The server builds its
 handlers from it, the client builds its methods from it, and only the methods

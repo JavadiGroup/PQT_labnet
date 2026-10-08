@@ -14,7 +14,7 @@ import asyncio
 import sys
 
 from labnet import AsyncLabClient, LabClient
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+from labnet.contracts import registry
 
 
 def status() -> int:
@@ -49,7 +49,7 @@ async def _smoke() -> int:
             print("FAIL no available devices reported by Central.")
             return 1
         for info in sorted(devices, key=lambda item: item.device_id):
-            contract = DEVICE_CONTRACT_BY_TYPE.get(info.device_type)
+            contract = registry.find(info.device_type)
             if contract is None:
                 print(f"SKIP {info.device_id}: no generated contract for {info.device_type!r}")
                 continue

@@ -23,10 +23,7 @@ from labnet.lease_policy import (
 
 from labnet.grpc.auth import LEASE_METADATA_KEY
 from labnet.grpc.generated import common_pb2
-from labnet.grpc.generated.device_contracts import (
-    DeviceContract,
-    RpcSpec,
-)
+from labnet.contracts import DeviceContract, RpcSpec
 
 from .exceptions import (
     AuthenticationError,

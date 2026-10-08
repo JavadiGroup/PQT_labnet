@@ -26,7 +26,7 @@ from typing import Any
 
 from labnet.client import DeviceAuthenticationError, DevicePermissionDeniedError, LeaseAuthorityError
 from labnet.client.core.models import Measurement
-from labnet.grpc.generated.device_contracts import DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec
 
 from ..redaction import redact
 

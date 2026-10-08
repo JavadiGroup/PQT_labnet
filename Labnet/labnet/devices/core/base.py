@@ -26,10 +26,10 @@ class BaseDeviceInterface(ABC):
         ``physical.py``.
         """
 
-        from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+        from labnet.contracts import registry
 
         try:
-            contract = DEVICE_CONTRACT_BY_TYPE[self.device_type]
+            contract = registry.get(self.device_type)
         except KeyError as exc:
             raise RuntimeError(
                 f"No generated gRPC contract exists for device_type "

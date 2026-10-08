@@ -15,11 +15,7 @@ from labnet.grpc.generated import (
     simulated_wavemeter_pb2_grpc,
     transfer_pb2,
 )
-from labnet.grpc.generated.device_contracts import (
-    DEVICE_CONTRACT_BY_TYPE,
-    DEVICE_CONTRACTS,
-    validate_implementation,
-)
+from labnet.contracts import registry, validate_implementation
 from labnet.lab_pc.app import create_app
 from labnet.lab_pc.config import LabPCSettings
 
@@ -44,7 +40,7 @@ def test_local_facade_reads_a_noisy_wavelength_near_the_line() -> None:
 
 
 def test_driver_satisfies_its_generated_contract() -> None:
-    contract = DEVICE_CONTRACT_BY_TYPE["simulated_wavemeter"]
+    contract = registry.get("simulated_wavemeter")
 
     validate_implementation(PhysicalSimulatedWavemeter, contract)
     assert contract.allowed_physical_methods == ("read_wavelength", "set_exposure")
@@ -90,7 +86,7 @@ async def test_lab_pc_serves_generated_families_side_by_side() -> None:
     async with app.router.lifespan_context(app):
         server = app.state.runtime.grpc_server
         assert set(server.device_services) == {
-            contract.device_type for contract in DEVICE_CONTRACTS
+            contract.device_type for contract in registry.all()
         }
         channel = grpc.aio.insecure_channel(f"127.0.0.1:{server.bound_port}")
         metadata = ((LEASE_METADATA_KEY, "development-lease"),)

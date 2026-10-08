@@ -92,7 +92,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from labnet.client import ResourceConflictError, ResourceNotFoundError
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec, registry
 
 from .automation_protocol import step_reader
 from .automation_store import PROJECT_ID, AutomationError, write_json_file
@@ -338,7 +338,7 @@ def _check(
     if not isinstance(methods, dict) or method not in methods:
         return f"{method} is not allowed on {device_id} by the approved protocol."
     bounds = methods[method]
-    contract = DEVICE_CONTRACT_BY_TYPE.get(device["device_type"])
+    contract = registry.find(device["device_type"])
     spec = find_method(contract, method) if contract is not None else None
     if spec is None or not isinstance(bounds, dict):
         return f"{method} is not a method of {device['device_type']}."
@@ -437,7 +437,7 @@ def readings_needed(protocol: dict[str, Any], state: GrantCallState, request: An
         device = _protocol_device(protocol, request["device_id"])
         method = request["method"]
         bounds = device["methods"][method]["args"]
-        contract = DEVICE_CONTRACT_BY_TYPE[device["device_type"]]
+        contract = registry.get(device["device_type"])
         args = request["args"]
         needed = []
         for name, value in args.items():
@@ -716,7 +716,7 @@ class GrantManager:
     # ---- leases -------------------------------------------------------------------------
 
     async def _lease(self, device_id: str, device_type: str) -> tuple[DeviceContract, Any]:
-        contract = DEVICE_CONTRACT_BY_TYPE.get(device_type)
+        contract = registry.find(device_type)
         if contract is None:
             raise GrantError(409, "conflict", f"This Control Center has no contract for {device_type!r}.")
         try:

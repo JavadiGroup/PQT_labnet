@@ -13,7 +13,7 @@ from labnet.client.core.models import DeviceInfo, EndpointDescriptor
 from labnet.control_center.app import create_app
 from labnet.control_center.config import ControlCenterSettings
 from labnet.control_center.contracts import describe_device_type, facade_class_name, type_label
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACTS
+from labnet.contracts import registry
 
 
 @pytest.fixture(autouse=True)
@@ -165,7 +165,7 @@ def test_settings_require_a_key_and_a_loopback_bind(monkeypatch: pytest.MonkeyPa
 
 
 def test_every_generated_contract_can_be_described() -> None:
-    for contract in DEVICE_CONTRACTS:
+    for contract in registry.all():
         methods = describe_device_type(contract.device_type)
         assert [method["name"] for method in methods] == [
             spec.python_name for spec in contract.methods
@@ -175,7 +175,7 @@ def test_every_generated_contract_can_be_described() -> None:
 def test_every_family_has_a_client_class() -> None:
     """Generated scripts import <Service minus "Service"> from labnet."""
 
-    for contract in DEVICE_CONTRACTS:
+    for contract in registry.all():
         name = facade_class_name(contract)
         assert name is not None, contract.service_name
         assert getattr(labnet, name).contract is contract

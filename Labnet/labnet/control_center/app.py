@@ -31,7 +31,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from labnet.client import AsyncLabClient, LabPCInfo
 from labnet.client.core.models import DeviceInfo
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+from labnet.contracts import registry
 from labnet.identifiers import LABNET_IDENTIFIER_REGEX
 
 from .agent import MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, AgentRequestError, PhotoAgent
@@ -175,7 +175,7 @@ def _device(device: DeviceInfo, *, lab_pc_online: bool) -> dict[str, Any]:
         state = "unavailable"
         detail = device.status_text or f"{device.runtime_state}, {device.availability}"
     methods = describe_device_type(device.device_type)
-    contract = DEVICE_CONTRACT_BY_TYPE.get(device.device_type)
+    contract = registry.find(device.device_type)
     return {
         # Which control panel the device page loads (static/js/panels/<panel>.js).
         "panel": _panel_for(device.device_type),

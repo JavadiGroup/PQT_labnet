@@ -6,10 +6,8 @@ import pytest
 
 from labnet import SimulatedTunableLaser
 from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
-from labnet.grpc.generated.device_contracts import (
-    SIMULATED_TUNABLE_LASER_CONTRACT,
-    validate_implementation,
-)
+from labnet.contracts import validate_implementation
+from labnet.grpc.generated.device_contracts import SIMULATED_TUNABLE_LASER_CONTRACT
 
 
 class Clock:

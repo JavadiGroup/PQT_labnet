@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from labnet.client import AsyncLabClient, ResourceConflictError, ResourceNotFoundError
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec, registry
 
 from .config import ControlCenterSettings
 from .device_calls import SETTING_PATTERNS as _SETTING_PATTERNS
@@ -158,7 +158,7 @@ class DeviceSession:
                 info = await self._client.get_device(self.device_id)
             except ResourceNotFoundError as exc:
                 raise SessionError(404, f"No device {self.device_id!r} is registered.") from exc
-            contract = DEVICE_CONTRACT_BY_TYPE.get(info.device_type)
+            contract = registry.find(info.device_type)
             if contract is None:
                 raise SessionError(409, f"This Control Center has no contract for {info.device_type!r}.")
             self._contract = contract
@@ -379,7 +379,7 @@ class DeviceSession:
             raise ValueError(f"{device_id} is held by an Automation experiment.")
         if device_id not in self._script_devices:
             info = await self._client.get_device(device_id)
-            contract = DEVICE_CONTRACT_BY_TYPE.get(info.device_type)
+            contract = registry.find(info.device_type)
             if contract is None:
                 raise ValueError(f"No contract for {info.device_type!r}.")
             self._script_devices[device_id] = await self._client.acquire_device(contract, device_id)

@@ -46,7 +46,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import PurePosixPath
 from typing import Any
 
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec, registry
 
 from .contracts import describe_method, type_label
 from .device_calls import find_method
@@ -471,7 +471,7 @@ def _device(
         problems.add(_key(path, "device_type"), f"The linked experiment says {device_id} is a {canvas_type}, but the "
                                                 f"network says {live_type}; a person must fix the experiment first.")
     contract_type = live_type or device_type
-    contract = DEVICE_CONTRACT_BY_TYPE.get(contract_type) if contract_type else None
+    contract = registry.find(contract_type) if contract_type else None
     if contract_type and contract is None:
         problems.add(_key(path, "device_type"), f"This Control Center has no contract for {contract_type}, so it "
                                                 "can't be automated.")
@@ -713,7 +713,7 @@ def _safe_call(raw: Any, path: str, problems: _Problems,
         problems.add(_key(path, "method"), f"{method_name} is a stream; a safe state is a write or command, "
                                            "such as switching an output off.")
         return None
-    contract = DEVICE_CONTRACT_BY_TYPE[device["device_type"]]
+    contract = registry.get(device["device_type"])
     described = next(describe_method(spec) for spec in contract.methods if spec.python_name == method_name)
     fields = {field["name"]: field for field in described["fields"]}
     raw_args = raw.get("args", {})
@@ -782,7 +782,7 @@ def build_review(protocol: dict[str, Any], live_devices: dict[str, dict[str, Any
     warnings: list[str] = []
     devices = []
     for device in protocol["devices"]:
-        contract = DEVICE_CONTRACT_BY_TYPE.get(device["device_type"])
+        contract = registry.find(device["device_type"])
         specs = {spec.python_name: describe_method(spec) for spec in contract.methods} if contract else {}
         live = (live_devices or {}).get(device["device_id"])
         hints = (live or {}).get("hints") or {}

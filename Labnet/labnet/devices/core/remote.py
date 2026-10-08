@@ -23,10 +23,7 @@ from ...client.core.lab_client import (
     _validate_renewal_policy,
 )
 from ...client.core.models import Measurement
-from ...grpc.generated.device_contracts import (
-    DeviceContract,
-    RpcSpec,
-)
+from ...contracts import DeviceContract, RpcSpec
 from ...lease_policy import (
     DEFAULT_LEASE_DURATION_SECONDS,
     DEFAULT_RENEWAL_INTERVAL_SECONDS,

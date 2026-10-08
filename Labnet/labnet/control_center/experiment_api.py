@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACTS
+from labnet.contracts import registry
 
 from .contracts import describe_device_type, facade_class_name, type_label
 from .experiment_checks import check_experiment
@@ -115,7 +115,7 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
                     "python_class": facade_class_name(contract),
                     "methods": describe_device_type(contract.device_type),
                 }
-                for contract in DEVICE_CONTRACTS
+                for contract in registry.all()
             },
             "limits": {
                 "nodes": MAX_NODES,

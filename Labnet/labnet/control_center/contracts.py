@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 import labnet
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec, registry
 
 
 _STREAM_CONTROLS = (
@@ -81,7 +81,7 @@ def describe_method(spec: RpcSpec) -> dict[str, Any]:
 def describe_device_type(device_type: str) -> list[dict[str, Any]] | None:
     """Methods for ``device_type``, or None if this build has no contract for it."""
 
-    contract = DEVICE_CONTRACT_BY_TYPE.get(device_type)
+    contract = registry.find(device_type)
     if contract is None:
         return None
     return [describe_method(spec) for spec in contract.methods]
@@ -196,7 +196,7 @@ def type_label(device_type: str) -> str:
     Known types take their words from the service name, which keeps acronyms.
     """
 
-    contract = DEVICE_CONTRACT_BY_TYPE.get(device_type)
+    contract = registry.find(device_type)
     if contract is not None:
         words = _WORDS.findall(contract.service_name.removesuffix("Service"))
         if words:

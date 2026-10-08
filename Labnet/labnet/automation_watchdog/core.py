@@ -83,7 +83,7 @@ from labnet.control_center.device_calls import (
     lease_lost_before_call,
     lease_rejected,
 )
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec, registry
 
 from .config import WatchdogSettings
 
@@ -547,7 +547,7 @@ class Watchdog:
             step = Step(index, str(item.get("device_id")), str(item.get("method")),
                         dict(item.get("args") or {}) if isinstance(item.get("args"), dict) else {})
             plan.steps.append(step)
-            contract = DEVICE_CONTRACT_BY_TYPE.get(types.get(step.device_id))  # type: ignore[arg-type]
+            contract = registry.find(types.get(step.device_id))  # type: ignore[arg-type]
             if contract is None or step.device_id not in granted:
                 step.problem = f"{step.device_id} is not a device of this grant with a known contract"
                 continue

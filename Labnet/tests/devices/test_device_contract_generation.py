@@ -15,11 +15,7 @@ from labnet.grpc.generated import (
     dummy_device_pb2,
     rpc_options_pb2,
 )
-from labnet.grpc.generated.device_contracts import (
-    DEVICE_CONTRACT_BY_SERVICE,
-    PhysicalContractError,
-    validate_implementation,
-)
+from labnet.contracts import PhysicalContractError, registry, validate_implementation
 from tools.generate_protos import ContractValidationError, generate_protos
 
 
@@ -87,7 +83,7 @@ def _generate_test_contract(tmp_path: Path, option_block: str) -> None:
 
 
 def _dummy_contract():
-    return DEVICE_CONTRACT_BY_SERVICE["labnet.devices.v1.DummyDeviceService"]
+    return registry.by_service("labnet.devices.v1.DummyDeviceService")
 
 
 def _generate_importable_contract_package(
@@ -757,9 +753,9 @@ def test_current_physical_device_satisfies_generated_contract() -> None:
     validate_implementation(PhysicalDummyDevice, _dummy_contract())
     validate_implementation(
         PhysicalSimulatedTunableLaser,
-        DEVICE_CONTRACT_BY_SERVICE[
+        registry.by_service(
             "labnet.devices.v1.SimulatedTunableLaserService"
-        ],
+        ),
     )
 
 

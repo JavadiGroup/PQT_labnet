@@ -285,10 +285,10 @@ def resolve_limits(
 
 
 def _contract(device: object) -> Any:
-    from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+    from labnet.contracts import registry
 
     device_type = getattr(device, "device_type", None)
-    contract = DEVICE_CONTRACT_BY_TYPE.get(device_type) if isinstance(device_type, str) else None
+    contract = registry.find(device_type) if isinstance(device_type, str) else None
     if contract is None:
         raise DeviceLimitsError(
             f"{_device_label(device)}: device_type {device_type!r} has no generated contract, so its "

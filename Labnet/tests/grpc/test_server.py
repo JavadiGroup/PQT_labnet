@@ -15,7 +15,7 @@ from labnet.grpc import (
     LabnetGrpcServer,
     StreamPolicy,
 )
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACTS
+from labnet.contracts import registry
 from labnet.grpc.generated import dummy_device_pb2, dummy_device_pb2_grpc
 from labnet.grpc.generated import transfer_pb2
 from labnet.device_manager import DeviceManager, StaticLeaseValidator
@@ -97,10 +97,10 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     assert server.serving is True
     # Every generated family is served; this test drives the dummy one.
     assert tuple(server.device_services) == tuple(
-        contract.device_type for contract in DEVICE_CONTRACTS
+        contract.device_type for contract in registry.all()
     )
     assert server.service_names == tuple(
-        sorted(contract.service_full_name for contract in DEVICE_CONTRACTS)
+        sorted(contract.service_full_name for contract in registry.all())
     )
     assert "labnet.devices.v1.DummyDeviceService" in server.service_names
 

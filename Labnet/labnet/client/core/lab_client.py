@@ -618,7 +618,7 @@ class AsyncLabClient:
     ) -> AsyncContractDeviceClient:
         """Lease any generated device contract using shared async plumbing."""
 
-        from labnet.grpc.generated.device_contracts import DeviceContract
+        from labnet.contracts import DeviceContract
         from .grpc_client import AsyncContractDeviceClient
 
         if not isinstance(contract, DeviceContract):

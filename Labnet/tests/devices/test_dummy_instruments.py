@@ -25,7 +25,7 @@ from labnet.grpc.generated import (
     dummy_laser_pb2_grpc,
     transfer_pb2,
 )
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, validate_implementation
+from labnet.contracts import registry, validate_implementation
 from labnet.lab_pc.app import create_app
 from labnet.lab_pc.config import LabPCSettings
 
@@ -54,7 +54,7 @@ def _connected(device):
 @pytest.mark.parametrize("device_type", sorted(FAMILIES))
 def test_each_driver_satisfies_its_contract(device_type: str) -> None:
     driver = FAMILIES[device_type]("bench-device")
-    contract = DEVICE_CONTRACT_BY_TYPE[device_type]
+    contract = registry.get(device_type)
     validate_implementation(driver, contract)
     assert driver.device_type == device_type
     assert set(driver.allowed_methods()) == set(contract.physical_methods)

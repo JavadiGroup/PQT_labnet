@@ -29,7 +29,7 @@ import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec, registry
 
 from .contracts import facade_class_name
 from .experiment_checks import check_experiment, kind_of
@@ -248,7 +248,7 @@ def generate_script(experiment: Mapping[str, Any]) -> str:
         if not node.settings and not node.records:
             unused.append(node)
             continue
-        contract = DEVICE_CONTRACT_BY_TYPE[node.device_type]
+        contract = registry.get(node.device_type)
         class_name = facade_class_name(contract)
         assert class_name is not None  # checked above
         class_names.add(class_name)

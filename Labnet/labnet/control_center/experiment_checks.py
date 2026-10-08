@@ -17,7 +17,7 @@ from typing import Any
 
 from google.protobuf.descriptor import FieldDescriptor
 
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE, RpcSpec
+from labnet.contracts import RpcSpec, registry
 
 from .contracts import facade_class_name, sweep_field
 from .experiment_schema import ExperimentContent, Node, total_points
@@ -113,7 +113,7 @@ def check_experiment(content: ExperimentContent, devices: Mapping[str, dict[str,
         _check_live(report, node, live, devices is not None)
         if not node.settings and not node.records:
             report.warn("unused", f"{_name(node)} has no settings or records, so the script won't use it.", node)
-        contract = DEVICE_CONTRACT_BY_TYPE.get(node.device_type)
+        contract = registry.find(node.device_type)
         if contract is None:
             report.error("no-contract", f"This Control Center has no contract for {node.device_type!r}.", node)
             continue

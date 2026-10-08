@@ -75,9 +75,9 @@ class ScriptError(ValueError):
 def contract_method_names() -> frozenset[str]:
     # Imported here so the script process, which receives its method names,
     # starts without loading every protobuf module.
-    from labnet.grpc.generated.device_contracts import DEVICE_CONTRACTS
+    from labnet.contracts import registry
 
-    return frozenset(spec.python_name for contract in DEVICE_CONTRACTS for spec in contract.methods)
+    return frozenset(spec.python_name for contract in registry.all() for spec in contract.methods)
 
 
 def validate_script(code: str, method_names: Iterable[str] | None = None) -> ast.Module:

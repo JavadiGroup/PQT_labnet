@@ -27,7 +27,7 @@ from labnet.control_center.automation_protocol import (
 )
 from labnet.control_center.automation_store import AutomationError
 from labnet.control_center.config import ControlCenterSettings
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+from labnet.contracts import registry
 
 from .test_automation import EXPERIMENT, FakeCentral, _settings, library  # noqa: F401  (library is a fixture)
 from .test_automation_runner import RUNNER, SECRET, _bearer
@@ -501,18 +501,18 @@ def test_a_bounded_optional_argument_is_always_sent_the_safe_state_included() ->
 
 def test_the_setters_whose_position_the_gateway_can_read() -> None:
     readable = set()
-    for device_type, contract in DEVICE_CONTRACT_BY_TYPE.items():
+    for contract in registry.all():
         for spec in contract.methods:
             for item in spec.forwarded_field_specs:
                 if item.python_type in ("float", "int") and step_reader(contract, spec.python_name, item.name)[0]:
-                    readable.add(f"{device_type}.{spec.python_name}")
+                    readable.add(f"{contract.device_type}.{spec.python_name}")
     assert readable == {
         "dummy_aom.set_frequency", "dummy_aom.set_rf_power",
         "dummy_awg.set_amplitude", "dummy_awg.set_frequency", "dummy_awg.set_offset",
         "dummy_eom.set_modulation_frequency", "dummy_eom.set_rf_amplitude",
         "dummy_laser.set_current", "dummy_laser.set_wavelength",
     }
-    reader, _ = step_reader(DEVICE_CONTRACT_BY_TYPE["dummy_awg"], "set_amplitude", "value")
+    reader, _ = step_reader(registry.get("dummy_awg"), "set_amplitude", "value")
     assert reader.python_name == "read_amplitude" and [item.name for item in reader.forwarded_field_specs] == ["channel"]
 
 

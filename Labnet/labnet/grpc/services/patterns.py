@@ -18,7 +18,7 @@ from labnet.identifiers import LABNET_IDENTIFIER_REGEX, validate_labnet_identifi
 
 from ..auth import extract_lease_id
 from ..generated import common_pb2
-from ..generated.device_contracts import DeviceContract, RpcSpec
+from ...contracts import DeviceContract, RpcSpec
 from ..status import GrpcServiceError, abort_from_exception
 
 

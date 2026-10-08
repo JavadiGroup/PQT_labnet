@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 from labnet.client.core.grpc_client import GrpcTlsConfig
 from labnet.client.core.lab_client import LabClient
 from labnet.client.core.models import Measurement, MeasurementQuality
-from labnet.grpc.generated.device_contracts import DeviceContract, RpcSpec
+from labnet.contracts import DeviceContract, RpcSpec
 from labnet.lease_policy import (
     DEFAULT_LEASE_DURATION_SECONDS,
     DEFAULT_RENEWAL_INTERVAL_SECONDS,

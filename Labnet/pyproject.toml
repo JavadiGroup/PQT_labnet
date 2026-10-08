@@ -122,6 +122,35 @@ source_modules = [
 ]
 forbidden_modules = ["labnet.control_center"]
 
+# Contracts are found through labnet.contracts.registry. Only the device-family
+# packages (the future plugins) still import their own generated constants.
+[[tool.importlinter.contracts]]
+name = "Only the registry reads the generated contracts module"
+type = "forbidden"
+source_modules = [
+    "labnet.automation_runner",
+    "labnet.automation_watchdog",
+    "labnet.central",
+    "labnet.certs",
+    "labnet.client",
+    "labnet.control_center",
+    "labnet.device_manager",
+    "labnet.devices.core",
+    "labnet.envfile",
+    "labnet.grpc.auth",
+    "labnet.grpc.server",
+    "labnet.grpc.services",
+    "labnet.grpc.status",
+    "labnet.identifiers",
+    "labnet.lab_pc",
+    "labnet.lease_policy",
+    "labnet.redaction",
+    "labnet.runner_api",
+    "labnet.safe_paths",
+]
+forbidden_modules = ["labnet.grpc.generated.device_contracts"]
+allow_indirect_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

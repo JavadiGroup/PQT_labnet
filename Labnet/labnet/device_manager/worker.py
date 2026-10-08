@@ -532,12 +532,9 @@ class DeviceWorker:
         # This both removes the duplicate handwritten allow-list from drivers
         # and makes an API/physical signature mismatch fail during startup,
         # before the device is advertised to Central.
-        from labnet.grpc.generated.device_contracts import (
-            DEVICE_CONTRACT_BY_TYPE,
-            validate_implementation,
-        )
+        from labnet.contracts import registry, validate_implementation
 
-        contract = DEVICE_CONTRACT_BY_TYPE.get(device_type.strip())
+        contract = registry.find(device_type.strip())
         if contract is None:
             if self._require_generated_contract:
                 raise InvalidConfigurationError(

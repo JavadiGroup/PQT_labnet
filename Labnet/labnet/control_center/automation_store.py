@@ -36,7 +36,7 @@ from typing import Annotated, Any, BinaryIO, Literal
 
 from pydantic import AfterValidator, Field, ValidationError, field_validator
 
-from labnet.grpc.generated.device_contracts import DEVICE_CONTRACT_BY_TYPE
+from labnet.contracts import registry
 
 from ..safe_paths import (
     AGENT,
@@ -314,7 +314,7 @@ def render_devices(
             lines.append(
                 "- Automation: " + ("allowed in this project" if device_id in allowed else "NOT allowed in this project")
             )
-            contract = DEVICE_CONTRACT_BY_TYPE.get(device_type)
+            contract = registry.find(device_type)
             python_class = facade_class_name(contract) if contract is not None else None
             if python_class:
                 lines.append(f"- Python: `{python_class}(device_id=\"{device_id}\", client=central)`")

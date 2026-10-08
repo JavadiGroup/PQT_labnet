@@ -14,7 +14,7 @@ from typing import Any
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
-from .generated.device_contracts import DEVICE_CONTRACTS, DeviceContract
+from ..contracts import DeviceContract, registry
 from .services import DeviceExecutorProtocol, PatternDeviceGrpcService, StreamPolicy
 
 
@@ -98,7 +98,7 @@ class LabnetGrpcServer:
     ) -> None:
         self.config = config or GrpcServerConfig()
         selected_contracts = tuple(
-            DEVICE_CONTRACTS if contracts is None else contracts
+            registry.all() if contracts is None else contracts
         )
         if not selected_contracts:
             raise ValueError("At least one generated device contract is required.")
