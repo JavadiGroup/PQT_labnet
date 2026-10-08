@@ -16,7 +16,7 @@ Each everyday workflow is a short sequence of scripts:
 
 First-time setup of the lab computers (static IPs, certificates, reverse
 proxy, firewall) and the full settings reference are in
-[`Labnet/README.md`](Labnet/README.md).
+[`packages/labnet/README.md`](packages/labnet/README.md).
 
 - [How the network fits together](#how-the-network-fits-together)
 - [From physical device to network call](#from-physical-device-to-network-call)
@@ -78,12 +78,12 @@ or shared framework code.
 
 | Layer | File | Who writes it |
 | --- | --- | --- |
-| Network contract | `Labnet/protos/labnet/devices/v1/<family>.proto` | **You** |
-| Generated bindings and contract metadata | `Labnet/labnet/grpc/generated/*` | `tools/generate_protos.py` |
-| Driver wrapper | `Labnet/labnet/devices/<Family>/physical.py` | **You** |
-| Public class for experiments | `Labnet/labnet/devices/<Family>/device.py` | **You** (about 3 lines) |
+| Network contract | `packages/labnet/protos/labnet/devices/v1/<family>.proto` | **You** |
+| Generated bindings and contract metadata | `packages/labnet/src/labnet/grpc/generated/*` | `tools/generate_protos.py` |
+| Driver wrapper | `packages/labnet/src/labnet/devices/<Family>/physical.py` | **You** |
+| Public class for experiments | `packages/labnet/src/labnet/devices/<Family>/device.py` | **You** (about 3 lines) |
 | Which instruments a Lab PC serves | `site/inventories/<lab pc>.py` | **You** |
-| gRPC server, lease checks, worker threads, client stubs | `Labnet/labnet/grpc`, `device_manager`, `client` | Framework, do not edit per family |
+| gRPC server, lease checks, worker threads, client stubs | `packages/labnet/src/labnet/grpc`, `device_manager`, `client` | Framework, do not edit per family |
 
 ### 1. The proto is the contract
 
@@ -255,7 +255,7 @@ own page at `/<device-id>` (e.g. `http://127.0.0.1:8080/dev02-wavemeter`).
 The wavemeter's page has a live graph with Play/Pause, a time window, and
 CSV export; parameters that are sent when Play is pressed; and a script box.
 Other device types get a script box until they have their own panel (see
-[Device control pages](Labnet/README.md#device-control-pages)).
+[Device control pages](packages/labnet/README.md#device-control-pages)).
 
 The **Experiments** tab lists the lab's setup diagrams. **View Experiment**
 opens one on a canvas:
@@ -278,14 +278,14 @@ You upload, edit and link experiments from the page. Folders the agent writes
 are read-only to people. Tasks are queued as runs: the agent plans, and any
 device control waits for a person to approve a protocol whose bounds the
 Control Center and the Lab PCs enforce. See
-[Automation](Labnet/README.md#automation). To bring it into use in the lab,
-follow the [Automation go-live checklist](Labnet/README.md#automation-go-live-checklist).
+[Automation](packages/labnet/README.md#automation). To bring it into use in the lab,
+follow the [Automation go-live checklist](packages/labnet/README.md#automation-go-live-checklist).
 
 The **Photo-Agent** sidebar is Claude Code: ask it about LabNet, attach data
 or papers, or ask it to set up an experiment. It proposes a diagram you can
 apply to the canvas. See
-[Experiments](Labnet/README.md#experiments) and
-[Photo-Agent](Labnet/README.md#photo-agent).
+[Experiments](packages/labnet/README.md#experiments) and
+[Photo-Agent](packages/labnet/README.md#photo-agent).
 
 The Control Center is just another LabNet client with its own Central user,
 so the browser never sees an API key. In both development and the lab it
@@ -296,13 +296,13 @@ settings file's location and the address people open differ:
 | --- | --- | --- |
 | Settings | `.devnet/control-center.env` (written by `seed.sh`) | `C:\ProgramData\LabNet\control-center.env` |
 | `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | `http://127.0.0.1:8008` (same computer as Central) |
-| Started by | `scripts/dev/up.sh` | you, in its own window (see [starting the lab by hand](Labnet/README.md#starting-the-lab-by-hand)) |
+| Started by | `scripts/dev/up.sh` | you, in its own window (see [starting the lab by hand](packages/labnet/README.md#starting-the-lab-by-hand)) |
 | Address | `http://127.0.0.1:8080/status` | `https://pqt-control-center/status` or `https://192.168.50.10:8443/status`, via Caddy |
-| Logins | none | One per person, checked by Caddy (`scripts/lab/setup_logins.ps1`; see [Logins](Labnet/README.md#logins)) |
+| Logins | none | One per person, checked by Caddy (`scripts/lab/setup_logins.ps1`; see [Logins](packages/labnet/README.md#logins)) |
 
 Use `pqt-control-center`, with hyphens: underscores are not valid in host
 names or certificates. Setup is in
-[`Labnet/README.md` → Control Center](Labnet/README.md#control-center).
+[`packages/labnet/README.md` → Control Center](packages/labnet/README.md#control-center).
 
 ### Using the dev network from your own code
 
@@ -368,23 +368,23 @@ different Lab PC (Central rejects that as an ownership conflict).
 `SimulatedWavemeter` was added exactly this way and is the model to copy:
 
 1. `scripts/dev/down.sh`
-2. Add `Labnet/protos/labnet/devices/v1/<family>.proto`; see
-   [`simulated_wavemeter.proto`](Labnet/protos/labnet/devices/v1/simulated_wavemeter.proto).
+2. Add `packages/labnet/protos/labnet/devices/v1/<family>.proto`; see
+   [`simulated_wavemeter.proto`](packages/labnet/protos/labnet/devices/v1/simulated_wavemeter.proto).
    Every RPC needs the `pattern`, `physical_method`, and `default_unit` options.
 3. `scripts/dev/codegen.sh`. Generation fails with a precise message if an
    option is missing or doesn't fit the RPC's shape. On success,
    `device_contracts.py` gains a `<FAMILY>_CONTRACT` and the gRPC server serves
    the new service automatically.
-4. Write `Labnet/labnet/devices/<Family>/physical.py` (the driver), the facade
+4. Write `packages/labnet/src/labnet/devices/<Family>/physical.py` (the driver), the facade
    `device.py`, and a lazy `__init__.py`; copy
-   [`SimulatedWavemeter/`](Labnet/labnet/devices/SimulatedWavemeter/). The
+   [`SimulatedWavemeter/`](packages/labnet/src/labnet/devices/SimulatedWavemeter/). The
    facade is just:
    ```python
    class SimulatedWavemeter(ContractDeviceFacade):
        contract = SIMULATED_WAVEMETER_CONTRACT
        physical_type = PhysicalSimulatedWavemeter
    ```
-5. Export it in `Labnet/labnet/__init__.py` and `Labnet/labnet/devices/__init__.py`.
+5. Export it in `packages/labnet/src/labnet/__init__.py` and `packages/labnet/src/labnet/devices/__init__.py`.
 6. Add instances to an inventory, then run `scripts/dev/redeploy.sh`. The
    smoke test leases each new device and calls its first scalar-read RPC.
 7. Commit the proto **and** the regenerated files. `codegen.sh` prints the
@@ -392,7 +392,7 @@ different Lab PC (Central rejects that as an ownership conflict).
 
 After a contract is deployed, keep it backward compatible: never renumber or
 retype fields, add new fields as optional, and reserve removed numbers. See
-[contract compatibility](Labnet/README.md#contract-compatibility).
+[contract compatibility](packages/labnet/README.md#contract-compatibility).
 
 ## Updating the real lab network
 
@@ -400,7 +400,7 @@ Runtime computers never run from a git checkout. They install a versioned,
 hash-checked release built on the development PC. Each computer keeps its
 settings in one file that updates never touch. You start each process by
 hand in its own window, in the order listed in
-[starting the lab by hand](Labnet/README.md#starting-the-lab-by-hand):
+[starting the lab by hand](packages/labnet/README.md#starting-the-lab-by-hand):
 
 | Computer | Settings file | Start command |
 | --- | --- | --- |
@@ -410,13 +410,13 @@ hand in its own window, in the order listed in
 | Client | `C:\ProgramData\LabNet\client.env` | set `LABNET_ENV_FILE` to it, then run scripts |
 
 First-time setup of a computer is in
-[`Labnet/README.md` → Production deployment](Labnet/README.md#production-deployment).
+[`packages/labnet/README.md` → Production deployment](packages/labnet/README.md#production-deployment).
 After that, every update follows these steps:
 
 ### 1. Build the release (development PC)
 
 ```bash
-# bump version = "x.y.z" in Labnet/pyproject.toml, then:
+# bump version = "x.y.z" in every packages/*/pyproject.toml, then:
 git commit -am "Release x.y.z"
 scripts/release/build.sh                   # add --wheelhouse for offline hosts
 ```
@@ -467,10 +467,10 @@ bash $R/update_host.sh client                # on each client
 Start the role again (the script prints the command) and check its
 `/health/ready`. A Control Center installed before logins existed answers
 400 through Caddy until you either set up
-[logins](Labnet/README.md#logins) or add
+[logins](packages/labnet/README.md#logins) or add
 `LABNET_CONTROL_CENTER_ALLOWED_HOSTS=pqt-control-center,192.168.50.10` to
 `control-center.env`. Then run the
-[deployment verification](Labnet/README.md#deployment-verification) checklist.
+[deployment verification](packages/labnet/README.md#deployment-verification) checklist.
 
 **Rollback:** rerun `update_host.sh` from the previous release directory. The
 old `site/` and `client-app/` trees are also kept as `*.previous`. Reinstalling
@@ -486,7 +486,7 @@ backup if you need to.
 | `scripts/dev/up.sh` | dev machine | Start `labnet-central`, every `labnet-lab-pc` in `config.sh`, then `labnet-control-center`; wait for readiness |
 | `scripts/dev/status.sh` | dev machine | Component health + Central's device table |
 | `scripts/dev/smoke.sh` | dev machine | Lease and read every available device end to end |
-| `scripts/dev/runner.sh` (`build`, `login`, `up`, `logs`, `down`) | dev machine (Docker in WSL) | The [Automation runner](Labnet/README.md#the-automation-runner) against the dev Control Center |
+| `scripts/dev/runner.sh` (`build`, `login`, `up`, `logs`, `down`) | dev machine (Docker in WSL) | The [Automation runner](packages/labnet/README.md#the-automation-runner) against the dev Control Center |
 | `scripts/dev/down.sh` | dev machine | Stop Lab PCs, then Central (found by port; only Python processes) |
 | `scripts/dev/codegen.sh [--skip-tests]` | dev machine | Generate protos, `--check`, run pytest |
 | `scripts/dev/redeploy.sh [--skip-tests]` | dev machine | `down` → `codegen` → `up` → `smoke` |
@@ -503,13 +503,13 @@ backup if you need to.
 
 | Path | Purpose |
 | --- | --- |
-| [`Labnet/`](Labnet/) | The installable `labnet` Python project ([full guide](Labnet/README.md)) |
-| [`Labnet/protos/`](Labnet/protos/) | Protobuf device contracts (source of truth) |
-| [`Labnet/tools/generate_protos.py`](Labnet/tools/generate_protos.py) | Contract validator and code generator |
-| [`Labnet/labnet/devices/`](Labnet/labnet/devices/) | Device families: `physical.py` driver wrappers and facades |
-| [`Labnet/labnet/lab_pc/`](Labnet/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
-| [`Labnet/labnet/control_center/`](Labnet/labnet/control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |
-| [`Labnet/tests/`](Labnet/tests/) | Unit, full-stack, and example tests |
+| [`packages/`](packages/) | The installable packages: `labnet` ([full guide](packages/labnet/README.md)), `labnet-control-center` and `labnet-automation` |
+| [`packages/labnet/protos/`](packages/labnet/protos/) | Protobuf device contracts (source of truth) |
+| [`packages/labnet/tools/generate_protos.py`](packages/labnet/tools/generate_protos.py) | Contract validator and code generator |
+| [`packages/labnet/src/labnet/devices/`](packages/labnet/src/labnet/devices/) | Device families: `physical.py` driver wrappers and facades |
+| [`packages/labnet/src/labnet/lab_pc/`](packages/labnet/src/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
+| [`packages/labnet-control-center/src/labnet_control_center/`](packages/labnet-control-center/src/labnet_control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |
+| `packages/*/tests/`, [`tests/`](tests/) | Each package's tests; full-stack and example tests |
 | [`site/`](site/README.md) | The PQT lab's configuration: env templates, the Caddyfile template, and Lab PC inventories |
 | [`examples/`](examples/README.md) | Experiment scripts 01–05 |
 | [`scripts/`](scripts/) | Development, release, and host-update scripts |
@@ -524,7 +524,7 @@ In the lab, the Control Center answers only requests that come through
 Caddy, where each person signs in with their own login; Caddy vouches for
 them with a shared proxy secret. Automation runners use their own tokens
 instead. Development on one computer has no logins. See
-[Logins](Labnet/README.md#logins).
+[Logins](packages/labnet/README.md#logins).
 
 Never commit API keys, private keys, `.env` files, site certificates, or
 runtime databases. Rotate any credential that may have been exposed

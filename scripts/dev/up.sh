@@ -69,10 +69,10 @@ elif [[ ! -f "$watchdog_env" ]]; then
     warn "No safe-state watchdog settings (this network was seeded before it existed)."
     warn "Run scripts/dev/seed.sh --watchdog, then scripts/dev/up.sh again."
 else
-    watchdog_command=("$(native_path "$(labnet_bin labnet-automation-watchdog)")")
-    if [[ ! -e "$(labnet_bin labnet-automation-watchdog)" && ! -e "$(labnet_bin labnet-automation-watchdog).exe" ]]; then
+    watchdog_command=("$(native_path "$(labnet_bin labnet-watchdog)")")
+    if [[ ! -e "$(labnet_bin labnet-watchdog)" && ! -e "$(labnet_bin labnet-watchdog).exe" ]]; then
         # .venv was set up before the command existed (setup.sh adds it): run the module instead.
-        watchdog_command=("$(native_path "$PYTHON")" -m labnet.automation_watchdog)
+        watchdog_command=("$(native_path "$PYTHON")" -m labnet_control_center.watchdog)
     fi
     log "Starting the safe-state watchdog"
     start_process automation-watchdog "$WATCHDOG_PORT" "$log_file" "${watchdog_command[@]}" \

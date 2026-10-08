@@ -55,4 +55,4 @@ Rules:
 3. Issue its certificate on the development PC:
    `labnet-certs issue lab-pc-02 --ip <its static IP> --dir C:\LabNet-CA`
 4. Commit the inventory, build a release, and follow the Lab PC steps in
-   [`Labnet/README.md`](../Labnet/README.md#3-set-up-each-lab-pc).
+   [`packages/labnet/README.md`](../packages/labnet/README.md#3-set-up-each-lab-pc).

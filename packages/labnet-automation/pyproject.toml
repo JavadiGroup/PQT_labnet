@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labnet-automation"
+version = "3.0.0.dev0"
+description = "The LabNet Automation runner: an agent's experiments in containers, run only under a person's approval"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "labnet>=3.0.0.dev0,<3.1",
+    "httpx>=0.27,<1.0",
+    "mcp>=1.2,<2",
+]
+
+[project.scripts]
+labnet-runner = "labnet_automation.supervisor:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["labnet_automation*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+labnet_automation = ["automation_briefing.md"]

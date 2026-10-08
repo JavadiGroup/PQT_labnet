@@ -11,7 +11,7 @@
 #        update_host.sh                      installer run on each runtime host
 #        RELEASE.TXT                         git revision, version, SHA-256 hashes
 #
-# Bump `version` in Labnet/pyproject.toml and commit before running this;
+# Bump `version` in every packages/*/pyproject.toml and commit before running this;
 # an existing release directory is never overwritten.
 #
 # Usage: scripts/release/build.sh [--output DIR] [--wheelhouse]
@@ -46,24 +46,28 @@ version="$(package_version)"
 revision="$(git rev-parse HEAD)"
 release_dir="$output_root/$version"
 wheel_name="labnet-$version-py3-none-any.whl"
+cc_wheel_name="labnet_control_center-$version-py3-none-any.whl"
 [[ ! -e "$release_dir" ]] ||
-    die "$release_dir already exists. Bump version in Labnet/pyproject.toml and commit."
+    die "$release_dir already exists. Bump version in packages/*/pyproject.toml and commit."
 
 log "Release $version from $revision"
 
 log "Checking generated contracts and running tests"
-(cd "$LABNET_DIR" && "$PYTHON" tools/generate_protos.py --check && "$PYTHON" -m pytest -q)
+(cd "$LABNET_DIR" && "$PYTHON" tools/generate_protos.py --check)
+(cd "$REPO_ROOT" && "$PYTHON" -m pytest -q)
 
-log "Building $wheel_name"
+log "Building $wheel_name and $cc_wheel_name"
 # A stale setuptools build/ directory can leak deleted modules into the wheel.
-rm -rf "$LABNET_DIR/build"
+rm -rf "$LABNET_DIR/build" "$CONTROL_CENTER_DIR/build"
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
-"$PYTHON" -m pip wheel --quiet --no-deps "$(native_path "$LABNET_DIR")" --wheel-dir "$(native_path "$staging")"
+"$PYTHON" -m pip wheel --quiet --no-deps "$(native_path "$LABNET_DIR")" "$(native_path "$CONTROL_CENTER_DIR")" \
+    --wheel-dir "$(native_path "$staging")"
 [[ -f "$staging/$wheel_name" ]] || die "pip did not produce $wheel_name."
+[[ -f "$staging/$cc_wheel_name" ]] || die "pip did not produce $cc_wheel_name."
 
 mkdir -p "$release_dir"
-cp "$staging/$wheel_name" "$release_dir/"
+cp "$staging/$wheel_name" "$staging/$cc_wheel_name" "$release_dir/"
 
 log "Archiving site configuration and examples from HEAD"
 # HEAD:<dir> archives the directory's contents without a <dir>/ prefix.
@@ -74,7 +78,7 @@ git show "HEAD:scripts/deploy/update_host.sh" > "$release_dir/update_host.sh"
 if $wheelhouse; then
     log "Downloading dependency wheels for offline installs"
     "$PYTHON" -m pip download --quiet --dest "$(native_path "$release_dir/wheelhouse")" \
-        "$(native_path "$release_dir/$wheel_name")[central,lab-pc]"
+        "$(native_path "$release_dir/$wheel_name")[central,lab-pc]" "$(native_path "$release_dir/$cc_wheel_name")"
 fi
 
 cat > "$release_dir/RELEASE.TXT" << EOF
@@ -86,6 +90,7 @@ Wheel filename:   $wheel_name
 SHA-256:          $(sha256_upper "$release_dir/$wheel_name")
 
 Archive SHA-256:
+  $cc_wheel_name  $(sha256_upper "$release_dir/$cc_wheel_name")
   site.zip                  $(sha256_upper "$release_dir/site.zip")
   client-examples.zip       $(sha256_upper "$release_dir/client-examples.zip")
   update_host.sh            $(sha256_upper "$release_dir/update_host.sh")

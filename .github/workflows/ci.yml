@@ -1,5 +1,4 @@
-# CI skeleton on the current single-package layout (Labnet/). The full job set
-# (lint, Linux, Docker, wheel-smoke, docs) arrives with the 3.0 monorepo split.
+# CI on the uv workspace (packages/). Still to come: lint, Linux, Docker and docs jobs.
 name: CI
 
 on:
@@ -13,33 +12,26 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: Labnet
-
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  # Everything the test suite imports: runner (mcp), control-center (pypdf), certs (cryptography).
-  LABNET_EXTRAS: dev,runner,control-center,certs
 
 jobs:
-  generated:
+  checks:
     name: Generated protos and import rules
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: Labnet/pyproject.toml
-      - name: Install
-        run: python -m pip install -e ".[${{ env.LABNET_EXTRAS }}]"
+          enable-cache: true
+      - name: Install the workspace
+        run: uv sync --locked
       - name: generate_protos.py --check
-        run: python tools/generate_protos.py --check
+        run: uv run python packages/labnet/tools/generate_protos.py --check
       - name: Import rules (lint-imports)
-        run: lint-imports
+        run: uv run lint-imports
 
   test-windows:
     name: pytest (Windows, Python 3.12)
@@ -47,13 +39,32 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: Labnet/pyproject.toml
-      - name: Install
-        run: python -m pip install -e ".[${{ env.LABNET_EXTRAS }}]"
+          enable-cache: true
+      - name: Install the workspace
+        run: uv sync --locked
       - name: pytest
         # faulthandler dumps every thread's stack if a single test hangs.
-        run: python -m pytest -ra -p no:cacheprovider -o faulthandler_timeout=300
+        run: uv run pytest -ra -p no:cacheprovider -o faulthandler_timeout=300
+
+  wheel-smoke:
+    name: Wheels install and run
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Build the wheels
+        run: uv build --all-packages --wheel -o dist
+      - name: Install them in a clean venv and check them
+        shell: bash
+        run: |
+          uv venv --seed --python 3.12 "$RUNNER_TEMP/smoke"
+          py="$RUNNER_TEMP/smoke/Scripts/python"
+          "$py" -m pip install dist/labnet_control_center-*.whl dist/labnet_automation-*.whl \
+              "$(ls dist/labnet-[0-9]*.whl)[central,lab-pc,certs]"
+          cd "$RUNNER_TEMP" && "$py" "$GITHUB_WORKSPACE/.github/scripts/wheel_smoke.py" "$GITHUB_WORKSPACE"

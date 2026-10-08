@@ -1,0 +1,6 @@
+# Build context is the repository root: send only what this image needs.
+*
+!packages/labnet-automation/docker/requirements-run.txt
+!packages/labnet-automation/docker/labnet_devices.py
+**/__pycache__
+**/*.pyc

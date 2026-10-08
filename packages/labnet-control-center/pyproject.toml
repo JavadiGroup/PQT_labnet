@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labnet-control-center"
+version = "3.0.0.dev0"
+description = "The LabNet Control Center: a web interface for a lab network, with the Automation safe-state watchdog"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "labnet>=3.0.0.dev0,<3.1",
+    "fastapi>=0.115,<1.0",
+    "pypdf>=5,<7",
+    "uvicorn>=0.30,<1.0",
+]
+
+[project.scripts]
+labnet-control-center = "labnet_control_center.app:main"
+labnet-control-center-admin = "labnet_control_center.admin:main"
+labnet-watchdog = "labnet_control_center.watchdog.service:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["labnet_control_center*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+labnet_control_center = [
+    "agent_briefing.md",
+    "static/*.html",
+    "static/css/*.css",
+    "static/js/*.js",
+    "static/js/panels/*.js",
+]

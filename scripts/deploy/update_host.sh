@@ -54,7 +54,7 @@ case "$role" in
     central) extra="[central]" ;;
     lab-pc) extra="[lab-pc]" ;;
     client) extra="" ;;
-    control-center) extra="[control-center]" ;;
+    control-center) extra="" ;;  # plus the labnet-control-center wheel
     *) die "Usage: update_host.sh <central|lab-pc|client|control-center> [release dir]" ;;
 esac
 
@@ -135,7 +135,13 @@ pip_source=()
 if [[ -d "$release_dir/wheelhouse" ]]; then
     pip_source=(--no-index --find-links "$(native_path "$release_dir/wheelhouse")")
 fi
-"$python" -m pip install --quiet --disable-pip-version-check ${pip_source[@]+"${pip_source[@]}"} "$(native_path "$wheel")$extra"
+packages=("$(native_path "$wheel")$extra")
+if [[ "$role" == control-center ]]; then
+    cc_wheel_name="labnet_control_center-$version-py3-none-any.whl"
+    verify_archive "$cc_wheel_name"
+    packages+=("$(native_path "$release_dir/$cc_wheel_name")")
+fi
+"$python" -m pip install --quiet --disable-pip-version-check ${pip_source[@]+"${pip_source[@]}"} "${packages[@]}"
 installed="$("$python" -m pip show labnet | tr -d '\r' | sed -n 's/^Version: //p')"
 [[ "$installed" == "$version" ]] || die "Expected labnet $version in $venv_dir, found $installed."
 ok "labnet $installed installed in $venv_dir"
@@ -205,7 +211,7 @@ EOF
             warn "No $LABNET_HOME/central.env here. The Control Center is meant to run on central_server_pc."
         if [[ -f "$settings_file" ]]; then
             log "Checking $settings_file"
-            "$python" -c "import sys; from labnet.control_center.config import ControlCenterSettings as S; s = S.from_env(sys.argv[1]); print(' ok settings load; Central', s.server_url)" "$(native_path "$settings_file")"
+            "$python" -c "import sys; from labnet_control_center.config import ControlCenterSettings as S; s = S.from_env(sys.argv[1]); print(' ok settings load; Central', s.server_url)" "$(native_path "$settings_file")"
         else
             warn "No $settings_file yet. Start from site/control-center.env.example and the file from setup --write-env."
         fi
@@ -224,6 +230,6 @@ case "$role" in
     client) echo "  LABNET_ENV_FILE=$settings_file $python $LABNET_HOME/client-app/01_hello_device.py" ;;
     control-center)
         echo "  $bin_dir/labnet-control-center --env-file $settings_file   then   curl http://127.0.0.1:8080/health/ready"
-        echo "  $bin_dir/labnet-automation-watchdog --env-file $LABNET_HOME/watchdog.env   then   curl http://127.0.0.1:8081/health/ready"
+        echo "  $bin_dir/labnet-watchdog --env-file $LABNET_HOME/watchdog.env   then   curl http://127.0.0.1:8081/health/ready"
         ;;
 esac

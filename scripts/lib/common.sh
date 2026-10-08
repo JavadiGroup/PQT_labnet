@@ -5,7 +5,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LABNET_DIR="$REPO_ROOT/Labnet"
+LABNET_DIR="$REPO_ROOT/packages/labnet"
+CONTROL_CENTER_DIR="$REPO_ROOT/packages/labnet-control-center"
+AUTOMATION_DIR="$REPO_ROOT/packages/labnet-automation"
 DEVNET_DIR="$REPO_ROOT/.devnet"
 
 is_windows() {
@@ -192,7 +194,7 @@ stop_process() {
     ok "stopped $name (port $port)"
 }
 
-# Read version = "x.y.z" from Labnet/pyproject.toml.
+# Read version = "x.y.z" from packages/labnet/pyproject.toml (the packages move in lockstep).
 package_version() {
     "$PYTHON" - "$LABNET_DIR/pyproject.toml" << 'EOF'
 import sys, tomllib

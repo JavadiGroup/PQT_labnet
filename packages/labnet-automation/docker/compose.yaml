@@ -1,0 +1,116 @@
+# The Automation runner on one Docker host (the lab's Linux PC, or Docker in WSL for development).
+#
+#   docker compose -f packages/labnet-automation/docker/compose.yaml build                 # all three images
+#   docker compose -f packages/labnet-automation/docker/compose.yaml run --rm login        # once: sign in to Claude (/login)
+#   docker compose -f packages/labnet-automation/docker/compose.yaml --env-file /etc/labnet/runner.env up -d
+#
+# What runs where, and why:
+#   egress  the allow-listing HTTPS proxy: the only member of both the internal agent network and a
+#           normal one, so it is the agent containers' only way out (CONNECT to egress-allow.txt, port 443).
+#   runner  the supervisor. Host networking so it reaches the Control Center at the address in its env
+#           file (127.0.0.1 in development, through WSL mirrored networking). It gets the Docker socket to
+#           start agent and run containers; those never get it.
+#   agent / run containers are started per run by the runner (docker_backend.py), not by compose.
+
+name: labnet-automation
+
+x-runner-build: &runner-build
+  context: ../../..
+  dockerfile: packages/labnet-automation/docker/Dockerfile.runner
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  agent:
+    # No route out at all; agent containers reach Anthropic only through the egress proxy.
+    name: labnet-automation-agent
+    internal: true
+  egress:
+    name: labnet-automation-egress-net
+
+volumes:
+  claude-login:
+    # The saved Claude login (CLAUDE_CONFIG_DIR=/claude), shared by every agent container.
+    name: labnet-automation-claude-login
+
+services:
+  egress:
+    image: labnet-automation-runner:latest
+    build: *runner-build
+    container_name: labnet-automation-egress  # the name agents use: http://labnet-automation-egress:3128
+    command: ["python", "-m", "labnet_automation.egress_proxy",
+              "--listen", "0.0.0.0:3128", "--allow", "/etc/labnet/egress-allow.txt"]
+    networks: [agent, egress]
+    volumes:
+      - ./egress-allow.txt:/etc/labnet/egress-allow.txt:ro
+    # It parses untrusted requests from agents: nobody, read-only, no capabilities, small limits.
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
+    restart: unless-stopped
+    logging: *logging
+
+  runner:
+    image: labnet-automation-runner:latest
+    build: *runner-build
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The same path inside and out: the paths the runner gives `docker run -v` are host paths.
+      - ${LABNET_RUNNER_WORK_DIR:-/var/lib/labnet-runner}:${LABNET_RUNNER_WORK_DIR:-/var/lib/labnet-runner}
+      # The lab's CA (LABNET_RUNNER_CA_FILE=/etc/labnet/labnet-ca.pem), read-only.
+      - ${LABNET_RUNNER_CONFIG_DIR:-/etc/labnet}:/etc/labnet:ro
+    env_file:
+      # LABNET_RUNNER_CONTROL_CENTER_URL, LABNET_RUNNER_TOKEN, ... (see labnet_automation/config.py).
+      # Not required for `build`; without it the runner stops at once and says what is missing.
+      - path: ${LABNET_RUNNER_ENV_FILE:-/etc/labnet/runner.env}
+        required: false
+    environment:
+      # Always the folder mounted above, whatever the env file says.
+      LABNET_RUNNER_WORK_DIR: ${LABNET_RUNNER_WORK_DIR:-/var/lib/labnet-runner}
+    restart: unless-stopped
+    # SIGTERM lets the runner stop the run, upload what it has and finish it as "stopped".
+    stop_grace_period: 90s
+    depends_on: [egress]
+    logging: *logging
+
+  login:
+    # A person signing in, interactively: plain internet (the egress network), not the allow-list.
+    image: labnet-automation-agent:latest
+    pull_policy: never
+    profiles: [login]
+    stdin_open: true
+    tty: true
+    networks: [egress]
+    volumes:
+      - claude-login:/claude
+    read_only: true
+    tmpfs: [/tmp, /home/node]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: ["claude"]
+
+  # Build-only entries, so `docker compose build` builds the agent and run images too, under the
+  # names config.py expects. scale 0: `up` never starts them; the runner starts these images itself.
+  agent-image:
+    image: labnet-automation-agent:latest
+    build:
+      context: ../../..
+      dockerfile: packages/labnet-automation/docker/Dockerfile.agent
+    network_mode: none
+    scale: 0
+
+  run-image:
+    image: labnet-automation-run:latest
+    build:
+      context: ../../..
+      dockerfile: packages/labnet-automation/docker/Dockerfile.run
+    network_mode: none
+    scale: 0

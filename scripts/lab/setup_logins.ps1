@@ -5,7 +5,7 @@
 .DESCRIPTION
     The Control Center trusts only requests that come through Caddy: Caddy asks
     each person for their login (basic_auth), then adds two headers that the
-    Control Center checks (see Labnet/labnet/control_center/ingress.py):
+    Control Center checks (see packages/labnet-control-center/src/labnet_control_center/ingress.py):
 
         X-LabNet-Proxy: <LABNET_CONTROL_CENTER_PROXY_SECRET>
         X-LabNet-User:  <the login name>

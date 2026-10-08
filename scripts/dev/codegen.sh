@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate Python artifacts from Labnet/protos and verify them:
+# Regenerate Python artifacts from packages/labnet/protos and verify them:
 #   1. tools/generate_protos.py          compile + validate every .proto,
 #                                        rewrite labnet/grpc/generated/
 #   2. tools/generate_protos.py --check  confirm the committed files match
@@ -27,8 +27,8 @@ log "Generating protobuf bindings and device contracts"
 
 if $run_tests; then
     log "Running test suite"
-    "$PYTHON" -m pytest -q
+    (cd "$REPO_ROOT" && "$PYTHON" -m pytest -q)
 fi
 
 ok "Code generation complete."
-git -C "$REPO_ROOT" status --short -- Labnet/labnet/grpc/generated
+git -C "$REPO_ROOT" status --short -- packages/labnet/src/labnet/grpc/generated

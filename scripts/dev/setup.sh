@@ -13,9 +13,13 @@ if [[ ! -x "$PYTHON" ]]; then
     PYTHON="$(venv_python "$REPO_ROOT/.venv")"
 fi
 
-log "Installing LabNet (editable) with dev, central, and lab-pc extras"
+log "Installing the LabNet packages (editable) with every role's dependencies and the dev tools"
 "$PYTHON" -m pip install --quiet --upgrade pip
-"$PYTHON" -m pip install --quiet -e "$(native_path "$LABNET_DIR")[dev,central,lab-pc]"
+"$PYTHON" -m pip install --quiet \
+    -e "$(native_path "$LABNET_DIR")[central,lab-pc,certs]" \
+    -e "$(native_path "$CONTROL_CENTER_DIR")" \
+    -e "$(native_path "$AUTOMATION_DIR")" \
+    --group "$(native_path "$REPO_ROOT/pyproject.toml"):dev"
 
 ok "Environment ready: $PYTHON"
 echo "Next: scripts/dev/seed.sh"

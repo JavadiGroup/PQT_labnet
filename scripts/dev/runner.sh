@@ -15,7 +15,7 @@
 # The first `up` issues a runner token (labnet-control-center-admin runner add
 # dev-laptop) into .devnet/runner.env.
 #
-# The lab doesn't use this script: see "Automation runner" in Labnet/README.md.
+# The lab doesn't use this script: see "Automation runner" in packages/labnet/README.md.
 #
 # Usage: scripts/dev/runner.sh build|login|up|down|logs|self-check|status
 
@@ -25,7 +25,7 @@ source "$REPO_ROOT/scripts/dev/config.sh"
 WSL_DISTRO="${LABNET_WSL_DISTRO:-Ubuntu-22.04}"
 RUNNER_NAME="${LABNET_DEV_RUNNER_NAME:-dev-laptop}"
 RUNNER_ENV="$DEVNET_DIR/runner.env"
-COMPOSE_FILE="docker/automation/compose.yaml"
+COMPOSE_FILE="packages/labnet-automation/docker/compose.yaml"
 
 is_windows || die "runner.sh is for the Windows dev laptop (Docker in WSL). On Linux, use docker compose directly."
 command -v wsl.exe > /dev/null || die "WSL isn't installed. Install it (wsl --install -d $WSL_DISTRO)."

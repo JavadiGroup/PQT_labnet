@@ -1,0 +1,14 @@
+# Build context is the repository root: send only what this image needs.
+*
+!packages/labnet/pyproject.toml
+!packages/labnet/README.md
+!packages/labnet/MANIFEST.in
+!packages/labnet/src
+!packages/labnet/protos
+!packages/labnet-automation/pyproject.toml
+!packages/labnet-automation/README.md
+!packages/labnet-automation/src
+!packages/labnet-automation/docker/egress-allow.txt
+!packages/labnet-automation/docker/constraints.txt
+**/__pycache__
+**/*.pyc

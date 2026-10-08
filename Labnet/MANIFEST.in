@@ -1,4 +1,0 @@
-include tools/generate_protos.py
-recursive-include protos *.proto
-include labnet/central/alembic.ini
-recursive-include labnet/central/alembic *.py *.mako

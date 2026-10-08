@@ -116,10 +116,10 @@ cat >> "$DEVNET_DIR/$CONTROL_CENTER_USER.env" << EOF
 LABNET_CONTROL_CENTER_PORT=$CONTROL_CENTER_PORT
 LABNET_CONTROL_CENTER_EXPERIMENTS_DIR=$(native_path "$REPO_ROOT/experiments")
 LABNET_AUTOMATION_DIR=$(native_path "$REPO_ROOT/automation")
-LABNET_AGENT_SOURCES=$(native_path "$REPO_ROOT/Labnet")$path_sep$(native_path "$REPO_ROOT/examples")
+LABNET_AGENT_SOURCES=$(native_path "$REPO_ROOT/packages")$path_sep$(native_path "$REPO_ROOT/examples")
 LABNET_AGENT_LITERATURE_DIR=$(native_path "$REPO_ROOT/literature")
 EOF
-ok "$CONTROL_CENTER_USER -> http://127.0.0.1:$CONTROL_CENTER_PORT/status (Photo-Agent reads Labnet/, examples/, literature/)"
+ok "$CONTROL_CENTER_USER -> http://127.0.0.1:$CONTROL_CENTER_PORT/status (Photo-Agent reads packages/, examples/, literature/)"
 write_watchdog_settings
 
 ok "Seeded. Keys and settings are in $DEVNET_DIR (git-ignored)."

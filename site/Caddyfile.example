@@ -1,7 +1,7 @@
 # Caddy for the lab, on central_server_pc. Copy to C:\ProgramData\LabNet\Caddyfile.
 # Check it:  caddy validate --config C:\ProgramData\LabNet\Caddyfile
 # Start it:  caddy run --config C:\ProgramData\LabNet\Caddyfile
-# Needs Caddy 2.8 or later (the basic_auth directive). See Labnet/README.md,
+# Needs Caddy 2.8 or later (the basic_auth directive). See packages/labnet/README.md,
 # "HTTPS with Caddy" (Central) and "Control Center" (logins).
 
 # No admin API. Caddy's default one (localhost:2019, no password) would show

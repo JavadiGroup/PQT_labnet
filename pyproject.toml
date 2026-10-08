@@ -1,0 +1,86 @@
+# The LabNet development workspace. It is never built or published; the
+# packages are in packages/. `uv sync` installs all of them, editable, with
+# the tools below.
+[project]
+name = "labnet-workspace"
+version = "0"
+requires-python = ">=3.11"
+dependencies = [
+    "labnet[lab-pc,central,certs]",
+    "labnet-control-center",
+    "labnet-automation",
+]
+
+[dependency-groups]
+dev = [
+    "grpcio-tools==1.81.1",
+    "import-linter>=2.1,<3",
+    "pytest>=8.0,<10.0",
+    "pytest-asyncio>=0.24,<2.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+labnet = { workspace = true }
+labnet-control-center = { workspace = true }
+labnet-automation = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/labnet/tests",
+    "packages/labnet-control-center/tests",
+    "packages/labnet-automation/tests",
+    "tests",
+]
+# packages/labnet: `tools.generate_protos` for the generator's tests.
+pythonpath = ["packages/labnet"]
+addopts = "-ra"
+asyncio_mode = "auto"
+
+[tool.importlinter]
+root_packages = ["labnet", "labnet_control_center", "labnet_automation"]
+
+[[tool.importlinter.contracts]]
+name = "Core and the Automation runner don't import the Control Center"
+type = "forbidden"
+source_modules = ["labnet", "labnet_automation"]
+forbidden_modules = ["labnet_control_center"]
+
+[[tool.importlinter.contracts]]
+name = "Core doesn't import the Automation runner"
+type = "forbidden"
+source_modules = ["labnet"]
+forbidden_modules = ["labnet_automation"]
+
+# Contracts are found through labnet.contracts.registry. Only the device-family
+# packages (the future plugins) still import their own generated constants.
+[[tool.importlinter.contracts]]
+name = "Only the registry reads the generated contracts module"
+type = "forbidden"
+source_modules = [
+    "labnet_automation",
+    "labnet_control_center",
+    "labnet.central",
+    "labnet.certs",
+    "labnet.client",
+    "labnet.device_manager",
+    "labnet.devices.core",
+    "labnet.envfile",
+    "labnet.grpc.auth",
+    "labnet.grpc.server",
+    "labnet.grpc.services",
+    "labnet.grpc.status",
+    "labnet.identifiers",
+    "labnet.lab_pc",
+    "labnet.lease_policy",
+    "labnet.redaction",
+    "labnet.runner_api",
+    "labnet.safe_paths",
+]
+forbidden_modules = ["labnet.grpc.generated.device_contracts"]
+allow_indirect_imports = true
