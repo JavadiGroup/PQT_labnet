@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from . import common_pb2 as common__pb2
-from . import simulated_tunable_laser_pb2 as simulated__tunable__laser__pb2
+from . import common_pb2 as labnet_dot_devices_dot_v1_dot_common__pb2
+from . import simulated_tunable_laser_pb2 as labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2
 
 GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
@@ -19,7 +19,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in simulated_tunable_laser_pb2_grpc.py depends on'
+        + ' but the generated code in labnet/devices/v1/simulated_tunable_laser_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -41,33 +41,33 @@ class SimulatedTunableLaserServiceStub:
         """
         self.ReadWavelength = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedTunableLaserService/ReadWavelength',
-                request_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
-                response_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadPositionSteps = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedTunableLaserService/ReadPositionSteps',
-                request_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
-                response_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.MoveSteps = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedTunableLaserService/MoveSteps',
-                request_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserMoveStepsRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMoveStepsRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.GoToWavelengthNm = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedTunableLaserService/GoToWavelengthNm',
-                request_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserGoToWavelengthRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserGoToWavelengthRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.SetVelocityNmS = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedTunableLaserService/SetVelocityNmS',
-                request_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserVelocityRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserVelocityRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.Stop = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedTunableLaserService/Stop',
-                request_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
 
 
@@ -123,33 +123,33 @@ def add_SimulatedTunableLaserServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ReadWavelength': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadWavelength,
-                    request_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.FromString,
-                    response_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.SerializeToString,
             ),
             'ReadPositionSteps': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadPositionSteps,
-                    request_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.FromString,
-                    response_serializer=simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.SerializeToString,
             ),
             'MoveSteps': grpc.unary_unary_rpc_method_handler(
                     servicer.MoveSteps,
-                    request_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserMoveStepsRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMoveStepsRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'GoToWavelengthNm': grpc.unary_unary_rpc_method_handler(
                     servicer.GoToWavelengthNm,
-                    request_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserGoToWavelengthRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserGoToWavelengthRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'SetVelocityNmS': grpc.unary_unary_rpc_method_handler(
                     servicer.SetVelocityNmS,
-                    request_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserVelocityRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserVelocityRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'Stop': grpc.unary_unary_rpc_method_handler(
                     servicer.Stop,
-                    request_deserializer=simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -181,8 +181,8 @@ class SimulatedTunableLaserService:
             request,
             target,
             '/labnet.devices.v1.SimulatedTunableLaserService/ReadWavelength',
-            simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
-            simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -208,8 +208,8 @@ class SimulatedTunableLaserService:
             request,
             target,
             '/labnet.devices.v1.SimulatedTunableLaserService/ReadPositionSteps',
-            simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
-            simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -235,8 +235,8 @@ class SimulatedTunableLaserService:
             request,
             target,
             '/labnet.devices.v1.SimulatedTunableLaserService/MoveSteps',
-            simulated__tunable__laser__pb2.SimulatedTunableLaserMoveStepsRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserMoveStepsRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -262,8 +262,8 @@ class SimulatedTunableLaserService:
             request,
             target,
             '/labnet.devices.v1.SimulatedTunableLaserService/GoToWavelengthNm',
-            simulated__tunable__laser__pb2.SimulatedTunableLaserGoToWavelengthRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserGoToWavelengthRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -289,8 +289,8 @@ class SimulatedTunableLaserService:
             request,
             target,
             '/labnet.devices.v1.SimulatedTunableLaserService/SetVelocityNmS',
-            simulated__tunable__laser__pb2.SimulatedTunableLaserVelocityRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserVelocityRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -316,8 +316,8 @@ class SimulatedTunableLaserService:
             request,
             target,
             '/labnet.devices.v1.SimulatedTunableLaserService/Stop',
-            simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__tunable__laser__pb2.SimulatedTunableLaserRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,

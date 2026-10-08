@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-from . import common_pb2 as common__pb2
-from . import dummy_awg_pb2 as dummy__awg__pb2
-from . import transfer_pb2 as transfer__pb2
+from . import common_pb2 as labnet_dot_devices_dot_v1_dot_common__pb2
+from . import dummy_awg_pb2 as labnet_dot_devices_dot_v1_dot_dummy__awg__pb2
+from . import transfer_pb2 as labnet_dot_devices_dot_v1_dot_transfer__pb2
 
 GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
@@ -20,7 +20,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in dummy_awg_pb2_grpc.py depends on'
+        + ' but the generated code in labnet/devices/v1/dummy_awg_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -41,58 +41,58 @@ class DummyAWGServiceStub:
         """
         self.ReadAmplitude = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/ReadAmplitude',
-                request_serializer=dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadFrequency = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/ReadFrequency',
-                request_serializer=dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadOffset = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/ReadOffset',
-                request_serializer=dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadOutputRms = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/ReadOutputRms',
-                request_serializer=dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadOutputVoltage = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/ReadOutputVoltage',
-                request_serializer=dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetAmplitude = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/SetAmplitude',
-                request_serializer=dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetFrequency = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/SetFrequency',
-                request_serializer=dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetOffset = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/SetOffset',
-                request_serializer=dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
-                response_deserializer=dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetOutputEnabled = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/SetOutputEnabled',
-                request_serializer=dummy__awg__pb2.DummyAwgOutputRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgOutputRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.SetWaveform = channel.unary_unary(
                 '/labnet.devices.v1.DummyAWGService/SetWaveform',
-                request_serializer=dummy__awg__pb2.DummyAwgWaveformRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWaveformRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.StreamOutputVoltage = channel.unary_stream(
                 '/labnet.devices.v1.DummyAWGService/StreamOutputVoltage',
-                request_serializer=transfer__pb2.StreamDataRequest.SerializeToString,
-                response_deserializer=transfer__pb2.StreamDataResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
                 _registered_method=True)
 
 
@@ -180,58 +180,58 @@ def add_DummyAWGServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ReadAmplitude': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadAmplitude,
-                    request_deserializer=dummy__awg__pb2.DummyAwgChannelRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'ReadFrequency': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadFrequency,
-                    request_deserializer=dummy__awg__pb2.DummyAwgChannelRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'ReadOffset': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadOffset,
-                    request_deserializer=dummy__awg__pb2.DummyAwgChannelRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'ReadOutputRms': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadOutputRms,
-                    request_deserializer=dummy__awg__pb2.DummyAwgChannelRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'ReadOutputVoltage': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadOutputVoltage,
-                    request_deserializer=dummy__awg__pb2.DummyAwgChannelRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'SetAmplitude': grpc.unary_unary_rpc_method_handler(
                     servicer.SetAmplitude,
-                    request_deserializer=dummy__awg__pb2.DummyAwgWriteRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'SetFrequency': grpc.unary_unary_rpc_method_handler(
                     servicer.SetFrequency,
-                    request_deserializer=dummy__awg__pb2.DummyAwgWriteRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'SetOffset': grpc.unary_unary_rpc_method_handler(
                     servicer.SetOffset,
-                    request_deserializer=dummy__awg__pb2.DummyAwgWriteRequest.FromString,
-                    response_serializer=dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.SerializeToString,
             ),
             'SetOutputEnabled': grpc.unary_unary_rpc_method_handler(
                     servicer.SetOutputEnabled,
-                    request_deserializer=dummy__awg__pb2.DummyAwgOutputRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgOutputRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'SetWaveform': grpc.unary_unary_rpc_method_handler(
                     servicer.SetWaveform,
-                    request_deserializer=dummy__awg__pb2.DummyAwgWaveformRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWaveformRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'StreamOutputVoltage': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamOutputVoltage,
-                    request_deserializer=transfer__pb2.StreamDataRequest.FromString,
-                    response_serializer=transfer__pb2.StreamDataResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -262,8 +262,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/ReadAmplitude',
-            dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -289,8 +289,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/ReadFrequency',
-            dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -316,8 +316,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/ReadOffset',
-            dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -343,8 +343,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/ReadOutputRms',
-            dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -370,8 +370,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/ReadOutputVoltage',
-            dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgChannelRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -397,8 +397,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/SetAmplitude',
-            dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -424,8 +424,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/SetFrequency',
-            dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -451,8 +451,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/SetOffset',
-            dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
-            dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -478,8 +478,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/SetOutputEnabled',
-            dummy__awg__pb2.DummyAwgOutputRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgOutputRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -505,8 +505,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/SetWaveform',
-            dummy__awg__pb2.DummyAwgWaveformRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__awg__pb2.DummyAwgWaveformRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -532,8 +532,8 @@ class DummyAWGService:
             request,
             target,
             '/labnet.devices.v1.DummyAWGService/StreamOutputVoltage',
-            transfer__pb2.StreamDataRequest.SerializeToString,
-            transfer__pb2.StreamDataResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
             options,
             channel_credentials,
             insecure,

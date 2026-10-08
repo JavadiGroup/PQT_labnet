@@ -4,7 +4,6 @@ import importlib
 import inspect
 from pathlib import Path
 import re
-import shutil
 from textwrap import dedent
 
 import pytest
@@ -16,19 +15,24 @@ from labnet.grpc.generated import (
     rpc_options_pb2,
 )
 from labnet.contracts import PhysicalContractError, registry, validate_implementation
-from tools.generate_protos import ContractValidationError, generate_protos
+from labnet.driver import BuildTarget, ContractValidationError, build
+
+CORE_PROTOS = {"common.proto", "rpc_options.proto"}
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RPC_OPTIONS_PROTO = (
-    PROJECT_ROOT
-    / "protos"
-    / "labnet"
-    / "devices"
-    / "v1"
-    / "rpc_options.proto"
-)
-COMMON_PROTO = RPC_OPTIONS_PROTO.with_name("common.proto")
+def generate_protos(*, proto_root: Path, output_root: Path, proto_files, check: bool = False):
+    """Build test protos the way a driver package is built: against labnet's installed protos."""
+
+    return build(
+        BuildTarget(
+            proto_root=proto_root,
+            output_root=output_root,
+            python_package=output_root.name,
+            proto_files=tuple(name for name in proto_files if name not in CORE_PROTOS),
+            contracts_module="device_contracts",
+        ),
+        check=check,
+    )
 
 
 def _write_test_contract(
@@ -39,8 +43,6 @@ def _write_test_contract(
     output_root = tmp_path / "generated"
     proto_root.mkdir()
     output_root.mkdir()
-    shutil.copy2(RPC_OPTIONS_PROTO, proto_root / "rpc_options.proto")
-    shutil.copy2(COMMON_PROTO, proto_root / "common.proto")
     (proto_root / "test_device.proto").write_text(
         dedent(
             f'''\
@@ -48,8 +50,8 @@ def _write_test_contract(
 
             package labnet.tests.v1;
 
-            import "common.proto";
-            import "rpc_options.proto";
+            import "labnet/devices/v1/common.proto";
+            import "labnet/devices/v1/rpc_options.proto";
 
             message ResetRequest {{
               string device_id = 1;
@@ -97,8 +99,6 @@ def _generate_importable_contract_package(
     output_root = tmp_path / package_name
     proto_root.mkdir()
     output_root.mkdir()
-    shutil.copy2(RPC_OPTIONS_PROTO, proto_root / "rpc_options.proto")
-    shutil.copy2(COMMON_PROTO, proto_root / "common.proto")
     proto_name = f"{package_name}.proto"
     (proto_root / proto_name).write_text(dedent(proto_source), encoding="utf-8")
     build_contracts = generate_protos(
@@ -128,8 +128,6 @@ def _generate_shape_contract(
     output_root = tmp_path / "shape-generated"
     proto_root.mkdir()
     output_root.mkdir()
-    shutil.copy2(RPC_OPTIONS_PROTO, proto_root / "rpc_options.proto")
-    shutil.copy2(COMMON_PROTO, proto_root / "common.proto")
     duration_import = (
         'import "google/protobuf/duration.proto";'
         if "google.protobuf.Duration" in request_fields
@@ -143,8 +141,8 @@ def _generate_shape_contract(
 
             package labnet.tests.shape.v1;
 
-            import "common.proto";
-            import "rpc_options.proto";
+            import "labnet/devices/v1/common.proto";
+            import "labnet/devices/v1/rpc_options.proto";
             {duration_import}
 
             message ShapeRequest {{
@@ -636,8 +634,8 @@ def test_map_request_uses_mapping_protocol_and_serializes_as_map(
         proto_source='''\
             syntax = "proto3";
             package labnet.tests.map.v1;
-            import "common.proto";
-            import "rpc_options.proto";
+            import "labnet/devices/v1/common.proto";
+            import "labnet/devices/v1/rpc_options.proto";
 
             message MapRequest {
               string device_id = 1;
@@ -693,8 +691,8 @@ def test_shared_physical_method_merges_multi_rpc_field_as_optional(
         proto_source='''\
             syntax = "proto3";
             package labnet.tests.shared.v1;
-            import "common.proto";
-            import "rpc_options.proto";
+            import "labnet/devices/v1/common.proto";
+            import "labnet/devices/v1/rpc_options.proto";
 
             message ReadWithGainRequest {
               string device_id = 1;
@@ -847,16 +845,14 @@ def test_generation_rejects_duplicate_derived_device_type(tmp_path: Path) -> Non
     output_root = tmp_path / "collision-generated"
     proto_root.mkdir()
     output_root.mkdir()
-    shutil.copy2(RPC_OPTIONS_PROTO, proto_root / "rpc_options.proto")
-    shutil.copy2(COMMON_PROTO, proto_root / "common.proto")
     for filename, package in (("first.proto", "one.v1"), ("second.proto", "two.v1")):
         (proto_root / filename).write_text(
             dedent(
                 f'''\
                 syntax = "proto3";
                 package {package};
-                import "common.proto";
-                import "rpc_options.proto";
+                import "labnet/devices/v1/common.proto";
+                import "labnet/devices/v1/rpc_options.proto";
 
                 message ReadRequest {{
                   string device_id = 1;

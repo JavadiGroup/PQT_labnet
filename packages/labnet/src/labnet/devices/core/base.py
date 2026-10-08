@@ -33,7 +33,7 @@ class BaseDeviceInterface(ABC):
         except KeyError as exc:
             raise RuntimeError(
                 f"No generated gRPC contract exists for device_type "
-                f"{self.device_type!r}. Add its service proto and run "
-                "tools/generate_protos.py."
+                f"{self.device_type!r}: install the package with its driver, "
+                "or build its protos with `labnet driver build`."
             ) from exc
         return list(contract.allowed_physical_methods)

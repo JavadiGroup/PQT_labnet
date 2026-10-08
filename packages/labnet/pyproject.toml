@@ -33,12 +33,20 @@ postgres = [
 certs = [
     "cryptography>=42,<47",
 ]
+# Building driver protos (labnet driver build). Pinned: generated code must not change with it.
+driver-dev = [
+    "grpcio-tools==1.81.1",
+]
 
 [project.scripts]
+labnet = "labnet.cli:main"
 labnet-central = "labnet.central.main:main"
 labnet-central-admin = "labnet.central.manage:main"
 labnet-lab-pc = "labnet.lab_pc.app:main"
 labnet-certs = "labnet.certs:main"
+
+[project.entry-points."labnet.commands"]
+driver = "labnet.driver.cli:register"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -46,16 +54,11 @@ include = ["labnet*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-labnet = ["py.typed"]
+labnet = ["py.typed", "protos/labnet/devices/v1/*.proto"]
 "labnet.grpc.generated" = ["*.pyi"]
 "labnet.central" = [
     "alembic.ini",
     "alembic/*.py",
     "alembic/*.mako",
     "alembic/versions/*.py",
-]
-
-[tool.setuptools.data-files]
-"share/labnet/protos/labnet/devices/v1" = [
-    "protos/labnet/devices/v1/*.proto",
 ]

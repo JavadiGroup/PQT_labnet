@@ -28,8 +28,8 @@ jobs:
           enable-cache: true
       - name: Install the workspace
         run: uv sync --locked
-      - name: generate_protos.py --check
-        run: uv run python packages/labnet/tools/generate_protos.py --check
+      - name: labnet driver build --core --check
+        run: uv run labnet driver build --core --check --import-check
       - name: Import rules (lint-imports)
         run: uv run lint-imports
 

@@ -2,8 +2,8 @@ syntax = "proto3";
 
 package labnet.devices.v1;
 
-import "common.proto";
-import "rpc_options.proto";
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
 
 message SimulatedTunableLaserRequest {
   string device_id = 1;

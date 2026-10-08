@@ -2329,7 +2329,7 @@ three-line facade, and exports. The steps are in the
    | `RPC_PATTERN_UNARY_COMMAND` | Unary | Any driver method; its return value comes back as a typed `CommandResult` (none, bool, integer, float, text, or integer list) |
    | `RPC_PATTERN_POLLED_SCALAR_STREAM` | Server streaming | Repeated physical reads with scheduling, cancellation, lease revalidation, and backpressure |
 
-2. **Generate** with `python tools/generate_protos.py` (or
+2. **Generate** with `labnet driver build --core` (or
    `scripts/dev/codegen.sh`). Never edit generated files.
 3. **Implement `physical.py`** with a stable `device_id`, the generated
    `device_type`, `connect`, `disconnect`, `status`, `availability`, JSON-compatible
@@ -2356,7 +2356,7 @@ three-line facade, and exports. The steps are in the
    (see [Site limits](#site-limits)), and a protocol can bound only numbers
    that have one. Drivers must still check their own ranges: local use of
    the driver skips the Lab PC.
-6. **Validate:** `python tools/generate_protos.py --check` and `python -m pytest`.
+6. **Validate:** `labnet driver build --core --check` and `pytest`.
 
 The four `Dummy*` optics-bench families (`labnet/devices/DummyLaser`,
 `DummyAOM`, `DummyEOM`, `DummyAWG`) are small, complete examples of channels,
@@ -2449,7 +2449,7 @@ Once a contract is deployed:
 From the repository root (`uv sync` installs every package and the tools):
 
 ```cmd
-uv run python packages/labnet/tools/generate_protos.py --check
+uv run labnet driver build --core --check --import-check
 uv run lint-imports
 uv run pytest
 ```
@@ -2493,7 +2493,7 @@ restore the `labnet.db.before-<version>.<time>` backup for that.
 | Lab PC refuses to start | No inventory, or no key in production | Set `LABNET_DEVICE_INVENTORY` and `LABNET_DEVICE_MANAGER_API_KEY` |
 | Client sees no available devices | Lab PC down, device unhealthy, or every device leased | Both health endpoints and Central's device list |
 | Client times out connecting to a TLS Lab PC | CA not configured, or IP not in the Lab PC certificate | `LABNET_CA_FILE`; compare `labnet-certs show` with `LABNET_GRPC_ADVERTISED_TARGET` |
-| Proto check reports stale files | Generated bindings do not match the protos | `python tools/generate_protos.py`, then commit every generated change |
+| Proto check reports stale files | Generated bindings do not match the protos | `labnet driver build --core`, then commit every generated change |
 | Physical contract validation fails | Driver method missing or with an incompatible signature | Compare `physical_method` and forwarded fields with `physical.py` |
 | Lease lost during an experiment | Renewal failure, lease deadline, or idle timeout | Client and Central logs; network stability; timeout policy |
 

@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from . import simulated_wavemeter_pb2 as simulated__wavemeter__pb2
-from . import transfer_pb2 as transfer__pb2
+from . import simulated_wavemeter_pb2 as labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2
+from . import transfer_pb2 as labnet_dot_devices_dot_v1_dot_transfer__pb2
 
 GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
@@ -19,7 +19,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in simulated_wavemeter_pb2_grpc.py depends on'
+        + ' but the generated code in labnet/devices/v1/simulated_wavemeter_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -40,18 +40,18 @@ class SimulatedWavemeterServiceStub:
         """
         self.ReadWavelength = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedWavemeterService/ReadWavelength',
-                request_serializer=simulated__wavemeter__pb2.ReadWavelengthRequest.SerializeToString,
-                response_deserializer=simulated__wavemeter__pb2.ReadWavelengthResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.ReadWavelengthRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.ReadWavelengthResponse.FromString,
                 _registered_method=True)
         self.SetExposure = channel.unary_unary(
                 '/labnet.devices.v1.SimulatedWavemeterService/SetExposure',
-                request_serializer=simulated__wavemeter__pb2.SetExposureRequest.SerializeToString,
-                response_deserializer=simulated__wavemeter__pb2.SetExposureResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.SetExposureRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.SetExposureResponse.FromString,
                 _registered_method=True)
         self.StreamWavelength = channel.unary_stream(
                 '/labnet.devices.v1.SimulatedWavemeterService/StreamWavelength',
-                request_serializer=transfer__pb2.StreamDataRequest.SerializeToString,
-                response_deserializer=transfer__pb2.StreamDataResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
                 _registered_method=True)
 
 
@@ -85,18 +85,18 @@ def add_SimulatedWavemeterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ReadWavelength': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadWavelength,
-                    request_deserializer=simulated__wavemeter__pb2.ReadWavelengthRequest.FromString,
-                    response_serializer=simulated__wavemeter__pb2.ReadWavelengthResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.ReadWavelengthRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.ReadWavelengthResponse.SerializeToString,
             ),
             'SetExposure': grpc.unary_unary_rpc_method_handler(
                     servicer.SetExposure,
-                    request_deserializer=simulated__wavemeter__pb2.SetExposureRequest.FromString,
-                    response_serializer=simulated__wavemeter__pb2.SetExposureResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.SetExposureRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.SetExposureResponse.SerializeToString,
             ),
             'StreamWavelength': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamWavelength,
-                    request_deserializer=transfer__pb2.StreamDataRequest.FromString,
-                    response_serializer=transfer__pb2.StreamDataResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -127,8 +127,8 @@ class SimulatedWavemeterService:
             request,
             target,
             '/labnet.devices.v1.SimulatedWavemeterService/ReadWavelength',
-            simulated__wavemeter__pb2.ReadWavelengthRequest.SerializeToString,
-            simulated__wavemeter__pb2.ReadWavelengthResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.ReadWavelengthRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.ReadWavelengthResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -154,8 +154,8 @@ class SimulatedWavemeterService:
             request,
             target,
             '/labnet.devices.v1.SimulatedWavemeterService/SetExposure',
-            simulated__wavemeter__pb2.SetExposureRequest.SerializeToString,
-            simulated__wavemeter__pb2.SetExposureResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.SetExposureRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_simulated__wavemeter__pb2.SetExposureResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -181,8 +181,8 @@ class SimulatedWavemeterService:
             request,
             target,
             '/labnet.devices.v1.SimulatedWavemeterService/StreamWavelength',
-            transfer__pb2.StreamDataRequest.SerializeToString,
-            transfer__pb2.StreamDataResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
             options,
             channel_credentials,
             insecure,

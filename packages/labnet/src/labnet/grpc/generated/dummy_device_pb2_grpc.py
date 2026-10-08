@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from . import dummy_device_pb2 as dummy__device__pb2
-from . import transfer_pb2 as transfer__pb2
+from . import dummy_device_pb2 as labnet_dot_devices_dot_v1_dot_dummy__device__pb2
+from . import transfer_pb2 as labnet_dot_devices_dot_v1_dot_transfer__pb2
 
 GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
@@ -19,7 +19,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in dummy_device_pb2_grpc.py depends on'
+        + ' but the generated code in labnet/devices/v1/dummy_device_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -38,18 +38,18 @@ class DummyDeviceServiceStub:
         """
         self.ReadValue = channel.unary_unary(
                 '/labnet.devices.v1.DummyDeviceService/ReadValue',
-                request_serializer=dummy__device__pb2.ReadValueRequest.SerializeToString,
-                response_deserializer=dummy__device__pb2.ReadValueResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.ReadValueRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.ReadValueResponse.FromString,
                 _registered_method=True)
         self.WriteValue = channel.unary_unary(
                 '/labnet.devices.v1.DummyDeviceService/WriteValue',
-                request_serializer=dummy__device__pb2.WriteValueRequest.SerializeToString,
-                response_deserializer=dummy__device__pb2.WriteValueResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.WriteValueRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.WriteValueResponse.FromString,
                 _registered_method=True)
         self.StreamData = channel.unary_stream(
                 '/labnet.devices.v1.DummyDeviceService/StreamData',
-                request_serializer=transfer__pb2.StreamDataRequest.SerializeToString,
-                response_deserializer=transfer__pb2.StreamDataResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
                 _registered_method=True)
 
 
@@ -80,18 +80,18 @@ def add_DummyDeviceServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ReadValue': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadValue,
-                    request_deserializer=dummy__device__pb2.ReadValueRequest.FromString,
-                    response_serializer=dummy__device__pb2.ReadValueResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.ReadValueRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.ReadValueResponse.SerializeToString,
             ),
             'WriteValue': grpc.unary_unary_rpc_method_handler(
                     servicer.WriteValue,
-                    request_deserializer=dummy__device__pb2.WriteValueRequest.FromString,
-                    response_serializer=dummy__device__pb2.WriteValueResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.WriteValueRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__device__pb2.WriteValueResponse.SerializeToString,
             ),
             'StreamData': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamData,
-                    request_deserializer=transfer__pb2.StreamDataRequest.FromString,
-                    response_serializer=transfer__pb2.StreamDataResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -120,8 +120,8 @@ class DummyDeviceService:
             request,
             target,
             '/labnet.devices.v1.DummyDeviceService/ReadValue',
-            dummy__device__pb2.ReadValueRequest.SerializeToString,
-            dummy__device__pb2.ReadValueResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__device__pb2.ReadValueRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__device__pb2.ReadValueResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -147,8 +147,8 @@ class DummyDeviceService:
             request,
             target,
             '/labnet.devices.v1.DummyDeviceService/WriteValue',
-            dummy__device__pb2.WriteValueRequest.SerializeToString,
-            dummy__device__pb2.WriteValueResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__device__pb2.WriteValueRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__device__pb2.WriteValueResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -174,8 +174,8 @@ class DummyDeviceService:
             request,
             target,
             '/labnet.devices.v1.DummyDeviceService/StreamData',
-            transfer__pb2.StreamDataRequest.SerializeToString,
-            transfer__pb2.StreamDataResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
             options,
             channel_credentials,
             insecure,

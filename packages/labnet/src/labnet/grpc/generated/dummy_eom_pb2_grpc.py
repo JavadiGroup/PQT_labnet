@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-from . import common_pb2 as common__pb2
-from . import dummy_eom_pb2 as dummy__eom__pb2
-from . import transfer_pb2 as transfer__pb2
+from . import common_pb2 as labnet_dot_devices_dot_v1_dot_common__pb2
+from . import dummy_eom_pb2 as labnet_dot_devices_dot_v1_dot_dummy__eom__pb2
+from . import transfer_pb2 as labnet_dot_devices_dot_v1_dot_transfer__pb2
 
 GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
@@ -20,7 +20,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in dummy_eom_pb2_grpc.py depends on'
+        + ' but the generated code in labnet/devices/v1/dummy_eom_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -42,53 +42,53 @@ class DummyEOMServiceStub:
         """
         self.ReadCarrierFraction = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/ReadCarrierFraction',
-                request_serializer=dummy__eom__pb2.DummyEomRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadModulationDepth = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/ReadModulationDepth',
-                request_serializer=dummy__eom__pb2.DummyEomRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadModulationFrequency = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/ReadModulationFrequency',
-                request_serializer=dummy__eom__pb2.DummyEomRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadRfAmplitude = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/ReadRfAmplitude',
-                request_serializer=dummy__eom__pb2.DummyEomRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadSidebandFraction = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/ReadSidebandFraction',
-                request_serializer=dummy__eom__pb2.DummyEomRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadSidebandRatio = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/ReadSidebandRatio',
-                request_serializer=dummy__eom__pb2.DummyEomRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetModulationFrequency = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/SetModulationFrequency',
-                request_serializer=dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetRfAmplitude = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/SetRfAmplitude',
-                request_serializer=dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
-                response_deserializer=dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetRfEnabled = channel.unary_unary(
                 '/labnet.devices.v1.DummyEOMService/SetRfEnabled',
-                request_serializer=dummy__eom__pb2.DummyEomRfEnabledRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRfEnabledRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.StreamSidebandRatio = channel.unary_stream(
                 '/labnet.devices.v1.DummyEOMService/StreamSidebandRatio',
-                request_serializer=transfer__pb2.StreamDataRequest.SerializeToString,
-                response_deserializer=transfer__pb2.StreamDataResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
                 _registered_method=True)
 
 
@@ -170,53 +170,53 @@ def add_DummyEOMServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ReadCarrierFraction': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadCarrierFraction,
-                    request_deserializer=dummy__eom__pb2.DummyEomRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'ReadModulationDepth': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadModulationDepth,
-                    request_deserializer=dummy__eom__pb2.DummyEomRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'ReadModulationFrequency': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadModulationFrequency,
-                    request_deserializer=dummy__eom__pb2.DummyEomRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'ReadRfAmplitude': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadRfAmplitude,
-                    request_deserializer=dummy__eom__pb2.DummyEomRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'ReadSidebandFraction': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadSidebandFraction,
-                    request_deserializer=dummy__eom__pb2.DummyEomRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'ReadSidebandRatio': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadSidebandRatio,
-                    request_deserializer=dummy__eom__pb2.DummyEomRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'SetModulationFrequency': grpc.unary_unary_rpc_method_handler(
                     servicer.SetModulationFrequency,
-                    request_deserializer=dummy__eom__pb2.DummyEomWriteRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'SetRfAmplitude': grpc.unary_unary_rpc_method_handler(
                     servicer.SetRfAmplitude,
-                    request_deserializer=dummy__eom__pb2.DummyEomWriteRequest.FromString,
-                    response_serializer=dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.SerializeToString,
             ),
             'SetRfEnabled': grpc.unary_unary_rpc_method_handler(
                     servicer.SetRfEnabled,
-                    request_deserializer=dummy__eom__pb2.DummyEomRfEnabledRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRfEnabledRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'StreamSidebandRatio': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamSidebandRatio,
-                    request_deserializer=transfer__pb2.StreamDataRequest.FromString,
-                    response_serializer=transfer__pb2.StreamDataResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -248,8 +248,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/ReadCarrierFraction',
-            dummy__eom__pb2.DummyEomRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -275,8 +275,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/ReadModulationDepth',
-            dummy__eom__pb2.DummyEomRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -302,8 +302,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/ReadModulationFrequency',
-            dummy__eom__pb2.DummyEomRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -329,8 +329,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/ReadRfAmplitude',
-            dummy__eom__pb2.DummyEomRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -356,8 +356,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/ReadSidebandFraction',
-            dummy__eom__pb2.DummyEomRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -383,8 +383,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/ReadSidebandRatio',
-            dummy__eom__pb2.DummyEomRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -410,8 +410,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/SetModulationFrequency',
-            dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -437,8 +437,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/SetRfAmplitude',
-            dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
-            dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -464,8 +464,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/SetRfEnabled',
-            dummy__eom__pb2.DummyEomRfEnabledRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__eom__pb2.DummyEomRfEnabledRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -491,8 +491,8 @@ class DummyEOMService:
             request,
             target,
             '/labnet.devices.v1.DummyEOMService/StreamSidebandRatio',
-            transfer__pb2.StreamDataRequest.SerializeToString,
-            transfer__pb2.StreamDataResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
             options,
             channel_credentials,
             insecure,

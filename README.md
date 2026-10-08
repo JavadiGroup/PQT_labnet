@@ -79,7 +79,7 @@ or shared framework code.
 | Layer | File | Who writes it |
 | --- | --- | --- |
 | Network contract | `packages/labnet/protos/labnet/devices/v1/<family>.proto` | **You** |
-| Generated bindings and contract metadata | `packages/labnet/src/labnet/grpc/generated/*` | `tools/generate_protos.py` |
+| Generated bindings and contract metadata | `packages/labnet/src/labnet/grpc/generated/*` | `labnet driver build --core` |
 | Driver wrapper | `packages/labnet/src/labnet/devices/<Family>/physical.py` | **You** |
 | Public class for experiments | `packages/labnet/src/labnet/devices/<Family>/device.py` | **You** (about 3 lines) |
 | Which instruments a Lab PC serves | `site/inventories/<lab pc>.py` | **You** |
@@ -106,7 +106,7 @@ in `rpc_options.proto` are reserved, and the generator rejects them.
 
 ### 2. Code generation turns it into Python
 
-`scripts/dev/codegen.sh` runs `tools/generate_protos.py`, which runs `protoc`,
+`scripts/dev/codegen.sh` runs `labnet driver build --core`, which runs `protoc`,
 validates every RPC option, and writes:
 
 - `<family>_pb2.py` / `_pb2_grpc.py`: protobuf messages, gRPC stub, and servicer;
@@ -505,7 +505,7 @@ backup if you need to.
 | --- | --- |
 | [`packages/`](packages/) | The installable packages: `labnet` ([full guide](packages/labnet/README.md)), `labnet-control-center` and `labnet-automation` |
 | [`packages/labnet/protos/`](packages/labnet/protos/) | Protobuf device contracts (source of truth) |
-| [`packages/labnet/tools/generate_protos.py`](packages/labnet/tools/generate_protos.py) | Contract validator and code generator |
+| [`packages/labnet/src/labnet/driver/`](packages/labnet/src/labnet/driver/) | `labnet driver build`: contract validator and code generator |
 | [`packages/labnet/src/labnet/devices/`](packages/labnet/src/labnet/devices/) | Device families: `physical.py` driver wrappers and facades |
 | [`packages/labnet/src/labnet/lab_pc/`](packages/labnet/src/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
 | [`packages/labnet-control-center/src/labnet_control_center/`](packages/labnet-control-center/src/labnet_control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |

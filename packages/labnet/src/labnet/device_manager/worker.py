@@ -539,8 +539,8 @@ class DeviceWorker:
             if self._require_generated_contract:
                 raise InvalidConfigurationError(
                     f"No generated gRPC contract exists for device_type "
-                    f"{device_type.strip()!r}. Add its annotated proto and run "
-                    "tools/generate_protos.py before starting the Lab PC."
+                    f"{device_type.strip()!r}: install the package with its driver "
+                    "(or build its protos with `labnet driver build`) before starting the Lab PC."
                 )
             # Keep the transport-neutral manager usable for legacy/test-only
             # physical devices that have no network service contract.

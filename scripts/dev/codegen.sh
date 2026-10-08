@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Regenerate Python artifacts from packages/labnet/protos and verify them:
-#   1. tools/generate_protos.py          compile + validate every .proto,
+#   1. labnet driver build --core          compile + validate every .proto,
 #                                        rewrite labnet/grpc/generated/
-#   2. tools/generate_protos.py --check  confirm the committed files match
+#   2. labnet driver build --core --check  confirm the committed files match
 #   3. pytest                            contract, device, and full-stack tests
 #
 # Running processes are not affected; restart them (scripts/dev/up.sh) to load
@@ -20,10 +20,9 @@ case "${1:-}" in
     *) die "Unknown option $1 (expected --skip-tests)." ;;
 esac
 
-cd "$LABNET_DIR"
 log "Generating protobuf bindings and device contracts"
-"$PYTHON" tools/generate_protos.py
-"$PYTHON" tools/generate_protos.py --check
+"$PYTHON" -m labnet.cli driver build --core
+"$PYTHON" -m labnet.cli driver build --core --check --import-check
 
 if $run_tests; then
     log "Running test suite"

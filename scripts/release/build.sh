@@ -53,7 +53,7 @@ cc_wheel_name="labnet_control_center-$version-py3-none-any.whl"
 log "Release $version from $revision"
 
 log "Checking generated contracts and running tests"
-(cd "$LABNET_DIR" && "$PYTHON" tools/generate_protos.py --check)
+"$PYTHON" -m labnet.cli driver build --core --check --import-check
 (cd "$REPO_ROOT" && "$PYTHON" -m pytest -q)
 
 log "Building $wheel_name and $cc_wheel_name"

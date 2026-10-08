@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-from . import common_pb2 as common__pb2
-from . import dummy_laser_pb2 as dummy__laser__pb2
-from . import transfer_pb2 as transfer__pb2
+from . import common_pb2 as labnet_dot_devices_dot_v1_dot_common__pb2
+from . import dummy_laser_pb2 as labnet_dot_devices_dot_v1_dot_dummy__laser__pb2
+from . import transfer_pb2 as labnet_dot_devices_dot_v1_dot_transfer__pb2
 
 GRPC_GENERATED_VERSION = '1.81.1'
 GRPC_VERSION = grpc.__version__
@@ -20,7 +20,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in dummy_laser_pb2_grpc.py depends on'
+        + ' but the generated code in labnet/devices/v1/dummy_laser_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -41,38 +41,38 @@ class DummyLaserServiceStub:
         """
         self.ReadCurrent = channel.unary_unary(
                 '/labnet.devices.v1.DummyLaserService/ReadCurrent',
-                request_serializer=dummy__laser__pb2.DummyLaserRequest.SerializeToString,
-                response_deserializer=dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadPower = channel.unary_unary(
                 '/labnet.devices.v1.DummyLaserService/ReadPower',
-                request_serializer=dummy__laser__pb2.DummyLaserRequest.SerializeToString,
-                response_deserializer=dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.ReadWavelength = channel.unary_unary(
                 '/labnet.devices.v1.DummyLaserService/ReadWavelength',
-                request_serializer=dummy__laser__pb2.DummyLaserRequest.SerializeToString,
-                response_deserializer=dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetCurrent = channel.unary_unary(
                 '/labnet.devices.v1.DummyLaserService/SetCurrent',
-                request_serializer=dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
-                response_deserializer=dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.SetEmissionEnabled = channel.unary_unary(
                 '/labnet.devices.v1.DummyLaserService/SetEmissionEnabled',
-                request_serializer=dummy__laser__pb2.DummyLaserEmissionRequest.SerializeToString,
-                response_deserializer=common__pb2.CommandResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserEmissionRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
                 _registered_method=True)
         self.SetWavelength = channel.unary_unary(
                 '/labnet.devices.v1.DummyLaserService/SetWavelength',
-                request_serializer=dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
-                response_deserializer=dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
                 _registered_method=True)
         self.StreamPower = channel.unary_stream(
                 '/labnet.devices.v1.DummyLaserService/StreamPower',
-                request_serializer=transfer__pb2.StreamDataRequest.SerializeToString,
-                response_deserializer=transfer__pb2.StreamDataResponse.FromString,
+                request_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+                response_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
                 _registered_method=True)
 
 
@@ -132,38 +132,38 @@ def add_DummyLaserServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ReadCurrent': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadCurrent,
-                    request_deserializer=dummy__laser__pb2.DummyLaserRequest.FromString,
-                    response_serializer=dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
             ),
             'ReadPower': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadPower,
-                    request_deserializer=dummy__laser__pb2.DummyLaserRequest.FromString,
-                    response_serializer=dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
             ),
             'ReadWavelength': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadWavelength,
-                    request_deserializer=dummy__laser__pb2.DummyLaserRequest.FromString,
-                    response_serializer=dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
             ),
             'SetCurrent': grpc.unary_unary_rpc_method_handler(
                     servicer.SetCurrent,
-                    request_deserializer=dummy__laser__pb2.DummyLaserWriteRequest.FromString,
-                    response_serializer=dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
             ),
             'SetEmissionEnabled': grpc.unary_unary_rpc_method_handler(
                     servicer.SetEmissionEnabled,
-                    request_deserializer=dummy__laser__pb2.DummyLaserEmissionRequest.FromString,
-                    response_serializer=common__pb2.CommandResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserEmissionRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.SerializeToString,
             ),
             'SetWavelength': grpc.unary_unary_rpc_method_handler(
                     servicer.SetWavelength,
-                    request_deserializer=dummy__laser__pb2.DummyLaserWriteRequest.FromString,
-                    response_serializer=dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserWriteRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.SerializeToString,
             ),
             'StreamPower': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamPower,
-                    request_deserializer=transfer__pb2.StreamDataRequest.FromString,
-                    response_serializer=transfer__pb2.StreamDataResponse.SerializeToString,
+                    request_deserializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.FromString,
+                    response_serializer=labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -194,8 +194,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/ReadCurrent',
-            dummy__laser__pb2.DummyLaserRequest.SerializeToString,
-            dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -221,8 +221,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/ReadPower',
-            dummy__laser__pb2.DummyLaserRequest.SerializeToString,
-            dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -248,8 +248,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/ReadWavelength',
-            dummy__laser__pb2.DummyLaserRequest.SerializeToString,
-            dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -275,8 +275,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/SetCurrent',
-            dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
-            dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -302,8 +302,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/SetEmissionEnabled',
-            dummy__laser__pb2.DummyLaserEmissionRequest.SerializeToString,
-            common__pb2.CommandResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserEmissionRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_common__pb2.CommandResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -329,8 +329,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/SetWavelength',
-            dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
-            dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserWriteRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_dummy__laser__pb2.DummyLaserMeasurementResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -356,8 +356,8 @@ class DummyLaserService:
             request,
             target,
             '/labnet.devices.v1.DummyLaserService/StreamPower',
-            transfer__pb2.StreamDataRequest.SerializeToString,
-            transfer__pb2.StreamDataResponse.FromString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataRequest.SerializeToString,
+            labnet_dot_devices_dot_v1_dot_transfer__pb2.StreamDataResponse.FromString,
             options,
             channel_credentials,
             insecure,

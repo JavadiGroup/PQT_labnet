@@ -17,6 +17,7 @@ from importlib import resources
 from pathlib import Path
 
 SCRIPTS = (
+    "labnet",
     "labnet-central",
     "labnet-central-admin",
     "labnet-lab-pc",
@@ -31,6 +32,7 @@ SCRIPTS = (
 PACKAGE_DATA = (
     ("labnet_control_center", "packages/labnet-control-center/src/labnet_control_center", ("static",)),
     ("labnet.central", "packages/labnet/src/labnet/central", ("alembic",)),
+    ("labnet", "packages/labnet/src/labnet", ("protos",)),
 )
 FILES = (
     ("labnet_control_center", "agent_briefing.md"),
@@ -73,10 +75,10 @@ def main(repository: Path) -> None:
         if not resources.files(package).joinpath(name).is_file():
             problems.append(f"{package}: {name} is not in the wheel")
 
-    protos = Path(sys.prefix) / "share" / "labnet" / "protos" / "labnet" / "devices" / "v1"
-    missing = {p.name for p in (repository / "packages/labnet/protos/labnet/devices/v1").glob("*.proto")}
-    missing -= {p.name for p in protos.glob("*.proto")}
-    problems += [f"labnet: protos/{name} is not installed" for name in sorted(missing)]
+    labnet_path = shutil.which("labnet", path=sysconfig.get_path("scripts"))
+    result = subprocess.run([labnet_path or "labnet", "driver", "build", "--help"], capture_output=True, text=True)
+    if result.returncode != 0:
+        problems.append(f"labnet driver build --help failed: {result.stderr.strip()[-300:]}")
 
     from labnet.contracts import registry
 
