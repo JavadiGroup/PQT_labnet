@@ -15,7 +15,8 @@ import argparse
 import csv
 import statistics
 
-from labnet import DummyDevice, LabClient, LabClientError, SimulatedWavemeter
+from labnet import LabClient, LabClientError
+from labnet_sim import DummyDevice, SimulatedWavemeter
 
 
 SETPOINTS = [0.0, 0.25, 0.5, 0.75, 1.0]

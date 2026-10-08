@@ -29,7 +29,8 @@ Every networked example has the same shape. Objects start as `None`, are
 created inside `try`, and are closed in `finally`:
 
 ```python
-from labnet import DummyDevice, LabClient, LabClientError
+from labnet import LabClient, LabClientError
+from labnet_sim import DummyDevice
 
 central = None
 device = None

@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package labnet_sim.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+import "labnet/devices/v1/transfer.proto";
+
+// Every AWG request names a channel: "CH1" (the default) or "CH2".
+message DummyAwgChannelRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+}
+
+message DummyAwgWriteRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+  double value = 4;
+  optional string unit = 5;
+}
+
+message DummyAwgWaveformRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+  // sine, square, triangle, ramp or dc.
+  string waveform = 4;
+}
+
+message DummyAwgOutputRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+  bool enabled = 4;
+}
+
+message DummyAwgMeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+// A simulated two-channel arbitrary waveform generator. Each channel has a
+// waveform, frequency, peak-to-peak amplitude, offset and output switch;
+// outputs start off.
+service DummyAWGService {
+  rpc ReadAmplitude(DummyAwgChannelRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_amplitude"
+      default_unit: "Vpp"
+    };
+  }
+
+  rpc ReadFrequency(DummyAwgChannelRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_frequency"
+      default_unit: "Hz"
+    };
+  }
+
+  rpc ReadOffset(DummyAwgChannelRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_offset"
+      default_unit: "V"
+    };
+  }
+
+  // RMS of the output over a period (0 while the output is off).
+  rpc ReadOutputRms(DummyAwgChannelRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_output_rms"
+      default_unit: "V"
+    };
+  }
+
+  // The output voltage at this instant.
+  rpc ReadOutputVoltage(DummyAwgChannelRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_output_voltage"
+      default_unit: "V"
+    };
+  }
+
+  // Peak-to-peak amplitude, 0 to 10 V.
+  rpc SetAmplitude(DummyAwgWriteRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_amplitude"
+      default_unit: "Vpp"
+    };
+  }
+
+  // 1 mHz to 120 MHz.
+  rpc SetFrequency(DummyAwgWriteRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_frequency"
+      default_unit: "Hz"
+    };
+  }
+
+  // DC offset, -5 to 5 V.
+  rpc SetOffset(DummyAwgWriteRequest) returns (DummyAwgMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_offset"
+      default_unit: "V"
+    };
+  }
+
+  // Switches a channel's output on or off; returns the new state.
+  rpc SetOutputEnabled(DummyAwgOutputRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_output_enabled"
+      default_unit: "1"
+    };
+  }
+
+  // Selects a channel's waveform; returns the waveform applied.
+  rpc SetWaveform(DummyAwgWaveformRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_waveform"
+      default_unit: "1"
+    };
+  }
+
+  rpc StreamOutputVoltage(labnet.devices.v1.StreamDataRequest) returns (stream labnet.devices.v1.StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_output_voltage"
+      default_unit: "V"
+    };
+  }
+}

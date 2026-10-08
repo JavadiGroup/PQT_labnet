@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from labnet import (
+from labnet_sim import (
     PhysicalDummyAOM,
     PhysicalDummyAWG,
     PhysicalDummyDevice,

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from labnet import (
+from labnet_sim import (
     PhysicalDummyAOM,
     PhysicalDummyAWG,
     PhysicalDummyDevice,

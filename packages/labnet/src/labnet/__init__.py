@@ -1,4 +1,5 @@
-"""Public package for Labnet device, Central, and gRPC client components."""
+"""LabNet: device control for a lab network. The client API is exported here;
+device classes come from driver packages (for example ``labnet_sim``)."""
 
 from __future__ import annotations
 
@@ -45,23 +46,7 @@ _CLIENT_EXPORTS = {
     "ServerConnectionError",
     "ServerResponseError",
 }
-_DEVICE_EXPORTS = {
-    "DummyDevice": ".devices.DummyDevice.device",
-    "DummyAOM": ".devices.DummyAOM.device",
-    "DummyAWG": ".devices.DummyAWG.device",
-    "DummyEOM": ".devices.DummyEOM.device",
-    "DummyLaser": ".devices.DummyLaser.device",
-    "PhysicalDummyDevice": ".devices.DummyDevice.physical",
-    "PhysicalDummyAOM": ".devices.DummyAOM.physical",
-    "PhysicalDummyAWG": ".devices.DummyAWG.physical",
-    "PhysicalDummyEOM": ".devices.DummyEOM.physical",
-    "PhysicalDummyLaser": ".devices.DummyLaser.physical",
-    "SimulatedTunableLaser": ".devices.SimulatedTunableLaser.device",
-    "PhysicalSimulatedTunableLaser": ".devices.SimulatedTunableLaser.physical",
-    "SimulatedWavemeter": ".devices.SimulatedWavemeter.device",
-    "PhysicalSimulatedWavemeter": ".devices.SimulatedWavemeter.physical",
-}
-__all__ = sorted(_CLIENT_EXPORTS | set(_DEVICE_EXPORTS))
+__all__ = sorted(_CLIENT_EXPORTS)
 
 
 def __getattr__(name: str) -> Any:
@@ -71,8 +56,6 @@ def __getattr__(name: str) -> Any:
             value = getattr(core, name)
         else:
             value = getattr(import_module(".client.core.exceptions", __name__), name)
-    elif name in _DEVICE_EXPORTS:
-        value = getattr(import_module(_DEVICE_EXPORTS[name], __name__), name)
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

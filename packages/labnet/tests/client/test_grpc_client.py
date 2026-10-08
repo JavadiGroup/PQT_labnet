@@ -21,9 +21,11 @@ from labnet.client import (
 )
 from labnet.devices.core.remote import RemoteDeviceBinding
 from labnet.client.core.lab_client import LabClient
-from labnet.grpc.generated import common_pb2, dummy_device_pb2
-from labnet.grpc.generated import dummy_device_pb2_grpc, transfer_pb2
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet.grpc.generated import common_pb2
+from labnet_sim._generated import dummy_device_pb2
+from labnet.grpc.generated import transfer_pb2
+from labnet_sim._generated import dummy_device_pb2_grpc
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 
 
 def grant_for(port: int) -> LeaseGrant:
@@ -43,7 +45,7 @@ def grant_for(port: int) -> LeaseGrant:
             endpoint=EndpointDescriptor(
                 transport="grpc",
                 target=f"127.0.0.1:{port}",
-                api_version="labnet.devices.v1",
+                api_version="labnet.v3",
                 secure=False,
             ),
             device_type="dummy_device",
@@ -341,7 +343,7 @@ def test_remote_dummy_device_sync_context_closes_channel_then_releases() -> None
                         "endpoint": {
                             "transport": "grpc",
                             "target": grant.device.endpoint.target,
-                            "api_version": "labnet.devices.v1",
+                            "api_version": "labnet.v3",
                             "secure": False,
                         },
                     },
@@ -374,7 +376,7 @@ def test_plaintext_grpc_requires_loopback_and_stream_count_is_integer() -> None:
     remote_endpoint = EndpointDescriptor(
         transport="grpc",
         target="lab-pc.example:50051",
-        api_version="labnet.devices.v1",
+        api_version="labnet.v3",
         secure=False,
     )
     with pytest.raises(ValueError, match="loopback"):

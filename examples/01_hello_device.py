@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import time
 
-from labnet import DummyDevice, LabClient, LabClientError
+from labnet import LabClient, LabClientError
+from labnet_sim import DummyDevice
 
 
 def main() -> None:

@@ -32,7 +32,7 @@ def _endpoint() -> EndpointDescriptor:
     return EndpointDescriptor(
         transport="grpc",
         target="lab-pc-1.example:50051",
-        api_version="labnet.devices.v1",
+        api_version="labnet.v3",
         secure=True,
         tls_server_name="lab-pc-1.example",
         attributes={"site": "quantum-lab"},
@@ -87,7 +87,7 @@ async def test_registry_uses_v1_contract_for_registration_and_heartbeat() -> Non
         "endpoint": {
             "transport": "grpc",
             "target": "lab-pc-1.example:50051",
-            "api_version": "labnet.devices.v1",
+            "api_version": "labnet.v3",
             "secure": True,
             "tls_server_name": "lab-pc-1.example",
             "attributes": {"site": "quantum-lab"},

@@ -24,7 +24,7 @@ from labnet.safe_paths import (
 )
 from labnet_control_center.automation_store import AutomationError, AutomationStore, ProjectSettings
 from labnet_control_center.config import ControlCenterSettings
-from labnet.devices.DummyAOM.physical import PhysicalDummyAOM
+from labnet_sim.dummy_aom.physical import PhysicalDummyAOM
 
 
 EXPERIMENT = {
@@ -40,7 +40,7 @@ EXPERIMENT = {
     ],
     "links": [{"id": "l1", "source": "laser", "target": "aom", "type": "beam"}],
 }
-ENDPOINT = EndpointDescriptor(transport="grpc", target="127.0.0.1:50051", api_version="labnet.devices.v1", secure=False)
+ENDPOINT = EndpointDescriptor(transport="grpc", target="127.0.0.1:50051", api_version="labnet.v3", secure=False)
 
 
 class FakeCentral:

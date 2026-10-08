@@ -16,10 +16,10 @@ from labnet.grpc import (
     StreamPolicy,
 )
 from labnet.contracts import registry
-from labnet.grpc.generated import dummy_device_pb2, dummy_device_pb2_grpc
+from labnet_sim._generated import dummy_device_pb2, dummy_device_pb2_grpc
 from labnet.grpc.generated import transfer_pb2
 from labnet.device_manager import DeviceManager, StaticLeaseValidator
-from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
+from labnet_sim.dummy_device.physical import PhysicalDummyDevice
 
 
 LEASE_METADATA = ((LEASE_METADATA_KEY, "lease-123"),)
@@ -102,7 +102,7 @@ async def test_read_write_stream_and_health(running_server, executor) -> None:
     assert server.service_names == tuple(
         sorted(contract.service_full_name for contract in registry.all())
     )
-    assert "labnet.devices.v1.DummyDeviceService" in server.service_names
+    assert "labnet_sim.v1.DummyDeviceService" in server.service_names
 
     read = await stub.ReadValue(
         dummy_device_pb2.ReadValueRequest(

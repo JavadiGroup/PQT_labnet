@@ -615,7 +615,8 @@ On `central_server_pc`:
 Every client starts from one `LabClient` (or `AsyncLabClient`) per process:
 
 ```python
-from labnet import DummyDevice, LabClient, LabClientError
+from labnet import LabClient, LabClientError
+from labnet_sim import DummyDevice
 
 central = None
 device = None
@@ -650,7 +651,7 @@ Omitting `client` drives the local physical implementation, with the same
 methods:
 
 ```python
-from labnet import SimulatedWavemeter
+from labnet_sim import SimulatedWavemeter
 
 meter = None
 try:
@@ -666,7 +667,8 @@ Use `AsyncLabClient` to overlap independent instruments or consume streams:
 ```python
 import asyncio
 
-from labnet import AsyncLabClient, LabClientError, SimulatedWavemeter
+from labnet import AsyncLabClient, LabClientError
+from labnet_sim import SimulatedWavemeter
 
 
 async def main() -> None:
@@ -2376,7 +2378,7 @@ device, so its type and contract don't change:
 
 ```python
 from labnet.devices.core import site_limits
-from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
+from labnet_sim.simulated_tunable_laser.physical import PhysicalSimulatedTunableLaser
 
 def create_devices():
     return [
@@ -2392,7 +2394,7 @@ def create_devices():
 - **Keys** are `"<method>.<argument>"`, exactly as in hints and Python
   clients. `limits` takes `(min, max)` for a number. `choices` takes a list
   for text or `True`/`False`. Living examples:
-  `scripts/dev/inventories/dev_lab_pc_01.py` (the AOM narrowed to 65–95 MHz,
+  `labnet_sim/inventories/dev_lab_pc_01.py` (the AOM narrowed to 65–95 MHz,
   the dummy devices' `write_value` to ±100).
 - **The Lab PC refuses to start** with a clear error when:
   - a key names no method or argument of the device's contract;

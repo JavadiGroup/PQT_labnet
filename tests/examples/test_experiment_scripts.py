@@ -15,9 +15,10 @@ from types import ModuleType
 
 import pytest
 
-from labnet import DummyAOM, LabClient
+from labnet import LabClient
+from labnet_sim import DummyAOM
 from labnet_control_center.experiment_script import generate_script
-from labnet.devices.DummyEOM.physical import bessel_j
+from labnet_sim.dummy_eom.physical import bessel_j
 
 
 def experiment() -> dict:

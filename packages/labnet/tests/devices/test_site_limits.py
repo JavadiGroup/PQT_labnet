@@ -9,10 +9,10 @@ import pytest
 from labnet_control_center.contracts import clean_hints, hint_lines
 from labnet.devices.core import DeviceLimitsError, SiteLimits, get_site_limits, site_limits
 from labnet.devices.core.limits import resolve_limits
-from labnet.devices.DummyAOM.physical import PhysicalDummyAOM
-from labnet.devices.DummyAWG.physical import PhysicalDummyAWG
-from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
-from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
+from labnet_sim.dummy_aom.physical import PhysicalDummyAOM
+from labnet_sim.dummy_awg.physical import PhysicalDummyAWG
+from labnet_sim.dummy_device.physical import PhysicalDummyDevice
+from labnet_sim.simulated_tunable_laser.physical import PhysicalSimulatedTunableLaser
 from labnet.contracts import registry
 
 
@@ -167,9 +167,9 @@ def test_malformed_driver_hints_are_refused(hints, message: str) -> None:
 
 
 def test_every_shipped_driver_publishes_usable_hints() -> None:
-    from labnet.devices.DummyEOM.physical import PhysicalDummyEOM
-    from labnet.devices.DummyLaser.physical import PhysicalDummyLaser
-    from labnet.devices.SimulatedWavemeter.physical import PhysicalSimulatedWavemeter
+    from labnet_sim.dummy_eom.physical import PhysicalDummyEOM
+    from labnet_sim.dummy_laser.physical import PhysicalDummyLaser
+    from labnet_sim.simulated_wavemeter.physical import PhysicalSimulatedWavemeter
 
     for device in (PhysicalDummyAOM("a"), PhysicalDummyAWG("b"), PhysicalDummyDevice("c"), PhysicalDummyEOM("d"),
                    PhysicalDummyLaser("e"), PhysicalSimulatedWavemeter("f")):

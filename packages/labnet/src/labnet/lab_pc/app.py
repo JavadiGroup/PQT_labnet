@@ -34,6 +34,8 @@ from labnet.device_manager import (
     HttpLeaseValidator,
     ManagerState,
 )
+from labnet.client.core.grpc_client import SUPPORTED_DEVICE_API_VERSION
+from labnet.contracts import DeviceContract, registry
 from labnet.devices.core import PhysicalDevice
 from labnet.grpc import (
     GrpcServerConfig,
@@ -107,7 +109,7 @@ def create_app(
             )
             devices = tuple(factory())
             manager = _create_device_manager(resolved_settings, devices)
-            grpc_server = _create_grpc_server(resolved_settings, manager)
+            grpc_server = _create_grpc_server(resolved_settings, manager, _inventory_contracts(devices))
             runtime = LabPCRuntime(
                 settings=resolved_settings,
                 manager=manager,
@@ -229,7 +231,7 @@ def load_device_factory(spec: str | None) -> DeviceFactory:
             "LABNET_DEVICE_INVENTORY is not set: name the function that creates this "
             "Lab PC's devices, e.g. C:/ProgramData/LabNet/site/inventories/"
             "lab_pc_01.py:create_devices. For simulated devices only, use "
-            "scripts/dev/inventories/dev_lab_pc_01.py:create_devices."
+            "labnet_sim.inventories.dev_lab_pc_01:create_devices (pip install labnet-sim)."
         )
 
     # Split on the last colon so Windows drive letters (C:/...) survive.
@@ -340,7 +342,7 @@ def _create_device_manager(
     endpoint = EndpointDescriptor(
         transport="grpc",
         target=settings.grpc_advertised_target,
-        api_version="labnet.devices.v1",
+        api_version=SUPPORTED_DEVICE_API_VERSION,
         secure=settings.grpc_tls_enabled,
         tls_server_name=(
             settings.grpc_tls_server_name if settings.grpc_tls_enabled else None
@@ -360,9 +362,23 @@ def _create_device_manager(
     )
 
 
+def _inventory_contracts(devices: Sequence[PhysicalDevice]) -> tuple[DeviceContract, ...]:
+    """The contracts this Lab PC serves: those of its own devices' types, nothing else installed."""
+
+    types = sorted({str(getattr(device, "device_type", "")) for device in devices})
+    contracts = tuple(contract for contract in map(registry.find, types) if contract is not None)
+    if not contracts:
+        raise ValueError(
+            "None of this Lab PC's devices has an installed driver contract "
+            f"(device types: {', '.join(types) or 'none'}). Install the packages with their drivers."
+        )
+    return contracts
+
+
 def _create_grpc_server(
     settings: LabPCSettings,
     manager: DeviceManager,
+    contracts: Sequence[DeviceContract],
 ) -> LabnetGrpcServer:
     tls = TLSConfig(
         mode=settings.grpc_tls_mode,
@@ -387,6 +403,7 @@ def _create_grpc_server(
     )
     return LabnetGrpcServer(
         manager.executor,
+        contracts=contracts,
         config=config,
         stream_policy=stream_policy,
         default_operation_timeout_seconds=(

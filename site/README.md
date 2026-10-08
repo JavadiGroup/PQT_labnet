@@ -23,7 +23,7 @@ Each Lab PC has one inventory module with a `create_devices()` function that
 returns one driver object per attached instrument:
 
 ```python
-from labnet.devices.SimulatedWavemeter.physical import PhysicalSimulatedWavemeter
+from labnet_sim.simulated_wavemeter.physical import PhysicalSimulatedWavemeter
 
 
 def create_devices():

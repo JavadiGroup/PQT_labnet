@@ -20,8 +20,8 @@ from labnet_control_center.config import ControlCenterSettings
 from labnet_control_center.experiment_checks import check_experiment
 from labnet_control_center.experiment_schema import parse_content
 from labnet_control_center.experiment_store import ExperimentError, ExperimentStore, VersionConflict
-from labnet.devices.DummyAOM.physical import PhysicalDummyAOM
-from labnet.devices.DummyAWG.physical import PhysicalDummyAWG
+from labnet_sim.dummy_aom.physical import PhysicalDummyAOM
+from labnet_sim.dummy_awg.physical import PhysicalDummyAWG
 
 
 AOM_HINTS = PhysicalDummyAOM("x").metadata()["hints"]
@@ -303,7 +303,7 @@ def test_a_briefly_locked_file_is_retried(tmp_path: Path, monkeypatch: pytest.Mo
 # ---- the API ------------------------------------------------------------------------
 
 
-ENDPOINT = EndpointDescriptor(transport="grpc", target="127.0.0.1:50051", api_version="labnet.devices.v1", secure=False)
+ENDPOINT = EndpointDescriptor(transport="grpc", target="127.0.0.1:50051", api_version="labnet.v3", secure=False)
 
 
 def _info(device_id: str, device_type: str, hints: dict, leased: bool = False) -> DeviceInfo:

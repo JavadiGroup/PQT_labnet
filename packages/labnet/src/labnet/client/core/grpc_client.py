@@ -44,7 +44,9 @@ from .models import (
 )
 
 
-SUPPORTED_DEVICE_API_VERSION = "labnet.devices.v1"
+# What a Lab PC advertises for its device endpoint. 3.0 moved device services into
+# their drivers' packages (labnet_sim.v1.DummyAOMService, ...), so 2.x and 3.0 refuse each other.
+SUPPORTED_DEVICE_API_VERSION = "labnet.v3"
 _QUALITY_BY_PROTO = {
     common_pb2.MEASUREMENT_QUALITY_UNSPECIFIED: MeasurementQuality.UNSPECIFIED,
     common_pb2.MEASUREMENT_QUALITY_GOOD: MeasurementQuality.GOOD,
@@ -130,7 +132,8 @@ def validate_endpoint(endpoint: EndpointDescriptor) -> None:
     if endpoint.api_version != SUPPORTED_DEVICE_API_VERSION:
         raise ValueError(
             f"Unsupported device API version {endpoint.api_version!r}; expected "
-            f"{SUPPORTED_DEVICE_API_VERSION!r}."
+            f"{SUPPORTED_DEVICE_API_VERSION!r}. The Lab PC and this client run different "
+            "LabNet versions; update both to the same release."
         )
     host = _target_host(endpoint.target)
     if not endpoint.secure and not _is_loopback_host(host):

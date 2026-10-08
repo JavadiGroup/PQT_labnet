@@ -58,7 +58,7 @@ def _registration(manager_id: str = "lab-pc-01") -> dict:
         "endpoint": {
             "transport": "grpc",
             "target": "127.0.0.1:50051",
-            "api_version": "labnet.devices.v1",
+            "api_version": "labnet.v3",
             "secure": False,
             "attributes": {"site": "test"},
         },

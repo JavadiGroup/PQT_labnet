@@ -325,7 +325,7 @@ def test_migration_0001_to_0002_backfills_existing_leases(tmp_path: Path) -> Non
                 "api_version, secure, tls_server_name, endpoint_attributes, status, "
                 "registered_at, last_seen) VALUES "
                 "('lab-pc-01', 'manager-user', 'host', 'grpc', '127.0.0.1:50051', "
-                "'labnet.devices.v1', 0, NULL, '{}', 'online', :now, :now)"
+                "'labnet.v3', 0, NULL, '{}', 'online', :now, :now)"
             ),
             {"now": created_at},
         )

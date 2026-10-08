@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package labnet_sim.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+import "labnet/devices/v1/transfer.proto";
+
+message ReadValueRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+}
+
+message ReadValueResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+message WriteValueRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+
+  // An absolute setpoint, not an increment. Repeating the same request value
+  // is therefore idempotent when recovering from an ambiguous deadline.
+  double value = 4;
+
+  // Must match the service's configured unit; implicit conversion is rejected.
+  optional string unit = 5;
+}
+
+message WriteValueResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+// Typed control and scalar acquisition surface for the Labnet dummy device.
+service DummyDeviceService {
+  rpc ReadValue(ReadValueRequest) returns (ReadValueResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_value"
+      default_unit: "Hz"
+    };
+  }
+
+  rpc WriteValue(WriteValueRequest) returns (WriteValueResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "write_value"
+      default_unit: "Hz"
+    };
+  }
+
+  rpc StreamData(labnet.devices.v1.StreamDataRequest) returns (stream labnet.devices.v1.StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_value"
+      default_unit: "Hz"
+    };
+  }
+}

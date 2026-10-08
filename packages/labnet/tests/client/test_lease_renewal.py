@@ -20,7 +20,7 @@ from labnet.client import (
 from labnet.client.core.models import DeviceInfo
 from labnet.devices.core import remote as remote_module
 from labnet.devices.core.remote import RemoteDeviceBinding
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 
 
 def _lease(*, expires_in: float = 2.0, marker: int = 0) -> LeaseInfo:
@@ -46,7 +46,7 @@ def _grant(
     endpoint = EndpointDescriptor(
         transport="grpc",
         target="127.0.0.1:50051",
-        api_version="labnet.devices.v1",
+        api_version="labnet.v3",
         secure=False,
     )
     device = DeviceInfo(
@@ -244,7 +244,7 @@ def test_request_lease_uses_renewable_defaults_without_client_idle_override() ->
                 "endpoint": {
                     "transport": "grpc",
                     "target": "127.0.0.1:50051",
-                    "api_version": "labnet.devices.v1",
+                    "api_version": "labnet.v3",
                     "secure": False,
                 },
             },
@@ -509,7 +509,7 @@ async def test_async_lab_client_close_drains_in_flight_acquire(
                         "endpoint": {
                             "transport": "grpc",
                             "target": "127.0.0.1:50051",
-                            "api_version": "labnet.devices.v1",
+                            "api_version": "labnet.v3",
                             "secure": False,
                         },
                     },
@@ -581,7 +581,7 @@ async def test_async_acquire_releases_a_wrong_family_grant_before_client_creatio
                         "endpoint": {
                             "transport": "grpc",
                             "target": "127.0.0.1:50051",
-                            "api_version": "labnet.devices.v1",
+                            "api_version": "labnet.v3",
                             "secure": False,
                         },
                     },

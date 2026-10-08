@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package labnet_sim.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+import "labnet/devices/v1/transfer.proto";
+
+message DummyAomRequest {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message DummyAomWriteRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double value = 3;
+  optional string unit = 4;
+}
+
+message DummyAomRfEnabledRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  bool enabled = 3;
+}
+
+message DummyAomMeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+// A simulated acousto-optic modulator and its RF driver. The first-order
+// diffraction efficiency peaks at the 80 MHz center frequency and at 1 W of RF
+// power; the deflection angle follows the RF frequency.
+service DummyAOMService {
+  rpc ReadDeflectionAngle(DummyAomRequest) returns (DummyAomMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_deflection_angle"
+      default_unit: "mrad"
+    };
+  }
+
+  // Fraction of the input power in the first diffracted order (0 to 1).
+  rpc ReadDiffractionEfficiency(DummyAomRequest) returns (DummyAomMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_diffraction_efficiency"
+      default_unit: "1"
+    };
+  }
+
+  rpc ReadFrequency(DummyAomRequest) returns (DummyAomMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_frequency"
+      default_unit: "MHz"
+    };
+  }
+
+  rpc ReadRfPower(DummyAomRequest) returns (DummyAomMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_rf_power"
+      default_unit: "W"
+    };
+  }
+
+  // RF drive frequency, 60 to 100 MHz.
+  rpc SetFrequency(DummyAomWriteRequest) returns (DummyAomMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_frequency"
+      default_unit: "MHz"
+    };
+  }
+
+  // Switches the RF drive on or off; returns the new state.
+  rpc SetRfEnabled(DummyAomRfEnabledRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_rf_enabled"
+      default_unit: "1"
+    };
+  }
+
+  // RF drive power, 0 to 2 W.
+  rpc SetRfPower(DummyAomWriteRequest) returns (DummyAomMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_rf_power"
+      default_unit: "W"
+    };
+  }
+
+  rpc StreamDiffractionEfficiency(labnet.devices.v1.StreamDataRequest) returns (stream labnet.devices.v1.StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_diffraction_efficiency"
+      default_unit: "1"
+    };
+  }
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import math
 import time
 import uuid
@@ -28,8 +29,18 @@ class ContractDeviceFacade:
     """
 
     contract: ClassVar[DeviceContract]
-    physical_type: ClassVar[Callable[..., Any]]
+    # The driver class, or its "module:Class" import string (imported on first local use,
+    # so a remote-only install never needs the driver's vendor SDK).
+    physical_type: ClassVar[Callable[..., Any] | str]
     device_type: ClassVar[str]
+
+    @classmethod
+    def physical_class(cls) -> Callable[..., Any]:
+        physical = cls.physical_type
+        if isinstance(physical, str):
+            module, _, name = physical.partition(":")
+            physical = getattr(importlib.import_module(module), name)
+        return physical
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -61,7 +72,7 @@ class ContractDeviceFacade:
                 )
             if device_id is not None:
                 options["device_id"] = device_id
-            backend = self.physical_type(**options)
+            backend = self.physical_class()(**options)
             try:
                 backend.connect()
             except BaseException as exc:

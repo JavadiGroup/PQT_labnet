@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import asyncio
 
-from labnet import AsyncLabClient, LabClientError, SimulatedWavemeter
+from labnet import AsyncLabClient, LabClientError
+from labnet_sim import SimulatedWavemeter
 
 
 async def run() -> None:

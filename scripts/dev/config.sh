@@ -24,14 +24,14 @@ WATCHDOG_USER="automation-watchdog"
 WATCHDOG_PORT=8081
 
 # One line per simulated Lab PC:
-#   <lab-pc id>  <gRPC port>  <health port>  <inventory file, relative to the repo>
+#   <lab-pc id>  <gRPC port>  <health port>  <inventory: package.module:function>
 #
 # The id becomes both LABNET_LAB_PC_ID and the Central device_manager username.
 # The inventory's create_devices() decides which devices that Lab PC serves.
 # Device IDs must be unique across all Lab PCs.
 LAB_PCS=(
-    "lab-pc-dev-01 50051 9001 scripts/dev/inventories/dev_lab_pc_01.py"
-    "lab-pc-dev-02 50052 9002 scripts/dev/inventories/dev_lab_pc_02.py"
+    "lab-pc-dev-01 50051 9001 labnet_sim.inventories.dev_lab_pc_01:create_devices"
+    "lab-pc-dev-02 50052 9002 labnet_sim.inventories.dev_lab_pc_02:create_devices"
 )
 
 DEV_DATABASE="$DEVNET_DIR/central.db"

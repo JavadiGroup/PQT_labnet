@@ -55,6 +55,11 @@ class DeviceContract:
     methods: tuple[RpcSpec, ...]
     physical_methods: tuple[str, ...]
     physical_protocol: type[Any]
+    # Who provides it, for matching a Lab PC's driver against a Control Center's:
+    distribution: str = ""  # the installed package, e.g. "labnet-sim"
+    fingerprint: str = ""  # sha256 of its proto file's descriptor, as built
+    facade: str = ""  # "module:Class" a client imports, e.g. "labnet_sim:DummyAOM"
+    physical: str = ""  # "module:Class" of the driver
 
     @property
     def allowed_physical_methods(self) -> tuple[str, ...]:

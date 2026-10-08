@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labnet-sim"
+version = "3.0.0.dev0"
+description = "Simulated LabNet devices: an optics bench (laser, AOM, EOM, AWG), a tunable laser and a wavemeter"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "labnet>=3.0.0.dev0,<3.1",
+]
+
+# One entry per device type; `labnet driver build` checks these against the protos.
+[project.entry-points."labnet.devices"]
+dummy_aom = "labnet_sim._generated.contracts:DUMMY_AOM_CONTRACT"
+dummy_awg = "labnet_sim._generated.contracts:DUMMY_AWG_CONTRACT"
+dummy_device = "labnet_sim._generated.contracts:DUMMY_DEVICE_CONTRACT"
+dummy_eom = "labnet_sim._generated.contracts:DUMMY_EOM_CONTRACT"
+dummy_laser = "labnet_sim._generated.contracts:DUMMY_LASER_CONTRACT"
+simulated_tunable_laser = "labnet_sim._generated.contracts:SIMULATED_TUNABLE_LASER_CONTRACT"
+simulated_wavemeter = "labnet_sim._generated.contracts:SIMULATED_WAVEMETER_CONTRACT"
+
+# labnet driver build: protos/labnet_sim/v1/*.proto -> src/labnet_sim/_generated/
+[tool.labnet.driver]
+package = "labnet_sim"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["labnet_sim*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"labnet_sim._generated" = ["*.pyi"]

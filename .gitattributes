@@ -7,3 +7,6 @@ packages/labnet/src/labnet/grpc/generated/** text eol=lf
 
 # Dockerfiles, compose.yaml and the egress allow-list are read inside Linux containers.
 packages/labnet-automation/docker/** text eol=lf
+
+# labnet driver build output for driver packages (compared byte for byte by --check).
+packages/labnet-sim/src/labnet_sim/_generated/** text eol=lf

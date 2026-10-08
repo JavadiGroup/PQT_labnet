@@ -18,11 +18,11 @@ from labnet.client.core.models import DeviceInfo, EndpointDescriptor, Measuremen
 from labnet_control_center.app import create_app
 from labnet_control_center.config import ControlCenterSettings
 from labnet_control_center.sessions import DeviceSession, SessionError
-from labnet.grpc.generated.device_contracts import SIMULATED_WAVEMETER_CONTRACT
+from labnet_sim._generated.contracts import SIMULATED_WAVEMETER_CONTRACT
 
 
 ENDPOINT = EndpointDescriptor(
-    transport="grpc", target="127.0.0.1:50052", api_version="labnet.devices.v1", secure=False
+    transport="grpc", target="127.0.0.1:50052", api_version="labnet.v3", secure=False
 )
 PLAY = {
     "settings": [{"method": "set_exposure", "value": 50.0}],

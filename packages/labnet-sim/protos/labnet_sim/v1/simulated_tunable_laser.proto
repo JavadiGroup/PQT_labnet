@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package labnet_sim.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+
+message SimulatedTunableLaserRequest {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message SimulatedTunableLaserMeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+message SimulatedTunableLaserMoveStepsRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  sint32 relative_steps = 3;
+  // "fast" (the default) or "slow"; the driver publishes the choices.
+  optional string velocity_mode = 4;
+}
+
+message SimulatedTunableLaserGoToWavelengthRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double wavelength_nm = 3;
+}
+
+message SimulatedTunableLaserVelocityRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double velocity_nm_s = 3;
+}
+
+// A simulated grating-tuned laser whose tuning motor moves in whole steps.
+// Moves take time at the set velocity and can be stopped part way. Like many
+// vendor drivers it publishes no numeric limits, so a Lab PC gives it site
+// limits before anything is automated.
+service SimulatedTunableLaserService {
+  rpc ReadWavelength(SimulatedTunableLaserRequest) returns (SimulatedTunableLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  rpc ReadPositionSteps(SimulatedTunableLaserRequest) returns (SimulatedTunableLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_position_steps"
+      default_unit: "1"
+    };
+  }
+
+  // Starts a relative move; returns the target position in steps.
+  rpc MoveSteps(SimulatedTunableLaserMoveStepsRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "move_steps"
+      default_unit: "1"
+    };
+  }
+
+  // Starts a move to the step nearest the wavelength; returns that step's wavelength.
+  rpc GoToWavelengthNm(SimulatedTunableLaserGoToWavelengthRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "go_to_wavelength_nm"
+      default_unit: "1"
+    };
+  }
+
+  // The "fast" tuning speed; "slow" moves at a tenth of it. Returns the value applied.
+  rpc SetVelocityNmS(SimulatedTunableLaserVelocityRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_velocity_nm_s"
+      default_unit: "1"
+    };
+  }
+
+  // Stops any move where it is; returns the wavelength it stopped at.
+  rpc Stop(SimulatedTunableLaserRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "stop"
+      default_unit: "1"
+    };
+  }
+}

@@ -52,9 +52,12 @@ def _target(tmp_path: Path) -> BuildTarget:
     return BuildTarget(proto_root=proto_root, output_root=output_root, python_package="acme_dev._generated")
 
 
+SIM = Path(__file__).resolve().parents[3] / "labnet-sim"
+
+
 def test_labnets_own_generated_files_are_current() -> None:
-    contracts = build(core_target(), check=True)
-    assert contracts  # the simulated families still live in core
+    # Only shared messages: every device family lives in a driver package.
+    assert build(core_target(), check=True) == ()
 
 
 def test_a_driver_package_builds_against_labnets_protos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,7 +95,31 @@ def test_two_protos_with_one_module_name_are_refused(tmp_path: Path) -> None:
         build(target)
 
 
-def test_the_labnet_command_has_the_driver_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_labnet_command_builds_a_driver_package(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     assert "driver" in cli.parser().format_help()
-    assert cli.main(["driver", "build"]) == 2  # driver packages arrive with labnet-sim
-    assert "only --core builds" in capsys.readouterr().out
+    assert cli.main(["driver", "build", "--check", "--project", str(SIM)]) == 0
+    assert "7 device families" in capsys.readouterr().out
+    assert cli.main(["driver", "build", "--project", str(tmp_path)]) == 1
+    assert "No pyproject.toml" in capsys.readouterr().out
+
+
+def test_a_rebuild_reproduces_the_same_fingerprints_and_files(tmp_path: Path) -> None:
+    from labnet.driver.build import target_from_project
+    from labnet_sim._generated import contracts as installed
+
+    shipped = target_from_project(SIM)
+    copy = BuildTarget(**{**shipped.__dict__, "output_root": tmp_path / "labnet_sim_copy"})
+    rebuilt = build(copy)
+    assert {spec.service_full_name for spec in rebuilt} == {c.service_full_name for c in installed.DEVICE_CONTRACTS}
+    for name in ("contracts.py", "facades.py", "facades.pyi", "dummy_aom_pb2.py"):
+        assert (copy.output_root / name).read_bytes() == (shipped.output_root / name).read_bytes(), name
+
+
+def test_a_driver_package_cannot_use_labnets_proto_package(tmp_path: Path) -> None:
+    target = _target(tmp_path)
+    (target.proto_root / "acme_dev" / "v1" / "thing.proto").write_text(
+        THING.replace("package acme_dev.v1;", "package labnet.devices.v1;"), encoding="utf-8"
+    )
+    driver = BuildTarget(**{**target.__dict__, "package": "acme_dev", "distribution": "acme-dev"})
+    with pytest.raises(ContractValidationError, match="must be acme_dev.v1"):
+        build(driver)

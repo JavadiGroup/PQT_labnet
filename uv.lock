@@ -13,6 +13,7 @@ members = [
     "labnet",
     "labnet-automation",
     "labnet-control-center",
+    "labnet-sim",
     "labnet-workspace",
 ]
 
@@ -698,6 +699,17 @@ requires-dist = [
 ]
 
 [[package]]
+name = "labnet-sim"
+version = "3.0.0.dev0"
+source = { editable = "packages/labnet-sim" }
+dependencies = [
+    { name = "labnet" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "labnet", editable = "packages/labnet" }]
+
+[[package]]
 name = "labnet-workspace"
 version = "0"
 source = { virtual = "." }
@@ -705,6 +717,7 @@ dependencies = [
     { name = "labnet", extra = ["central", "certs", "driver-dev", "lab-pc"] },
     { name = "labnet-automation" },
     { name = "labnet-control-center" },
+    { name = "labnet-sim" },
 ]
 
 [package.dev-dependencies]
@@ -719,6 +732,7 @@ requires-dist = [
     { name = "labnet", extras = ["lab-pc", "central", "certs", "driver-dev"], editable = "packages/labnet" },
     { name = "labnet-automation", editable = "packages/labnet-automation" },
     { name = "labnet-control-center", editable = "packages/labnet-control-center" },
+    { name = "labnet-sim", editable = "packages/labnet-sim" },
 ]
 
 [package.metadata.requires-dev]

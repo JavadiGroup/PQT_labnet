@@ -230,8 +230,8 @@ own settings file:
 | `central.env` | SQLite database at `.devnet/central.db`, port 8008 |
 | `researcher.env` | Central URL + the `researcher` key, for clients and the examples |
 | `dev-admin.env` | Central URL + the admin key |
-| `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `scripts/dev/inventories/dev_lab_pc_01.py` |
-| `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `scripts/dev/inventories/dev_lab_pc_02.py` |
+| `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `labnet_sim.inventories.dev_lab_pc_01` |
+| `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `labnet_sim.inventories.dev_lab_pc_02` |
 | `control-center.env` | Central URL + the `control-center` key, port 8080, the experiments and automation folders (`experiments/` and `automation/` at the repository root, git-ignored, so re-seeding keeps them) and Photo-Agent's folders (papers in `literature/`) |
 | `logs/` | One log per process; `up.sh` prints the tail if a start fails |
 
@@ -241,7 +241,7 @@ plaintext. `.devnet/` is git-ignored, and its keys are throwaway.
 
 To change the topology (more Lab PCs, other ports), edit
 [`scripts/dev/config.sh`](scripts/dev/config.sh), add an inventory under
-`scripts/dev/inventories/`, then run `down.sh`, `seed.sh`, and `up.sh`.
+`packages/labnet-sim/src/labnet_sim/inventories/`, then run `down.sh`, `seed.sh`, and `up.sh`.
 
 ### The Control Center
 
@@ -347,7 +347,7 @@ Control Center page files (HTML, CSS, JS) need no restart: refresh the browser.
 ### Adding or removing instruments of an existing family
 
 No code generation is needed. Edit the Lab PC's inventory, for example
-`scripts/dev/inventories/dev_lab_pc_02.py`:
+`packages/labnet-sim/src/labnet_sim/inventories/dev_lab_pc_02.py`:
 
 ```python
 def create_devices():
@@ -377,7 +377,7 @@ different Lab PC (Central rejects that as an ownership conflict).
    the new service automatically.
 4. Write `packages/labnet/src/labnet/devices/<Family>/physical.py` (the driver), the facade
    `device.py`, and a lazy `__init__.py`; copy
-   [`SimulatedWavemeter/`](packages/labnet/src/labnet/devices/SimulatedWavemeter/). The
+   [`SimulatedWavemeter/`](packages/labnet/src/labnet_sim/simulated_wavemeter/). The
    facade is just:
    ```python
    class SimulatedWavemeter(ContractDeviceFacade):

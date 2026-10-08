@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package labnet_sim.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+import "labnet/devices/v1/transfer.proto";
+
+message ReadWavelengthRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+}
+
+message ReadWavelengthResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+message SetExposureRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  optional string channel = 3;
+
+  // Exposure time per reading, in milliseconds (an absolute setting).
+  double value = 4;
+  optional string unit = 5;
+}
+
+message SetExposureResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+// A read-only simulated wavemeter: a noisy, slowly drifting wavelength. It
+// shows a second device family next to DummyDevice and gives the example
+// experiments a meaningful measurement to average.
+service SimulatedWavemeterService {
+  rpc ReadWavelength(ReadWavelengthRequest) returns (ReadWavelengthResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // Longer exposure means less noise per reading, but each reading takes longer.
+  rpc SetExposure(SetExposureRequest) returns (SetExposureResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_exposure"
+      default_unit: "ms"
+    };
+  }
+
+  rpc StreamWavelength(labnet.devices.v1.StreamDataRequest) returns (stream labnet.devices.v1.StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_wavelength"
+      default_unit: "nm"
+    };
+  }
+}

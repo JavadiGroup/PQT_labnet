@@ -55,7 +55,7 @@ def test_a_scan_becomes_a_script_like_example_04() -> None:
 
     compile(script, "aom_scan.py", "exec")
     assert script == generate_script(experiment())  # the same version, the same script
-    assert "from labnet import DummyAOM, DummyAWG, DummyLaser, LabClient, LabClientError" in script
+    assert "from labnet import LabClient, LabClientError\nfrom labnet_sim import DummyAOM, DummyAWG, DummyLaser\n" in script
     assert "AOM_1_FREQUENCY = linspace(70.0, 90.0, 21)" in script
     leases = lines_with(script, "client=central)")
     assert leases == [

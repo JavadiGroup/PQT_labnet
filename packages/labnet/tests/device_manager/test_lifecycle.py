@@ -84,7 +84,7 @@ async def test_manager_registers_endpoint_and_closes_central_client() -> None:
     endpoint = EndpointDescriptor(
         transport="grpc",
         target="lab-pc-1.example:50051",
-        api_version="labnet.devices.v1",
+        api_version="labnet.v3",
         secure=True,
         tls_server_name="lab-pc-1.example",
     )

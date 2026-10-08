@@ -20,9 +20,9 @@ from labnet.device_manager import (
     HttpCentralRegistryClient,
     HttpLeaseValidator,
 )
-from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
+from labnet_sim.dummy_device.physical import PhysicalDummyDevice
 from labnet.grpc import GrpcServerConfig, LabnetGrpcServer, StreamPolicy
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 
 
 CENTRAL_URL = "http://127.0.0.1"
@@ -131,7 +131,7 @@ async def _renewal_stack(
         endpoint=EndpointDescriptor(
             transport="grpc",
             target="127.0.0.1:1",
-            api_version="labnet.devices.v1",
+            api_version="labnet.v3",
             secure=False,
         ),
         heartbeat_interval_seconds=5,
@@ -146,7 +146,7 @@ async def _renewal_stack(
     manager.endpoint = EndpointDescriptor(
         transport="grpc",
         target=f"127.0.0.1:{grpc_server.bound_port}",
-        api_version="labnet.devices.v1",
+        api_version="labnet.v3",
         secure=False,
     )
     stack = _RenewalStack(
@@ -208,7 +208,7 @@ async def test_full_stack_discovery_control_stream_and_release(tmp_path: Path) -
         endpoint=EndpointDescriptor(
             transport="grpc",
             target="127.0.0.1:1",
-            api_version="labnet.devices.v1",
+            api_version="labnet.v3",
             secure=False,
         ),
         heartbeat_interval_seconds=60,
@@ -220,7 +220,7 @@ async def test_full_stack_discovery_control_stream_and_release(tmp_path: Path) -
     manager.endpoint = EndpointDescriptor(
         transport="grpc",
         target=f"127.0.0.1:{grpc_server.bound_port}",
-        api_version="labnet.devices.v1",
+        api_version="labnet.v3",
         secure=False,
     )
 

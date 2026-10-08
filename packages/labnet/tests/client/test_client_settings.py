@@ -11,7 +11,7 @@ from labnet import AsyncLabClient, LabClient
 from labnet.certs import create_ca
 from labnet.client.core import grpc_client
 from labnet.devices.core import remote
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 
 
 @pytest.fixture(autouse=True)
@@ -112,7 +112,7 @@ def _central(device_target: str = "192.168.50.20:50051") -> httpx.MockTransport:
                     "endpoint": {
                         "transport": "grpc",
                         "target": device_target,
-                        "api_version": "labnet.devices.v1",
+                        "api_version": "labnet.v3",
                         "secure": True,
                     },
                 },

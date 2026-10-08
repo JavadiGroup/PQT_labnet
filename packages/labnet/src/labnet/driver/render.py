@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Sequence
 
@@ -77,10 +78,27 @@ def _render_protocol_method(
     return f"    def {method_name}({signature}) -> Any: ..."
 
 
+def family_names(service_name: str, package: str) -> tuple[str, str, str]:
+    """(facade class, ``module:Class`` a client imports, ``module:Class`` of the driver).
+
+    ``DummyAOMService`` in ``labnet_sim``: ``DummyAOM``, ``labnet_sim:DummyAOM``,
+    ``labnet_sim.dummy_aom.physical:PhysicalDummyAOM``. Without a package (labnet's
+    own and test builds) the import strings are empty.
+    """
+
+    base = service_name.removesuffix("Service")
+    if not package:
+        return base, "", ""
+    return base, f"{package}:{base}", f"{package}.{_snake_case(base)}.physical:Physical{base}"
+
+
 def render_contracts_module(
     contracts: Sequence[RpcContractSpec],
     *,
     proto_files: Sequence[str],
+    distribution: str = "",
+    package: str = "",
+    fingerprints: Mapping[str, str] | None = None,
 ) -> str:
     service_groups: dict[str, list[RpcContractSpec]] = {}
     for contract in contracts:
@@ -186,6 +204,8 @@ def render_contracts_module(
         if len(physical_methods) == 1:
             physical_expression += ","
         grpc_alias = f"_{sample.service_file_stem}_pb2_grpc"
+        _, facade, physical = family_names(sample.service_name, package)
+        fingerprint = (fingerprints or {}).get(service_full_name, "")
         lines.extend(
             [
                 f"{variable_name}: Final = DeviceContract(",
@@ -198,6 +218,10 @@ def render_contracts_module(
                 f"    methods=({methods_expression}),",
                 f"    physical_methods=({physical_expression}),",
                 f"    physical_protocol={protocol_name},",
+                f"    distribution={distribution!r},",
+                f"    fingerprint={fingerprint!r},",
+                f"    facade={facade!r},",
+                f"    physical={physical!r},",
                 ")",
                 "",
                 "",
@@ -228,4 +252,79 @@ def render_contracts_module(
     return "\n".join(lines)
 
 
-__all__ = ["render_contracts_module"]
+def _variable(service_name: str) -> str:
+    return f"{_snake_case(service_name.removesuffix('Service')).upper()}_CONTRACT"
+
+
+def _services(contracts: Sequence[RpcContractSpec]) -> dict[str, list[RpcContractSpec]]:
+    services: dict[str, list[RpcContractSpec]] = {}
+    for contract in contracts:
+        services.setdefault(contract.service_name, []).append(contract)
+    return dict(sorted(services.items()))
+
+
+def render_facades_module(contracts: Sequence[RpcContractSpec], *, package: str, contracts_module: str) -> str:
+    """One class per device family, used locally (its driver) or remotely (a lease).
+
+    The driver is named by an import string, so importing a facade never imports
+    the driver's vendor SDK; only using it locally does.
+    """
+
+    services = _services(contracts)
+    lines = [
+        '"""Generated LabNet device facades. Do not edit by hand."""',
+        "",
+        "from __future__ import annotations",
+        "",
+        "from labnet.devices.core.facade import ContractDeviceFacade",
+        "",
+        f"from .{contracts_module} import {', '.join(_variable(name) for name in services)}",
+        "",
+    ]
+    names = []
+    for service_name in services:
+        base, _, physical = family_names(service_name, package)
+        names.append(base)
+        lines += [
+            "",
+            f"class {base}(ContractDeviceFacade):",
+            f'    """A {base}: local through its driver, or remote through a lease."""',
+            "",
+            f"    contract = {_variable(service_name)}",
+            f"    physical_type = {physical!r}",
+            "",
+        ]
+    lines += ["", f"__all__ = {names!r}", ""]
+    return "\n".join(lines)
+
+
+def render_facades_stub(contracts: Sequence[RpcContractSpec]) -> str:
+    """Typed signatures of each facade's device methods, for editors and type checkers."""
+
+    lines = [
+        "# Generated LabNet device facade signatures. Do not edit by hand.",
+        "from collections.abc import Iterator, Mapping, Sequence",
+        "from typing import Any",
+        "",
+        "from labnet.devices.core.facade import ContractDeviceFacade",
+        "",
+    ]
+    for service_name, rpcs in _services(contracts).items():
+        lines += ["", f"class {service_name.removesuffix('Service')}(ContractDeviceFacade):"]
+        for rpc in sorted(rpcs, key=lambda spec: spec.python_name):
+            arguments = ["self"] + [
+                f"{field.name}: {field.annotation}{' = None' if field.optional else ''}"
+                for field in rpc.forwarded_field_specs
+            ]
+            if rpc.server_streaming:
+                arguments.append("*")
+                arguments.append("sample_rate_hz: float")
+                arguments.append("sample_count: int | None = None")
+                arguments.append("duration_seconds: float | None = None")
+            returns = "Iterator[Any]" if rpc.server_streaming else "Any"
+            lines.append(f"    def {rpc.python_name}({', '.join(arguments)}) -> {returns}: ...")
+    lines.append("")
+    return "\n".join(lines)
+
+
+__all__ = ["family_names", "render_contracts_module", "render_facades_module", "render_facades_stub"]

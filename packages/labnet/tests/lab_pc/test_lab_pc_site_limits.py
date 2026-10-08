@@ -22,26 +22,27 @@ from labnet.client import LabClient
 from labnet.client.core.exceptions import translate_grpc_error
 from labnet.device_manager import ArgumentOutsideLimitsError, InvalidDeviceLimitsError
 from labnet.devices.core import DeviceLimitsError, site_limits
-from labnet.devices.DummyAOM.physical import PhysicalDummyAOM
-from labnet.devices.DummyAWG.physical import PhysicalDummyAWG
-from labnet.devices.DummyDevice import DummyDevice
-from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
+from labnet_sim.dummy_aom.physical import PhysicalDummyAOM
+from labnet_sim.dummy_awg.physical import PhysicalDummyAWG
+from labnet_sim.dummy_device import DummyDevice
+from labnet_sim.dummy_device.physical import PhysicalDummyDevice
 from labnet.grpc import LEASE_METADATA_KEY
 from labnet.grpc.generated import (
+    transfer_pb2,
+)
+from labnet_sim._generated import (
     dummy_aom_pb2,
     dummy_aom_pb2_grpc,
     dummy_awg_pb2,
     dummy_awg_pb2_grpc,
     dummy_device_pb2,
     dummy_device_pb2_grpc,
-    transfer_pb2,
 )
 from labnet.lab_pc.app import create_app, load_device_factory
 from labnet.lab_pc.config import LabPCSettings
 
 
 METADATA = ((LEASE_METADATA_KEY, "development-lease"),)
-REPO = Path(__file__).resolve().parents[4]
 
 
 @pytest.fixture(autouse=True)
@@ -176,7 +177,7 @@ async def test_a_lab_pc_refuses_to_start_when_a_site_limit_is_wider_than_the_dri
 async def test_a_lab_pc_refuses_to_start_on_an_inventory_with_a_bad_site_limit(tmp_path: Path) -> None:
     inventory = tmp_path / "lab_pc_09.py"
     inventory.write_text(
-        "from labnet.devices.DummyAOM.physical import PhysicalDummyAOM\n"
+        "from labnet_sim.dummy_aom.physical import PhysicalDummyAOM\n"
         "from labnet.devices.core import site_limits\n"
         "def create_devices():\n"
         "    return [site_limits(PhysicalDummyAOM('aom'), limits={'set_frequncy.value': (65, 95)})]\n",
@@ -190,14 +191,14 @@ async def test_a_lab_pc_refuses_to_start_on_an_inventory_with_a_bad_site_limit(t
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["dev_lab_pc_01.py", "dev_lab_pc_02.py"])
+@pytest.mark.parametrize("name", ["dev_lab_pc_01", "dev_lab_pc_02"])
 async def test_the_dev_inventories_start_with_their_site_limits(name: str) -> None:
-    factory = load_device_factory(f"{REPO / 'scripts' / 'dev' / 'inventories' / name}:create_devices")
+    factory = load_device_factory(f"labnet_sim.inventories.{name}:create_devices")
     app = create_app(settings=_settings(), device_factory=factory)
     async with app.router.lifespan_context(app):
         snapshots = {item.device_id: item for item in app.state.runtime.manager.snapshots()}
         assert all(item.available for item in snapshots.values()), snapshots
-        if name == "dev_lab_pc_01.py":
+        if name == "dev_lab_pc_01":
             hints = snapshots["dev01-aom"].metadata["hints"]
             assert hints["limits"]["set_frequency.value"] == [65.0, 95.0]
             assert hints["sources"]["set_frequency.value"] == "site"
@@ -226,7 +227,7 @@ class _Central:
                 "device": {"device_id": device_id, "manager_id": "lab-pc-1", "device_type": "dummy_device",
                            "runtime_state": "ready", "availability": "available", "effective_available": False,
                            "endpoint": {"transport": "grpc", "target": self.endpoint,
-                                        "api_version": "labnet.devices.v1", "secure": False}},
+                                        "api_version": "labnet.v3", "secure": False}},
             })
         if request.method == "DELETE" and request.url.path.startswith("/api/v1/leases/"):
             lease_id = request.url.path.rsplit("/", 1)[-1]

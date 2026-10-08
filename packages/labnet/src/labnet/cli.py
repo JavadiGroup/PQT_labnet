@@ -18,7 +18,15 @@ GROUP = "labnet.commands"
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="labnet", description="LabNet: device control for a lab network.")
     commands = root.add_subparsers(dest="command", metavar="<command>", required=True)
+    seen: dict[str, str] = {}
     for entry in sorted(entry_points(group=GROUP), key=lambda entry: entry.name):
+        # An editable install can list the same entry twice; two packages claiming one name is a conflict.
+        if entry.name in seen:
+            if seen[entry.name] != entry.value:
+                print(f"labnet: command {entry.name!r} is claimed by {seen[entry.name]} and {entry.value}; "
+                      "using the first", file=sys.stderr)
+            continue
+        seen[entry.name] = entry.value
         try:
             register = entry.load()
         except Exception as exc:  # one broken package must not take the others down

@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import labnet
 from labnet.contracts import DeviceContract, RpcSpec, registry
 
 
@@ -87,12 +86,24 @@ def describe_device_type(device_type: str) -> list[dict[str, Any]] | None:
     return [describe_method(spec) for spec in contract.methods]
 
 
-def facade_class_name(contract: DeviceContract) -> str | None:
-    """The class a client script uses for this family: ``DummyAOMService`` ->
-    ``DummyAOM``. None if ``labnet`` exports no class by that name."""
+_IMPORT = re.compile(r"[A-Za-z_]\w*(\.[A-Za-z_]\w*)*:[A-Za-z_]\w*")
 
-    name = contract.service_name.removesuffix("Service")
-    return name if name in labnet.__all__ else None
+
+def facade_import(contract: DeviceContract) -> tuple[str, str] | None:
+    """(module, class) a client script imports for this family, from its driver package:
+    ``("labnet_sim", "DummyAOM")``. None if the contract names no facade."""
+
+    if not _IMPORT.fullmatch(contract.facade or ""):
+        return None
+    module, _, name = contract.facade.partition(":")
+    return module, name
+
+
+def facade_class_name(contract: DeviceContract) -> str | None:
+    """The class a client script uses for this family (``DummyAOM``), or None."""
+
+    found = facade_import(contract)
+    return found[1] if found else None
 
 
 _HINT_KEY = re.compile(r"[a-z][a-z0-9_]{0,63}\.[a-z][a-z0-9_]{0,63}")
@@ -210,6 +221,7 @@ __all__ = [
     "describe_device_type",
     "describe_method",
     "facade_class_name",
+    "facade_import",
     "hint_lines",
     "method_line",
     "sweep_field",

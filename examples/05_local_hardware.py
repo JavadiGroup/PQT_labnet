@@ -12,7 +12,7 @@ labnet-lab-pc first if it serves the same instrument.
 
 from __future__ import annotations
 
-from labnet import DummyDevice, SimulatedWavemeter
+from labnet_sim import DummyDevice, SimulatedWavemeter
 
 
 def main() -> None:

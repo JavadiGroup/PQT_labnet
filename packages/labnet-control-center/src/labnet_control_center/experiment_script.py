@@ -31,7 +31,7 @@ from typing import Any
 
 from labnet.contracts import DeviceContract, RpcSpec, registry
 
-from .contracts import facade_class_name
+from .contracts import facade_class_name, facade_import
 from .experiment_checks import check_experiment, kind_of
 from .experiment_schema import ExperimentContent, Node, sweep_axes
 
@@ -369,7 +369,13 @@ def generate_script(experiment: Mapping[str, Any]) -> str:
         write("import time")
     write("from datetime import datetime, timezone")
     write("")
-    write(f"from labnet import {', '.join(sorted(class_names) + ['LabClient', 'LabClientError'])}")
+    write("from labnet import LabClient, LabClientError")
+    facade_modules: dict[str, set[str]] = {}
+    for device in devices:
+        module, name = facade_import(device.contract)  # type: ignore[misc]  # checked above
+        facade_modules.setdefault(module, set()).add(name)
+    for module, names_in_module in sorted(facade_modules.items()):
+        write(f"from {module} import {', '.join(sorted(names_in_module))}")
     write("")
     write("")
     if axes:

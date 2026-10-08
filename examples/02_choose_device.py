@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import argparse
 
-from labnet import DummyDevice, LabClient, LabClientError
+from labnet import LabClient, LabClientError
+from labnet_sim import DummyDevice
 
 
 def main(argv: list[str] | None = None) -> None:

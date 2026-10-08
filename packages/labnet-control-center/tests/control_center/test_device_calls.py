@@ -20,7 +20,7 @@ from labnet_control_center.device_calls import (
     lease_rejected,
     plain,
 )
-from labnet.grpc.generated.device_contracts import DUMMY_AOM_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_AOM_CONTRACT
 
 
 LEASE = "lease_" + "ab" * 16

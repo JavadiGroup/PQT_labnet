@@ -8,7 +8,7 @@ import pytest
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from labnet.grpc import GrpcServerConfig, LabnetGrpcServer
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 from labnet.grpc.services import (
     PatternDeviceGrpcService,
     UnsupportedRpcPatternError,

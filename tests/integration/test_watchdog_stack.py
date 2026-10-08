@@ -16,7 +16,7 @@ from labnet.client import ResourceConflictError
 from labnet_control_center.automation_grants import GrantManager, watchdog_claim_path
 from labnet_control_center.automation_protocol import protocol_sha256
 from labnet_control_center.automation_store import AutomationStore
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 from test_full_stack import DEVICE_ID, _renewal_stack
 
 

@@ -9,6 +9,7 @@ dependencies = [
     "labnet[lab-pc,central,certs,driver-dev]",
     "labnet-control-center",
     "labnet-automation",
+    "labnet-sim",
 ]
 
 [dependency-groups]
@@ -28,19 +29,21 @@ members = ["packages/*"]
 labnet = { workspace = true }
 labnet-control-center = { workspace = true }
 labnet-automation = { workspace = true }
+labnet-sim = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = [
     "packages/labnet/tests",
     "packages/labnet-control-center/tests",
     "packages/labnet-automation/tests",
+    "packages/labnet-sim/tests",
     "tests",
 ]
 addopts = "-ra"
 asyncio_mode = "auto"
 
 [tool.importlinter]
-root_packages = ["labnet", "labnet_control_center", "labnet_automation"]
+root_packages = ["labnet", "labnet_control_center", "labnet_automation", "labnet_sim"]
 
 [[tool.importlinter.contracts]]
 name = "Core and the Automation runner don't import the Control Center"
@@ -54,30 +57,10 @@ type = "forbidden"
 source_modules = ["labnet"]
 forbidden_modules = ["labnet_automation"]
 
-# Contracts are found through labnet.contracts.registry. Only the device-family
-# packages (the future plugins) still import their own generated constants.
+# Device families come from driver packages through labnet.contracts.registry, so
+# nothing LabNet ships depends on one; labnet-sim is only one such package.
 [[tool.importlinter.contracts]]
-name = "Only the registry reads the generated contracts module"
+name = "No LabNet package imports a driver package"
 type = "forbidden"
-source_modules = [
-    "labnet_automation",
-    "labnet_control_center",
-    "labnet.central",
-    "labnet.certs",
-    "labnet.client",
-    "labnet.device_manager",
-    "labnet.devices.core",
-    "labnet.envfile",
-    "labnet.grpc.auth",
-    "labnet.grpc.server",
-    "labnet.grpc.services",
-    "labnet.grpc.status",
-    "labnet.identifiers",
-    "labnet.lab_pc",
-    "labnet.lease_policy",
-    "labnet.redaction",
-    "labnet.runner_api",
-    "labnet.safe_paths",
-]
-forbidden_modules = ["labnet.grpc.generated.device_contracts"]
-allow_indirect_imports = true
+source_modules = ["labnet", "labnet_control_center", "labnet_automation"]
+forbidden_modules = ["labnet_sim"]

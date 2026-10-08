@@ -12,9 +12,9 @@ import pytest
 
 from labnet.lab_pc.app import create_app, load_device_factory, resolve_lab_pc_id
 from labnet.lab_pc.config import LabPCSettings
-from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
+from labnet_sim.dummy_device.physical import PhysicalDummyDevice
 from labnet.grpc import LEASE_METADATA_KEY
-from labnet.grpc.generated import dummy_device_pb2, dummy_device_pb2_grpc
+from labnet_sim._generated import dummy_device_pb2, dummy_device_pb2_grpc
 from labnet.grpc.generated import transfer_pb2
 
 
@@ -204,7 +204,7 @@ def test_a_missing_inventory_is_an_error_with_a_hint(spec: str | None) -> None:
 
 def test_inventory_can_be_a_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "bench_inventory.py").write_text(
-        "from labnet.devices.DummyDevice.physical import PhysicalDummyDevice\n"
+        "from labnet_sim.dummy_device.physical import PhysicalDummyDevice\n"
         "def create_devices():\n"
         "    return [PhysicalDummyDevice('bench-a')]\n",
         encoding="utf-8",
@@ -219,7 +219,7 @@ def test_inventory_can_be_a_module(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 def test_inventory_can_be_a_file_path(tmp_path: Path) -> None:
     inventory = tmp_path / "lab_pc_01.py"
     inventory.write_text(
-        "from labnet.devices.DummyDevice.physical import PhysicalDummyDevice\n"
+        "from labnet_sim.dummy_device.physical import PhysicalDummyDevice\n"
         "def create_devices():\n"
         "    return [PhysicalDummyDevice('bench-a'), PhysicalDummyDevice('bench-b')]\n",
         encoding="utf-8",
@@ -234,8 +234,8 @@ def test_inventory_can_be_a_file_path(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "spec",
     [
-        "labnet.devices.DummyDevice.physical",
-        "labnet.devices.DummyDevice.physical:missing",
+        "labnet_sim.dummy_device.physical",
+        "labnet_sim.dummy_device.physical:missing",
         "C:/does/not/exist.py:create_devices",
     ],
 )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from labnet.client import LabPCInfo, ServerConnectionError
 from labnet.client.core.models import DeviceInfo, EndpointDescriptor
 from labnet_control_center.app import create_app
 from labnet_control_center.config import ControlCenterSettings
-from labnet_control_center.contracts import describe_device_type, facade_class_name, type_label
+from labnet_control_center.contracts import describe_device_type, facade_class_name, facade_import, type_label
 from labnet.contracts import registry
 
 
@@ -39,7 +40,7 @@ def _settings(**overrides) -> ControlCenterSettings:
 
 
 ENDPOINT = EndpointDescriptor(
-    transport="grpc", target="192.168.50.20:50051", api_version="labnet.devices.v1", secure=True
+    transport="grpc", target="192.168.50.20:50051", api_version="labnet.v3", secure=True
 )
 NOW = datetime.now(timezone.utc)
 
@@ -173,12 +174,14 @@ def test_every_generated_contract_can_be_described() -> None:
 
 
 def test_every_family_has_a_client_class() -> None:
-    """Generated scripts import <Service minus "Service"> from labnet."""
+    """Generated scripts import each family's facade from its driver package."""
 
     for contract in registry.all():
-        name = facade_class_name(contract)
-        assert name is not None, contract.service_name
-        assert getattr(labnet, name).contract is contract
+        found = facade_import(contract)
+        assert found is not None, contract.service_name
+        module, name = found
+        assert facade_class_name(contract) == name == contract.service_name.removesuffix("Service")
+        assert getattr(importlib.import_module(module), name).contract is contract
 
 
 def test_methods_show_the_python_client_signature() -> None:

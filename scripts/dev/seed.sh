@@ -99,7 +99,7 @@ for entry in "${LAB_PCS[@]}"; do
     cat >> "$DEVNET_DIR/$lab_pc_id.env" << EOF
 LABNET_GRPC_PORT=$grpc_port
 LABNET_HTTP_PORT=$http_port
-LABNET_DEVICE_INVENTORY=$(native_path "$REPO_ROOT/$inventory"):create_devices
+LABNET_DEVICE_INVENTORY=$inventory
 EOF
     ok "$lab_pc_id -> gRPC :$grpc_port, health :$http_port, $inventory"
 done

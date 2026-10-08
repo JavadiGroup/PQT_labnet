@@ -8,11 +8,13 @@ from textwrap import dedent
 
 import pytest
 
-from labnet.devices.DummyDevice.physical import PhysicalDummyDevice
-from labnet.devices.SimulatedTunableLaser.physical import PhysicalSimulatedTunableLaser
+from labnet_sim.dummy_device.physical import PhysicalDummyDevice
+from labnet_sim.simulated_tunable_laser.physical import PhysicalSimulatedTunableLaser
 from labnet.grpc.generated import (
-    dummy_device_pb2,
     rpc_options_pb2,
+)
+from labnet_sim._generated import (
+    dummy_device_pb2,
 )
 from labnet.contracts import PhysicalContractError, registry, validate_implementation
 from labnet.driver import BuildTarget, ContractValidationError, build
@@ -85,7 +87,7 @@ def _generate_test_contract(tmp_path: Path, option_block: str) -> None:
 
 
 def _dummy_contract():
-    return registry.by_service("labnet.devices.v1.DummyDeviceService")
+    return registry.by_service("labnet_sim.v1.DummyDeviceService")
 
 
 def _generate_importable_contract_package(
@@ -752,7 +754,7 @@ def test_current_physical_device_satisfies_generated_contract() -> None:
     validate_implementation(
         PhysicalSimulatedTunableLaser,
         registry.by_service(
-            "labnet.devices.v1.SimulatedTunableLaserService"
+            "labnet_sim.v1.SimulatedTunableLaserService"
         ),
     )
 

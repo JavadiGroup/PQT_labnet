@@ -39,6 +39,7 @@ FILES = (
     ("labnet_automation", "automation_briefing.md"),
     ("labnet.central", "alembic.ini"),
     ("labnet", "py.typed"),
+    ("labnet_sim._generated", "facades.pyi"),
 )
 
 
@@ -55,8 +56,9 @@ def main(repository: Path) -> None:
     import labnet
     import labnet_automation
     import labnet_control_center
+    import labnet_sim
 
-    for module in (labnet, labnet_control_center, labnet_automation):
+    for module in (labnet, labnet_control_center, labnet_automation, labnet_sim):
         if repository.resolve() in Path(module.__file__).resolve().parents:
             problems.append(f"{module.__name__} was imported from the repository, not the wheel")
 

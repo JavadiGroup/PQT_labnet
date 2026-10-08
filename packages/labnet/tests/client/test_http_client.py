@@ -7,7 +7,7 @@ import pytest
 
 from labnet.client import AsyncLabClient, AuthenticationError, LabClient
 from labnet.devices.core.remote import RemoteDeviceBinding
-from labnet.grpc.generated.device_contracts import DUMMY_DEVICE_CONTRACT
+from labnet_sim._generated.contracts import DUMMY_DEVICE_CONTRACT
 
 
 NOW = datetime.now(timezone.utc)
@@ -17,7 +17,7 @@ def endpoint() -> dict[str, object]:
     return {
         "transport": "grpc",
         "target": "127.0.0.1:50051",
-        "api_version": "labnet.devices.v1",
+        "api_version": "labnet.v3",
         "secure": False,
         "attributes": {},
     }

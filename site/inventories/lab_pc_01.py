@@ -11,7 +11,7 @@ name them after the instrument or its fixed position, not a USB port.
 
 from __future__ import annotations
 
-from labnet.devices.SimulatedWavemeter.physical import PhysicalSimulatedWavemeter
+from labnet_sim.simulated_wavemeter.physical import PhysicalSimulatedWavemeter
 
 # The Sacher driver is its own package (separate repository), installed on this Lab PC:
 # from <sacher driver package> import PhysicalSacherLaser
