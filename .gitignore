@@ -1,13 +1,18 @@
 # Local credentials and environment overrides
+# (*.env catches filled-in copies of templates such as site/central.env.example)
 .env
 **/.env
+*.env
 *.key
+*.pem
 *.p12
 *.pfx
+logins.txt
 
 # Keep safe templates in version control
 !.env.example
 !**/.env.example
+!*.env.example
 
 # Python-generated artifacts
 __pycache__/

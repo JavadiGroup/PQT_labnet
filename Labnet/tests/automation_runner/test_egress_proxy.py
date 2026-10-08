@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
@@ -177,7 +178,12 @@ async def test_connection_cap(started):
     proxy, port = await started(max_connections=1)
     _head, _reader, held = await exchange(port, b"CONNECT api.anthropic.com:443 HTTP/1.1\r\n\r\n")
     assert proxy.active == 1
-    assert await status_of(port, b"CONNECT api.anthropic.com:443 HTTP/1.1\r\n\r\n") == 503
+    head, reader, writer = await exchange(port, b"CONNECT api.anthropic.com:443 HTTP/1.1\r\n\r\n")
+    assert int(head.split(b" ")[1]) == 503
+    # The proxy closes the refused connection; the unread request makes that a reset, not EOF.
+    with contextlib.suppress(ConnectionResetError):
+        await asyncio.wait_for(reader.read(), 5)
+    writer.close()
     held.close()
 
 

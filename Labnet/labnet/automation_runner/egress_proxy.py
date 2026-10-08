@@ -195,15 +195,18 @@ class EgressProxy:
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
         client = peer[0] if isinstance(peer, tuple) and peer else "?"
-        if self.active >= self.max_connections:
-            log.warning("DENY client=%s reason=too many connections (%d)", client, self.active)
-            await self._refuse(writer, 503, "too many connections")
-            return
-        self.active += 1
         try:
-            await self._handle(reader, writer, client)
+            if self.active >= self.max_connections:
+                log.warning("DENY client=%s reason=too many connections (%d)", client, self.active)
+                await self._refuse(writer, 503, "too many connections")
+                return
+            self.active += 1
+            try:
+                await self._handle(reader, writer, client)
+            finally:
+                self.active -= 1
         finally:
-            self.active -= 1
+            # Every path closes the client socket, the refusals included; otherwise it stays half-open.
             writer.close()
             try:
                 await writer.wait_closed()
