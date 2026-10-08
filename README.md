@@ -273,8 +273,11 @@ a folder:
 - **ScriptsUtilized, Protocols and Analysis:** where the agent's work goes.
 
 You upload, edit and link experiments from the page. Folders the agent writes
-are read-only to people. Agent runs come in a later update. See
-[Automation](Labnet/README.md#automation).
+are read-only to people. Tasks are queued as runs: the agent plans, and any
+device control waits for a person to approve a protocol whose bounds the
+Control Center and the Lab PCs enforce. See
+[Automation](Labnet/README.md#automation). To bring it into use in the lab,
+follow the [Automation go-live checklist](Labnet/README.md#automation-go-live-checklist).
 
 The **Photo-Agent** sidebar is Claude Code: ask it about LabNet, attach data
 or papers, or ask it to set up an experiment. It proposes a diagram you can
