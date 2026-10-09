@@ -1,0 +1,69 @@
+"""The ${Base} driver: what a Lab PC runs to talk to the instrument.
+
+Replace the simulated level with calls to the vendor's SDK. Keep the method
+names and arguments the proto declares; `labnet driver build` and
+``labnet.testing.check_driver`` tell you if they drift apart.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+from labnet.devices.core import BaseDeviceInterface, DeviceAvailability
+
+from .._generated.contracts import ${CONSTANT}
+
+
+class Physical${Base}(BaseDeviceInterface):
+    """One ${Base}. The Lab PC calls every method from a single worker thread."""
+
+    device_type = ${CONSTANT}.device_type
+    LEVEL_RANGE_V = (0.0, 10.0)
+
+    def __init__(self, device_id: str = "${device_type}_1") -> None:
+        self._device_id = device_id
+        self._connected = False
+        self._level_v = 0.0  # TODO: the instrument holds this; read it from the SDK instead
+
+    @property
+    def device_id(self) -> str:
+        return self._device_id
+
+    def connect(self) -> None:
+        # TODO: open the instrument (vendor SDK, VISA resource, serial port, ...).
+        self._connected = True
+
+    def disconnect(self) -> None:
+        # TODO: put the instrument in a safe state and close it.
+        self._connected = False
+
+    def status(self) -> str:
+        return "ready" if self._connected else "disconnected"
+
+    def availability(self) -> DeviceAvailability:
+        return DeviceAvailability.AVAILABLE if self._connected else DeviceAvailability.UNAVAILABLE
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "manufacturer": "TODO",
+            "model": "${Base}",
+            "capabilities": self.allowed_methods(),
+            # The instrument's own limits. The Lab PC enforces them on every remote call,
+            # and automation can bound only numbers that have one.
+            "hints": {"limits": {"set_level.value": list(self.LEVEL_RANGE_V)}},
+        }
+
+    def read_level(self) -> float:
+        if not self._connected:
+            raise RuntimeError("The ${Base} is not connected.")
+        return self._level_v
+
+    def set_level(self, value: float) -> float:
+        low, high = self.LEVEL_RANGE_V
+        level = float(value)
+        # Check here too: a local user of the driver doesn't go through a Lab PC.
+        if not math.isfinite(level) or not low <= level <= high:
+            raise ValueError(f"Level must be between {low:g} and {high:g} V.")
+        self._level_v = level
+        return self._level_v

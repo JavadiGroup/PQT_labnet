@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "${distribution}"
+version = "0.1.0"
+description = "LabNet driver for the ${Base}"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "${labnet_requirement}",
+]
+
+[project.optional-dependencies]
+# Building the protos and testing. grpcio-tools is pinned to labnet's own version:
+# generated code must not change when someone else builds it.
+dev = [
+    "${grpc_tools_requirement}",
+    "pytest>=8",
+]
+
+# How Lab PCs, clients and the Control Center find this driver: one entry per device type.
+# `labnet driver build` checks these against the protos.
+[project.entry-points."labnet.devices"]
+${device_type} = "${package}._generated.contracts:${CONSTANT}"
+
+# labnet driver build: protos/${package}/v1/*.proto -> src/${package}/_generated/
+[tool.labnet.driver]
+package = "${package}"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["${package}*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"${package}._generated" = ["*.pyi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

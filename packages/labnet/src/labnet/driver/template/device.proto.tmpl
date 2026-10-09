@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+// This driver's own package: labnet.* belongs to LabNet, and a package of its
+// own means its names can never collide with another driver's.
+package ${package}.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+
+message ${Base}Request {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message ${Base}SetLevelRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  // An absolute setpoint, so repeating a request is safe.
+  double value = 3;
+  optional string unit = 4;
+}
+
+message ${Base}MeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+// Every RPC names its pattern, the driver method it calls, and its unit
+// ("1" for dimensionless). Add RPCs here, run `labnet driver build`, then
+// implement the new methods in physical.py.
+service ${Service} {
+  rpc ReadLevel(${Base}Request) returns (${Base}MeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_level"
+      default_unit: "V"
+    };
+  }
+
+  rpc SetLevel(${Base}SetLevelRequest) returns (${Base}MeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_level"
+      default_unit: "V"
+    };
+  }
+}

@@ -71,19 +71,19 @@ expires a lease after 15 minutes with no device commands.
 
 ## From physical device to network call
 
-Every device family passes through the same layers. Today's families are
-`DummyDevice`, `SimulatedWavemeter`, and a simulated optics bench:
-`DummyLaser`, `DummyAOM`, `DummyEOM` and `DummyAWG`. You write three small pieces; the rest is generated
-or shared framework code.
+Every device family lives in a **driver package**, installed like any Python
+package. [`labnet-sim`](packages/labnet-sim/) is the one LabNet ships: a
+simulated optics bench (`DummyLaser`, `DummyAOM`, `DummyEOM`, `DummyAWG`),
+`DummyDevice`, a `SimulatedTunableLaser` and a `SimulatedWavemeter`. You write
+three small pieces; the rest is generated or shared framework code.
 
-| Layer | File | Who writes it |
+| Layer | File (in a driver package) | Who writes it |
 | --- | --- | --- |
-| Network contract | `packages/labnet/protos/labnet/devices/v1/<family>.proto` | **You** |
-| Generated bindings and contract metadata | `packages/labnet/src/labnet/grpc/generated/*` | `labnet driver build --core` |
-| Driver wrapper | `packages/labnet/src/labnet/devices/<Family>/physical.py` | **You** |
-| Public class for experiments | `packages/labnet/src/labnet/devices/<Family>/device.py` | **You** (about 3 lines) |
+| Network contract | `protos/<package>/v1/<family>.proto` | **You** |
+| Generated bindings, contracts and facades | `src/<package>/_generated/*` | `labnet driver build` |
+| Driver wrapper | `src/<package>/<family>/physical.py` | **You** |
 | Which instruments a Lab PC serves | `site/inventories/<lab pc>.py` | **You** |
-| gRPC server, lease checks, worker threads, client stubs | `packages/labnet/src/labnet/grpc`, `device_manager`, `client` | Framework, do not edit per family |
+| gRPC server, lease checks, worker threads, client stubs | `labnet` (`grpc`, `device_manager`, `client`) | Framework, do not edit per family |
 
 ### 1. The proto is the contract
 
@@ -106,22 +106,23 @@ in `rpc_options.proto` are reserved, and the generator rejects them.
 
 ### 2. Code generation turns it into Python
 
-`scripts/dev/codegen.sh` runs `labnet driver build --core`, which runs `protoc`,
-validates every RPC option, and writes:
+`labnet driver build` (run in the driver package) runs `protoc`, validates
+every RPC option, and writes `src/<package>/_generated/`:
 
 - `<family>_pb2.py` / `_pb2_grpc.py`: protobuf messages, gRPC stub, and servicer;
-- `device_contracts.py`: one `DeviceContract` per family. It records each RPC's
+- `contracts.py`: one `DeviceContract` per family. It records each RPC's
   pattern, the driver method it maps to, and the request fields forwarded as
   arguments, plus a `Protocol` describing the method signatures `physical.py`
-  must have. The types themselves live in `labnet.contracts`, and code finds a
-  contract through `labnet.contracts.registry` (`registry.get("dummy_aom")`),
-  never by importing the generated module.
+  must have, and which package provides it (name, fingerprint, facade, driver);
+- `facades.py` / `.pyi`: the class a client uses, e.g. `DummyAOM`.
 
-That generated contract is the single source of truth. The server builds its
-handlers from it, the client builds its methods from it, and only the methods
-it names can be called remotely; other helper methods on a driver stay private.
-Generation happens before deployment and is checked in. There is no code
-generation at runtime.
+The package registers each contract in the `labnet.devices` entry-point group,
+and LabNet code finds it through `labnet.contracts.registry`
+(`registry.get("dummy_aom")`). That generated contract is the single source of
+truth. The server builds its handlers from it, the client builds its methods
+from it, and only the methods it names can be called remotely; other helper
+methods on a driver stay private. Generation happens before release and is
+checked in. There is no code generation at runtime.
 
 ### 3. The driver wrapper does the hardware work
 
@@ -363,32 +364,29 @@ across **all** Lab PCs. A removed device stays in Central's table as `stopped`
 and not leasable. Run `seed.sh` to clear it, or if you moved a device id to a
 different Lab PC (Central rejects that as an ownership conflict).
 
-### Adding a new device family
+### Adding a new device family (a driver package)
 
-`SimulatedWavemeter` was added exactly this way and is the model to copy:
+```
+labnet driver new acme-thing --service AcmeThing     # a working package from the template
+cd acme-thing
+pip install -e ".[dev]"
+labnet driver build                                  # protos -> src/acme_thing/_generated/
+pytest                                               # check_driver + the facade, out of the box
+```
 
-1. `scripts/dev/down.sh`
-2. Add `packages/labnet/protos/labnet/devices/v1/<family>.proto`; see
-   [`simulated_wavemeter.proto`](packages/labnet/protos/labnet/devices/v1/simulated_wavemeter.proto).
-   Every RPC needs the `pattern`, `physical_method`, and `default_unit` options.
-3. `scripts/dev/codegen.sh`. Generation fails with a precise message if an
-   option is missing or doesn't fit the RPC's shape. On success,
-   `device_contracts.py` gains a `<FAMILY>_CONTRACT` and the gRPC server serves
-   the new service automatically.
-4. Write `packages/labnet/src/labnet/devices/<Family>/physical.py` (the driver), the facade
-   `device.py`, and a lazy `__init__.py`; copy
-   [`SimulatedWavemeter/`](packages/labnet/src/labnet_sim/simulated_wavemeter/). The
-   facade is just:
-   ```python
-   class SimulatedWavemeter(ContractDeviceFacade):
-       contract = SIMULATED_WAVEMETER_CONTRACT
-       physical_type = PhysicalSimulatedWavemeter
-   ```
-5. Export it in `packages/labnet/src/labnet/__init__.py` and `packages/labnet/src/labnet/devices/__init__.py`.
-6. Add instances to an inventory, then run `scripts/dev/redeploy.sh`. The
-   smoke test leases each new device and calls its first scalar-read RPC.
-7. Commit the proto **and** the regenerated files. `codegen.sh` prints the
-   generated files that changed.
+1. Edit `protos/acme_thing/v1/acme_thing.proto`. Every RPC needs the
+   `pattern`, `physical_method`, and `default_unit` options; its package is
+   `acme_thing.v1` (`labnet.*` is LabNet's own). See
+   [`labnet-sim`'s protos](packages/labnet-sim/protos/labnet_sim/v1/) for more.
+2. `labnet driver build`. It fails with a precise message if an option is
+   missing or doesn't fit the RPC's shape, and tells you the
+   `[project.entry-points."labnet.devices"]` line for each family.
+3. Implement `src/acme_thing/acme_thing/physical.py` around the vendor SDK.
+   `labnet.testing.check_driver` runs a Lab PC's own startup checks on it.
+4. Install the package on the Lab PC (and on clients and the Control Center),
+   add instances to that Lab PC's inventory, and restart it. Clients use
+   `from acme_thing import AcmeThing`.
+5. Commit the proto **and** the generated files; CI runs `labnet driver build --check`.
 
 After a contract is deployed, keep it backward compatible: never renumber or
 retype fields, add new fields as optional, and reserve removed numbers. See
@@ -503,10 +501,10 @@ backup if you need to.
 
 | Path | Purpose |
 | --- | --- |
-| [`packages/`](packages/) | The installable packages: `labnet` ([full guide](packages/labnet/README.md)), `labnet-control-center` and `labnet-automation` |
-| [`packages/labnet/protos/`](packages/labnet/protos/) | Protobuf device contracts (source of truth) |
-| [`packages/labnet/src/labnet/driver/`](packages/labnet/src/labnet/driver/) | `labnet driver build`: contract validator and code generator |
-| [`packages/labnet/src/labnet/devices/`](packages/labnet/src/labnet/devices/) | Device families: `physical.py` driver wrappers and facades |
+| [`packages/`](packages/) | The installable packages: `labnet` ([full guide](packages/labnet/README.md)), `labnet-control-center`, `labnet-automation` and `labnet-sim` |
+| [`packages/labnet/src/labnet/protos/`](packages/labnet/src/labnet/protos/) | LabNet's shared protobuf messages and RPC options |
+| [`packages/labnet/src/labnet/driver/`](packages/labnet/src/labnet/driver/) | `labnet driver build` and `new`: contract validator, code generator, driver template |
+| [`packages/labnet-sim/`](packages/labnet-sim/) | The simulated device families: a complete driver package |
 | [`packages/labnet/src/labnet/lab_pc/`](packages/labnet/src/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
 | [`packages/labnet-control-center/src/labnet_control_center/`](packages/labnet-control-center/src/labnet_control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |
 | `packages/*/tests/`, [`tests/`](tests/) | Each package's tests; full-stack and example tests |

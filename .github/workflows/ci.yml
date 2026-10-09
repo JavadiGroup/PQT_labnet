@@ -70,3 +70,25 @@ jobs:
           "$py" -m pip install dist/labnet_control_center-*.whl dist/labnet_automation-*.whl dist/labnet_sim-*.whl \
               "$(ls dist/labnet-[0-9]*.whl)[central,lab-pc,certs]"
           cd "$RUNNER_TEMP" && "$py" "$GITHUB_WORKSPACE/.github/scripts/wheel_smoke.py" "$GITHUB_WORKSPACE"
+
+  driver-template:
+    name: Driver template round trip
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: labnet driver new, install, build, test
+        shell: bash
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/driver"
+          py="$RUNNER_TEMP/driver/Scripts/python"
+          uv pip install --python "$py" -e packages/labnet
+          "$RUNNER_TEMP/driver/Scripts/labnet" driver new acme-thing --service AcmeThing --directory "$RUNNER_TEMP/acme-thing"
+          uv pip install --python "$py" -e packages/labnet -e "$RUNNER_TEMP/acme-thing[dev]"
+          cd "$RUNNER_TEMP/acme-thing"
+          "$RUNNER_TEMP/driver/Scripts/labnet" driver build --import-check
+          "$RUNNER_TEMP/driver/Scripts/labnet" driver build --check
+          "$py" -m pytest -q

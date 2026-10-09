@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from importlib import resources
 from pathlib import Path
 
@@ -33,6 +34,7 @@ PACKAGE_DATA = (
     ("labnet_control_center", "packages/labnet-control-center/src/labnet_control_center", ("static",)),
     ("labnet.central", "packages/labnet/src/labnet/central", ("alembic",)),
     ("labnet", "packages/labnet/src/labnet", ("protos",)),
+    ("labnet.driver", "packages/labnet/src/labnet/driver", ("template",)),
 )
 FILES = (
     ("labnet_control_center", "agent_briefing.md"),
@@ -81,6 +83,14 @@ def main(repository: Path) -> None:
     result = subprocess.run([labnet_path or "labnet", "driver", "build", "--help"], capture_output=True, text=True)
     if result.returncode != 0:
         problems.append(f"labnet driver build --help failed: {result.stderr.strip()[-300:]}")
+    with tempfile.TemporaryDirectory() as scratch:
+        result = subprocess.run(
+            [labnet_path or "labnet", "driver", "new", "smoke-thing", "--service", "SmokeThing",
+             "--directory", str(Path(scratch) / "smoke-thing")],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            problems.append(f"labnet driver new failed: {(result.stdout + result.stderr).strip()[-300:]}")
 
     from labnet.contracts import registry
 

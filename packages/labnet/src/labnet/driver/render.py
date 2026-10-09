@@ -288,7 +288,7 @@ def render_facades_module(contracts: Sequence[RpcContractSpec], *, package: str,
         lines += [
             "",
             f"class {base}(ContractDeviceFacade):",
-            f'    """A {base}: local through its driver, or remote through a lease."""',
+            f'    """{base}: local through its driver, or remote through a lease."""',
             "",
             f"    contract = {_variable(service_name)}",
             f"    physical_type = {physical!r}",

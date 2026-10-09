@@ -1,0 +1,26 @@
+"""LabNet driver for the ${Base}.
+
+``${Base}`` is the facade a client uses (locally, or remotely through a
+lease); ``Physical${Base}`` is the driver a Lab PC inventory creates.
+"""
+
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "${Base}": "._generated.facades",
+    "Physical${Base}": ".${family}.physical",
+}
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name, __name__), name)
+    globals()[name] = value
+    return value

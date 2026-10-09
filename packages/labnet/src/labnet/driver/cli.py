@@ -24,6 +24,35 @@ def register(commands: argparse._SubParsersAction) -> None:
     )
     build.set_defaults(handler=_build)
 
+    new = actions.add_parser("new", help="Start a driver package from LabNet's template.")
+    new.add_argument("name", help="The package's pip name, like acme-thing.")
+    new.add_argument("--service", required=True, help="The device family, like AcmeThing (its gRPC service: AcmeThingService).")
+    new.add_argument("--directory", type=Path, help="Where to create it (default: ./<name>).")
+    new.set_defaults(handler=_new)
+
+
+def _new(arguments: argparse.Namespace) -> int:
+    from .new import DriverNames, create
+    from .validate import ContractValidationError
+
+    directory = arguments.directory or Path(arguments.name)
+    try:
+        names = DriverNames.of(arguments.name, arguments.service)
+        create(directory, names)
+    except ContractValidationError as exc:
+        print(f"labnet driver new: {exc}")
+        return 1
+    print(
+        f"Created {names.distribution} in {directory}: device type {names.device_type}, "
+        f"service {names.package}.v1.{names.service}.\n"
+        "Next:\n"
+        f"  cd {directory}\n"
+        '  pip install -e ".[dev]"\n'
+        "  labnet driver build\n"
+        "  pytest"
+    )
+    return 0
+
 
 def entry_point_problems(project: Path, python_package: str, contracts_module: str, contracts) -> list[str]:
     """What the package's ``[project.entry-points."labnet.devices"]`` lacks or has wrong."""

@@ -8,49 +8,49 @@ from .contracts import DUMMY_AOM_CONTRACT, DUMMY_AWG_CONTRACT, DUMMY_DEVICE_CONT
 
 
 class DummyAOM(ContractDeviceFacade):
-    """A DummyAOM: local through its driver, or remote through a lease."""
+    """DummyAOM: local through its driver, or remote through a lease."""
 
     contract = DUMMY_AOM_CONTRACT
     physical_type = 'labnet_sim.dummy_aom.physical:PhysicalDummyAOM'
 
 
 class DummyAWG(ContractDeviceFacade):
-    """A DummyAWG: local through its driver, or remote through a lease."""
+    """DummyAWG: local through its driver, or remote through a lease."""
 
     contract = DUMMY_AWG_CONTRACT
     physical_type = 'labnet_sim.dummy_awg.physical:PhysicalDummyAWG'
 
 
 class DummyDevice(ContractDeviceFacade):
-    """A DummyDevice: local through its driver, or remote through a lease."""
+    """DummyDevice: local through its driver, or remote through a lease."""
 
     contract = DUMMY_DEVICE_CONTRACT
     physical_type = 'labnet_sim.dummy_device.physical:PhysicalDummyDevice'
 
 
 class DummyEOM(ContractDeviceFacade):
-    """A DummyEOM: local through its driver, or remote through a lease."""
+    """DummyEOM: local through its driver, or remote through a lease."""
 
     contract = DUMMY_EOM_CONTRACT
     physical_type = 'labnet_sim.dummy_eom.physical:PhysicalDummyEOM'
 
 
 class DummyLaser(ContractDeviceFacade):
-    """A DummyLaser: local through its driver, or remote through a lease."""
+    """DummyLaser: local through its driver, or remote through a lease."""
 
     contract = DUMMY_LASER_CONTRACT
     physical_type = 'labnet_sim.dummy_laser.physical:PhysicalDummyLaser'
 
 
 class SimulatedTunableLaser(ContractDeviceFacade):
-    """A SimulatedTunableLaser: local through its driver, or remote through a lease."""
+    """SimulatedTunableLaser: local through its driver, or remote through a lease."""
 
     contract = SIMULATED_TUNABLE_LASER_CONTRACT
     physical_type = 'labnet_sim.simulated_tunable_laser.physical:PhysicalSimulatedTunableLaser'
 
 
 class SimulatedWavemeter(ContractDeviceFacade):
-    """A SimulatedWavemeter: local through its driver, or remote through a lease."""
+    """SimulatedWavemeter: local through its driver, or remote through a lease."""
 
     contract = SIMULATED_WAVEMETER_CONTRACT
     physical_type = 'labnet_sim.simulated_wavemeter.physical:PhysicalSimulatedWavemeter'

@@ -1,0 +1,44 @@
+# ${distribution}
+
+LabNet driver for the ${Base} (device type `${device_type}`).
+
+## Develop
+
+```
+pip install -e ".[dev]"
+labnet driver build        # protos -> src/${package}/_generated/ (run after every proto change)
+pytest
+```
+
+- `protos/${package}/v1/${family}.proto`: the network contract. Every RPC names
+  its pattern, the driver method it calls and its unit.
+- `src/${package}/${family}/physical.py`: the driver. Replace the simulated
+  level with the vendor SDK.
+- `src/${package}/_generated/`: built by `labnet driver build`. Commit it; never edit it.
+
+## Use
+
+On a Lab PC, install the package and create the driver in the inventory:
+
+```python
+from ${package} import Physical${Base}
+
+def create_devices():
+    return [Physical${Base}("lab-pc-01-${family}")]
+```
+
+Install it on clients and the Control Center too, so they know the device's
+methods. A client uses the facade:
+
+```python
+from labnet import LabClient
+from ${package} import ${Base}
+
+central = LabClient.from_env()
+device = ${Base}(client=central)  # leases an available ${device_type}
+try:
+    device.set_level(2.5)
+finally:
+    device.close()
+    central.close()
+```

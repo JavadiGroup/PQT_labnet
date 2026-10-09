@@ -1,0 +1,24 @@
+"""The ${Base} driver passes a Lab PC's checks and works through its facade."""
+
+from __future__ import annotations
+
+import pytest
+
+from labnet.testing import check_driver
+from ${package} import ${Base}, Physical${Base}
+
+
+def test_a_lab_pc_would_accept_the_driver() -> None:
+    snapshot = check_driver(Physical${Base}("test-1"))
+    assert snapshot.metadata["hints"]["limits"] == {"set_level.value": [0.0, 10.0]}
+
+
+def test_the_facade_drives_it_locally() -> None:
+    device = ${Base}(device_id="local-1")
+    try:
+        assert device.set_level(2.5) == 2.5
+        assert device.read_level() == 2.5
+        with pytest.raises(ValueError, match="between 0 and 10 V"):
+            device.set_level(11.0)
+    finally:
+        device.close()

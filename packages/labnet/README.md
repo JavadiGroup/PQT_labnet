@@ -2316,12 +2316,14 @@ No code generation is needed:
 
 ### A new device family
 
-`SimulatedWavemeter` is the reference. It has its own `.proto`, a driver, a
-three-line facade, and exports. The steps are in the
-[repository README](../../README.md#adding-a-new-device-family). In short:
+A device family is a driver package: `labnet driver new acme-thing --service
+AcmeThing` creates a working one, and
+[`labnet-sim`](../labnet-sim/) is a larger example. In short:
 
-1. **Define the contract** in `protos/labnet/devices/v1/<family>.proto`. Every
-   RPC declares its pattern, physical method, and default unit (use `"1"` for
+1. **Define the contract** in `protos/<package>/v1/<family>.proto` (package
+   `<package>.v1`; `labnet.*` is reserved). It imports
+   `labnet/devices/v1/common.proto` and `rpc_options.proto`. Every RPC
+   declares its pattern, physical method, and default unit (use `"1"` for
    dimensionless values):
 
    | Pattern | RPC shape | Physical behavior |
@@ -2331,20 +2333,19 @@ three-line facade, and exports. The steps are in the
    | `RPC_PATTERN_UNARY_COMMAND` | Unary | Any driver method; its return value comes back as a typed `CommandResult` (none, bool, integer, float, text, or integer list) |
    | `RPC_PATTERN_POLLED_SCALAR_STREAM` | Server streaming | Repeated physical reads with scheduling, cancellation, lease revalidation, and backpressure |
 
-2. **Generate** with `labnet driver build --core` (or
-   `scripts/dev/codegen.sh`). Never edit generated files.
+2. **Generate** with `labnet driver build` (needs `labnet[driver-dev]`).
+   Never edit generated files. It also checks the package's
+   `[project.entry-points."labnet.devices"]`, one entry per device type.
 3. **Implement `physical.py`** with a stable `device_id`, the generated
    `device_type`, `connect`, `disconnect`, `status`, `availability`, JSON-compatible
    `metadata`, and every physical method the contract names. Optional proto
    arguments need Python defaults. Extra required arguments are rejected
    when the Lab PC starts.
-4. **Add the facade** (`device.py`), which binds the contract to the driver,
-   and export it from `labnet/__init__.py` and `labnet/devices/__init__.py`.
-   Do not write family-specific gRPC or transport code; dispatch,
+4. **The facade is generated** (`_generated/facades.py`), named after the
+   service without "Service": `AcmeThingService` -> `AcmeThing`. Export it and
+   the driver from the package's `__init__.py`. Export Script imports it from
+   there. Do not write family-specific gRPC or transport code; dispatch,
    authorization, errors, leases, and streams are shared.
-   - Name the class after the service without "Service": `DummyAOMService` →
-     `DummyAOM`. Export Script imports it by that name, and a test checks
-     every family.
 5. **Optionally publish hints** in `metadata()`. The Control Center's
    experiment forms and checks use them, and Photo-Agent sees them:
 
@@ -2358,7 +2359,7 @@ three-line facade, and exports. The steps are in the
    (see [Site limits](#site-limits)), and a protocol can bound only numbers
    that have one. Drivers must still check their own ranges: local use of
    the driver skips the Lab PC.
-6. **Validate:** `labnet driver build --core --check` and `pytest`.
+6. **Validate:** `labnet driver build --check`, `pytest` (with `labnet.testing.check_driver`).
 
 The four `Dummy*` optics-bench families (`labnet/devices/DummyLaser`,
 `DummyAOM`, `DummyEOM`, `DummyAWG`) are small, complete examples of channels,
