@@ -45,13 +45,26 @@ if (-not (Test-Path $manifestFile)) {
 $manifest = Get-Content -Raw -Path $manifestFile | ConvertFrom-Json
 Write-Host " ==> LabNet $($manifest.labnet_version) ($($manifest.site)) from $bundle"
 
+# .NET's SHA-256 rather than Get-FileHash: started from a PowerShell 7 window,
+# powershell.exe inherits PowerShell 7's module path and can't find Get-FileHash.
+function Get-Sha256([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($sha256.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
+
 # 1. Nothing is installed from a bundle with a changed or missing file.
 $bad = @()
 foreach ($file in $manifest.files.PSObject.Properties) {
     $path = Join-Path $bundle $file.Name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         $bad += "$($file.Name) is missing"
-    } elseif ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $file.Value) {
+    } elseif ((Get-Sha256 $path) -ne $file.Value) {
         $bad += "$($file.Name) does not match its sha256"
     }
 }

@@ -160,17 +160,30 @@ def test_the_interpreter_may_be_a_path_with_spaces_or_a_command(tmp_path: Path) 
     assert Update(bundle=tmp_path, role="client", python="py -3.11")._interpreter() == ["py", "-3.11"]
 
 
+def _install_ps1(bundle: Path, home: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(bundle / INSTALLER),
+         "-Role", "client", "-LabNetHome", str(home), *extra],
+        capture_output=True, text=True, timeout=120,
+    )
+
+
 @pytest.mark.skipif(shutil.which("powershell") is None, reason="needs Windows PowerShell")
 def test_install_ps1_refuses_a_changed_bundle_before_installing_anything(bundle: Path, tmp_path: Path) -> None:
     copy = tmp_path / "bundle"
     shutil.copytree(bundle, copy)
     (copy / "site-acme.zip").write_bytes(b"changed")
-    home = tmp_path / "home"
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(copy / INSTALLER),
-         "-Role", "client", "-LabNetHome", str(home)],
-        capture_output=True, text=True, timeout=120,
-    )
+    result = _install_ps1(copy, tmp_path / "home")
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "site-acme.zip does not match its sha256" in result.stdout
-    assert not home.exists()
+    # exactly the changed file: every other file's hash matches
+    assert "do not install it: site-acme.zip does not match its sha256\n" in result.stdout, result.stdout + result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="needs Windows PowerShell")
+def test_install_ps1_accepts_an_unchanged_bundle(bundle: Path, tmp_path: Path) -> None:
+    # It stops at the interpreter (there is none at that path), right after checking every file.
+    result = _install_ps1(bundle, tmp_path / "home", "-Python", str(tmp_path / "no-python.exe"))
+    files = len(read_manifest(bundle)["files"])
+    assert f"ok {files} files match MANIFEST.json" in result.stdout, result.stdout + result.stderr
+    assert result.returncode != 0 and not (tmp_path / "home").exists()
