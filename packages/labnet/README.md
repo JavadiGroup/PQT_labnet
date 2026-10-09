@@ -2017,6 +2017,9 @@ cross the network in clear text.
 | `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | Central URL; keep the loopback default when it runs on the Central PC |
 | `LABNET_API_KEY` | required | The Control Center's own Central key (role `user`) |
 | `LABNET_CA_FILE` | system trust | Only needed if it ever runs on a different computer and reaches Central over HTTPS |
+| `LABNET_SITE_NAME` | `LabNet` | The lab's name in page titles, the top bar and generated scripts: `PQT Lab` -> "PQT Lab Control Center" |
+| `LABNET_AUTOMATION_ENABLED` | `false` | Turns on the Automation tab, its runners and device grants. Off, none of its pages, APIs or state exist |
+| `LABNET_PHOTO_AGENT_ENABLED` | `false` | Turns on the Photo-Agent chat sidebar and `/api/agent`. Off, the pages take the full width |
 | `LABNET_CONTROL_CENTER_HOST` / `_PORT` | `127.0.0.1` / `8080` | Built-in HTTP listener; loopback only |
 | `LABNET_CONTROL_CENTER_PROXY_SECRET` | none (no logins) | Turns on [logins](#logins): only requests carrying it (from Caddy) get in. At least 32 printable ASCII characters, no spaces; `setup_logins.ps1` makes one |
 | `LABNET_CONTROL_CENTER_ALLOWED_HOSTS` | `127.0.0.1,localhost`; any host with the secret | Host names the pages answer to, comma-separated, without ports or schemes (e.g. `pqt-control-center,192.168.50.10`); others get 400 |

@@ -47,12 +47,12 @@ def test_ca_key_can_be_encrypted(tmp_path: Path) -> None:
             (tmp_path / "labnet-ca.key").read_bytes(), password=None
         )
     issue_server_certificate(
-        tmp_path, "lab-pc-01", ips=["192.168.50.20"], passphrase=b"correct horse"
+        tmp_path, "lab-pc-01", ips=["192.0.2.20"], passphrase=b"correct horse"
     )
 
 
 def test_server_certificate_matches_the_deployment_profile(ca_dir: Path) -> None:
-    issue_server_certificate(ca_dir, "lab-pc-01", ips=["192.168.50.20"])
+    issue_server_certificate(ca_dir, "lab-pc-01", ips=["192.0.2.20"])
     certificate = _load(ca_dir / "lab-pc-01.crt")
     extensions = certificate.extensions
 
@@ -64,18 +64,18 @@ def test_server_certificate_matches_the_deployment_profile(ca_dir: Path) -> None
     )
     names = extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     assert names.get_values_for_type(x509.IPAddress) == [
-        ipaddress.ip_address("192.168.50.20")
+        ipaddress.ip_address("192.0.2.20")
     ]
     certificate.verify_directly_issued_by(_load(ca_dir / "labnet-ca.pem"))
     summary, ok = describe_certificate(ca_dir / "lab-pc-01.crt", ca_dir / "labnet-ca.pem")
-    assert ok and "IP:192.168.50.20" in summary
+    assert ok and "IP:192.0.2.20" in summary
 
 
 def test_issue_refuses_to_overwrite_and_needs_a_name(ca_dir: Path) -> None:
-    issue_server_certificate(ca_dir, "central", ips=["192.168.50.10"])
+    issue_server_certificate(ca_dir, "central", ips=["192.0.2.10"])
 
     with pytest.raises(FileExistsError):
-        issue_server_certificate(ca_dir, "central", ips=["192.168.50.10"])
+        issue_server_certificate(ca_dir, "central", ips=["192.0.2.10"])
     with pytest.raises(ValueError, match="at least one"):
         issue_server_certificate(ca_dir, "nameless")
 
@@ -83,7 +83,7 @@ def test_issue_refuses_to_overwrite_and_needs_a_name(ca_dir: Path) -> None:
 def test_show_reports_a_certificate_from_another_ca(tmp_path: Path) -> None:
     create_ca(tmp_path / "a", passphrase=None)
     create_ca(tmp_path / "b", passphrase=None)
-    issue_server_certificate(tmp_path / "a", "central", ips=["192.168.50.10"])
+    issue_server_certificate(tmp_path / "a", "central", ips=["192.0.2.10"])
 
     summary, ok = describe_certificate(
         tmp_path / "a" / "central.crt", tmp_path / "b" / "labnet-ca.pem"
@@ -94,7 +94,7 @@ def test_show_reports_a_certificate_from_another_ca(tmp_path: Path) -> None:
 
 def test_cli_creates_the_full_set(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     certs_cli(["init-ca", "--dir", str(tmp_path), "--no-passphrase"])
-    certs_cli(["issue", "central", "--dir", str(tmp_path), "--ip", "192.168.50.10"])
+    certs_cli(["issue", "central", "--dir", str(tmp_path), "--ip", "192.0.2.10"])
     certs_cli(["show", str(tmp_path / "central.crt"), "--ca", str(tmp_path / "labnet-ca.pem")])
 
     output = capsys.readouterr().out

@@ -16,8 +16,8 @@
 (function () {
   "use strict";
 
-  const { el, statusPill, deviceState, holderText } = window.PQT;
-  const X = window.PQT.experiments;
+  const { el, statusPill, deviceState, holderText } = window.LabNet;
+  const X = window.LabNet.experiments;
   const FIELD_HINT = { float: "number", int: "whole number", bool: "true / false", str: "text" };
 
   function baseType(type) {
@@ -665,7 +665,7 @@
         ]),
         (summaryBox = el("p", { class: "run-summary" })),
         problemsBox,
-        section("Components", null, outline.length ? [el("ul", { class: "outline" }, outline)] : [el("p", { class: "field-hint", text: "Nothing on the diagram yet. Drag devices and optics from the left, or ask Photo-Agent to set it up." })], { open: outline.length <= 12 }),
+        section("Components", null, outline.length ? [el("ul", { class: "outline" }, outline)] : [el("p", { class: "field-hint", text: "Nothing on the diagram yet. Drag devices and optics from the left" + (window.LabNet.features.photo_agent ? ", or ask Photo-Agent to set it up." : ".") })], { open: outline.length <= 12 }),
       ]);
       fillProblems();
       return panel;
@@ -730,5 +730,5 @@
     };
   }
 
-  window.PQT.createInspector = createInspector;
+  window.LabNet.createInspector = createInspector;
 })();

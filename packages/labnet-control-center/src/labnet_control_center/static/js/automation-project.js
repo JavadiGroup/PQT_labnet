@@ -5,8 +5,8 @@
 (function () {
   "use strict";
 
-  const { el, store, dialog, ago, plural, statusPill } = window.PQT;
-  const AUTHOR_KEY = "pqt-experiment-author";
+  const { el, store, dialog, ago, plural, statusPill } = window.LabNet;
+  const AUTHOR_KEY = "labnet-experiment-author";
   const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,40}-[a-z0-9]{6}$/;
   const projectId = decodeURIComponent(window.location.pathname.split("/")[2] || "");
   const api = "/api/automation/projects/" + encodeURIComponent(projectId);
@@ -32,7 +32,7 @@
   let runsSignature = "";
   let runsTimer = 0;
   let runLog = null; // the run whose log the viewer shows: {id, head, body, timer, signature}
-  let agentInfo = null; // GET /api/agent: the model and effort menus
+  let agentInfo = null; // GET /api/automation/meta's run_models: the model and effort menus
 
   // ---- Helpers ------------------------------------------------------------------
 
@@ -155,7 +155,7 @@
 
   // ---- Tree and viewer ------------------------------------------------------------
 
-  const tree = window.PQT.createFileTree(document.getElementById("file-tree"), {
+  const tree = window.LabNet.createFileTree(document.getElementById("file-tree"), {
     storageKey: projectId,
     zoneOf,
     onOpen: (item) => openFile(item),
@@ -164,7 +164,7 @@
     onNewFolder: newFolder,
   });
 
-  const viewer = window.PQT.createFileViewer(document.getElementById("viewer"), {
+  const viewer = window.LabNet.createFileViewer(document.getElementById("viewer"), {
     urlFor,
     writable: (item) => isMine(item) && item.path.toLowerCase().endsWith(".md"),
     canManage: (item) => isMine(item) && !zoneOf(item.path).exact,
@@ -1083,7 +1083,7 @@
     const name = el("input", { type: "text", maxlength: "64", value: author(), autocomplete: "name" });
     const nameField = el("label", { class: "field approval-name" }, [el("span", { class: "field-label", text: "Your name" }), name]);
     if (signedInUser) nameField.hidden = true;
-    window.PQT.me.then((me) => {
+    window.LabNet.me.then((me) => {
       if (me && me.user) {
         signedInUser = me.user;
         nameField.hidden = true;
@@ -1731,7 +1731,7 @@
 
   function renderHeader() {
     nameHeading.textContent = project.name;
-    document.title = project.name + " · Automation · PQT Lab Control Center";
+    document.title = project.name + " · Automation · " + window.LabNet.title;
     metaLine.textContent = [
       project.created_by ? "Created by " + project.created_by : "",
       plural(project.linked_experiments.length, "linked experiment"),
@@ -1746,7 +1746,7 @@
     devices = body.devices;
     renderHeader();
     renderPanel();
-    window.PQT.setAgentContext({ label: project.name, fields: { project_id: project.id } });
+    window.LabNet.setAgentContext({ label: project.name, fields: { project_id: project.id } });
   }
 
   async function saveSettings(patch, what) {
@@ -1876,7 +1876,7 @@
   async function loadAgentInfo() {
     if (agentInfo) return agentInfo;
     try {
-      agentInfo = await request("/api/agent");
+      agentInfo = (await request("/api/automation/meta")).run_models || null;
     } catch (_ignored) {
       agentInfo = null; // the dialog falls back to a text field
     }
@@ -2007,7 +2007,7 @@
       metaLine.textContent = error.message;
       return;
     }
-    window.PQT.me.then((me) => { signedInUser = (me && me.user) || null; }).catch(() => {});
+    window.LabNet.me.then((me) => { signedInUser = (me && me.user) || null; }).catch(() => {});
     window.setInterval(tickCountdowns, 1000); // a grant's time left
     await loadLibrary();
     loadExperiments();

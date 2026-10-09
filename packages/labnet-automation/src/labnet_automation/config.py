@@ -4,7 +4,7 @@ Only the values change:
 
 * development: ``LABNET_RUNNER_CONTROL_CENTER_URL=http://127.0.0.1:8080``
   (Docker in WSL with mirrored networking reaches the laptop's loopback);
-* lab: ``https://pqt-control-center`` (through Caddy) and ``LABNET_RUNNER_CA_FILE``.
+* lab: the Control Center's HTTPS address (through Caddy) and ``LABNET_RUNNER_CA_FILE``.
 
 The token comes from ``labnet-control-center-admin runner add <name>`` on the
 Control Center PC.

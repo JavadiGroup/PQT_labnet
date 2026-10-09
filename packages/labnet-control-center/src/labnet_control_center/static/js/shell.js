@@ -1,14 +1,20 @@
 // Shared page frame: top bar with tabs, and the Photo-Agent chat sidebar.
 // Each page provides only <main id="page"> and sets <body data-page="...">.
+// /api/features.js (loaded first) says which optional parts this Control Center
+// offers; Automation and Photo-Agent appear only when they are on.
 
 (function () {
   "use strict";
 
   const AGENT = "Photo-Agent";
-  const CHAT_KEY = "pqt-agent-chat";
-  const COLLAPSED_KEY = "pqt-agent-collapsed";
-  const MODEL_KEY = "pqt-agent-model";
-  const EFFORT_KEY = "pqt-agent-effort";
+  const FEATURES = Object.assign(
+    { site_name: "LabNet", title: "LabNet Control Center", automation: false, photo_agent: false },
+    window.LabNetFeatures || {}
+  );
+  const CHAT_KEY = "labnet-agent-chat";
+  const COLLAPSED_KEY = "labnet-agent-collapsed";
+  const MODEL_KEY = "labnet-agent-model";
+  const EFFORT_KEY = "labnet-agent-effort";
 
   // Storage can be unavailable (private windows, blocked site data); the
   // page must work without it, so every access is guarded.
@@ -62,7 +68,9 @@
 
   // Shared helpers for page scripts. Assigned before anything renders, and
   // merged (not replaced), so scripts loaded earlier keep what they added.
-  window.PQT = Object.assign(window.PQT || {}, { el, chevronIcon, store });
+  window.LabNet = Object.assign(window.LabNet || {}, { el, chevronIcon, store, features: FEATURES, title: FEATURES.title });
+  // Page <title>s say "LabNet Control Center"; this lab may have its own name.
+  document.title = document.title.replace("LabNet Control Center", FEATURES.title);
 
   // ---- Top bar --------------------------------------------------------------
 
@@ -74,14 +82,14 @@
   const topbar = el("header", { class: "topbar" }, [
     el("a", { class: "brand", href: "/status" }, [
       el("span", { class: "brand-mark", "aria-hidden": "true" }),
-      "PQT Lab Control Center",
+      FEATURES.title,
     ]),
     el("div", { class: "topbar-end" }, [
       el("nav", { class: "tabs", "aria-label": "Sections" }, [
         tab("Network", "/status", "network"),
         tab("Devices", "/devices", "devices"),
         tab("Experiments", "/experiments", "experiments"),
-        tab("Automation", "/automation", "automation"),
+        ...(FEATURES.automation ? [tab("Automation", "/automation", "automation")] : []),
       ]),
       signedIn,
     ]),
@@ -89,7 +97,7 @@
 
   // ---- Who is signed in -----------------------------------------------------
   // In the lab, Caddy signs each person in and the Control Center records that
-  // name as the author of what they create. PQT.me resolves (once per page) to
+  // name as the author of what they create. LabNet.me resolves (once per page) to
   // {user, logins}; user is null in development, where names are typed instead.
 
   const me = fetch("/api/me", { cache: "no-store" })
@@ -105,7 +113,7 @@
     signedIn.title = "Your lab login. Experiments and projects you create or change are recorded under this name.";
     signedIn.hidden = false;
   });
-  window.PQT.me = me;
+  window.LabNet.me = me;
 
   // ---- Photo-Agent sidebar --------------------------------------------------
 
@@ -187,7 +195,9 @@
   const main = document.getElementById("page");
   const layout = el("div", { class: "layout" });
   main.replaceWith(layout);
-  layout.append(main, agent);
+  if (FEATURES.photo_agent) layout.append(main, agent);
+  else layout.append(main);
+  layout.classList.toggle("no-agent", !FEATURES.photo_agent);
   document.body.prepend(topbar);
 
   // ---- Collapse -------------------------------------------------------------
@@ -441,7 +451,7 @@
         item.classList.toggle("pending", Boolean(message.pending));
         item.classList.toggle("error", Boolean(message.error));
         from.textContent = AGENT + (message.model ? " · " + message.model : "");
-        window.PQTMarkdown.renderInto(body, message.text || "");
+        window.LabNet.markdown.renderInto(body, message.text || "");
         const activity = message.activity || [];
         const latest = activity[activity.length - 1];
         const key = message.pending ? "pending:" + (message.status || "") + ":" + (latest || "") : "done:" + activity.length;
@@ -653,7 +663,7 @@
 
   setAnswering(false);
   renderChat();
-  refreshAgent();
+  if (FEATURES.photo_agent) refreshAgent();
 
   // ---- Page context ---------------------------------------------------------
   // A page can tell Photo-Agent what the person is looking at, e.g. the
@@ -721,7 +731,7 @@
         error,
         el("div", { class: "dialog-actions" }, [cancel, ...buttons]),
       ]);
-      const box = el("dialog", { class: "pqt-dialog" + (wide ? " wide" : "") }, [form]);
+      const box = el("dialog", { class: "ln-dialog" + (wide ? " wide" : "") }, [form]);
       let result = null;
       form.addEventListener("submit", (event) => {
         const chosen = actions ? actions[Number(event.submitter && event.submitter.value)] : { value: "ok" };
@@ -749,5 +759,5 @@
     });
   }
 
-  Object.assign(window.PQT, { icon, dialog, setAgentContext, setAgentCollapsed: setCollapsed });
+  Object.assign(window.LabNet, { icon, dialog, setAgentContext, setAgentCollapsed: setCollapsed });
 })();

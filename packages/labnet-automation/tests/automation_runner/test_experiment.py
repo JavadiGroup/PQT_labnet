@@ -47,7 +47,7 @@ GRANT = {"id": "grant-1", "status": "active", "approved_by": "alice", "starts_at
 
 
 def settings(**overrides) -> RunnerSettings:
-    values = dict(control_center_url="https://pqt-control-center", token=TOKEN, python_timeout_seconds=30.0)
+    values = dict(control_center_url="https://control-center.example", token=TOKEN, python_timeout_seconds=30.0)
     values.update(overrides)
     return RunnerSettings(**values)
 

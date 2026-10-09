@@ -4,8 +4,8 @@
 (function () {
   "use strict";
 
-  const { el, chevronIcon, store } = window.PQT;
-  const EXPANDED_KEY = "pqt-expanded-devices";
+  const { el, chevronIcon, store } = window.LabNet;
+  const EXPANDED_KEY = "labnet-expanded-devices";
   const expanded = new Set(store.get("sessionStorage", EXPANDED_KEY, []));
 
   const DEVICE_STATES = {
@@ -321,7 +321,7 @@
     refresh();
   }
 
-  Object.assign(window.PQT, {
+  Object.assign(window.LabNet, {
     allDevices,
     ago,
     deviceItem,

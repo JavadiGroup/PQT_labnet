@@ -28,6 +28,7 @@ def isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
 
 def _settings(**overrides) -> ControlCenterSettings:
     values = dict(
+        automation_enabled=True, photo_agent_enabled=True,  # the optional parts, on
         server_url="http://127.0.0.1:8008",
         api_key="key",
         ca_file=None,
@@ -40,7 +41,7 @@ def _settings(**overrides) -> ControlCenterSettings:
 
 
 ENDPOINT = EndpointDescriptor(
-    transport="grpc", target="192.168.50.20:50051", api_version="labnet.v3", secure=True
+    transport="grpc", target="192.0.2.20:50051", api_version="labnet.v3", secure=True
 )
 NOW = datetime.now(timezone.utc)
 
@@ -63,7 +64,7 @@ def _device(device_id: str, *, available: bool = True, leased: bool = False, dev
 NETWORK = [
     LabPCInfo(
         manager_id="lab-pc-01",
-        host="192.168.50.20",
+        host="192.0.2.20",
         endpoint=ENDPOINT,
         online=True,
         last_seen=NOW,
@@ -76,7 +77,7 @@ NETWORK = [
     ),
     LabPCInfo(
         manager_id="lab-pc-02",
-        host="192.168.50.21",
+        host="192.0.2.21",
         endpoint=ENDPOINT,
         online=False,
         last_seen=NOW,
@@ -112,14 +113,14 @@ def test_settings_come_from_one_env_file(tmp_path: Path) -> None:
     (tmp_path / "ca.pem").write_text("ca", encoding="utf-8")
     env_file = tmp_path / "control-center.env"
     env_file.write_text(
-        "LABNET_SERVER_URL=https://192.168.50.10\nLABNET_API_KEY=secret\n"
+        "LABNET_SERVER_URL=https://192.0.2.10\nLABNET_API_KEY=secret\n"
         "LABNET_CA_FILE=ca.pem\nLABNET_CONTROL_CENTER_PORT=8090\n",
         encoding="utf-8",
     )
 
     settings = ControlCenterSettings.from_env(env_file)
 
-    assert settings.server_url == "https://192.168.50.10"
+    assert settings.server_url == "https://192.0.2.10"
     assert settings.ca_file == (tmp_path / "ca.pem").resolve()
     assert settings.port == 8090
     assert settings.bind_host == "127.0.0.1"
@@ -261,7 +262,7 @@ def test_status_reports_lab_pcs_and_device_states() -> None:
         "lab_pcs": 2, "online": 1, "devices": 5, "available": 3, "leased": 1,
     }
     first, second = snapshot["lab_pcs"]
-    assert (first["address"], first["port"], first["secure"]) == ("192.168.50.20", "50051", True)
+    assert (first["address"], first["port"], first["secure"]) == ("192.0.2.20", "50051", True)
     states = {device["id"]: device["state"] for device in first["devices"]}
     assert states == {
         "free-dummy": "available",

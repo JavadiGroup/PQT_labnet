@@ -855,7 +855,7 @@ def main(
     selfcheck: SelfCheck | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(
-        prog="labnet-runner", description="The PQT Lab Automation runner: works through queued Automation runs."
+        prog="labnet-runner", description="The LabNet Automation runner: works through queued Automation runs."
     )
     parser.add_argument("--env-file", help="runner settings (KEY=value lines); the environment wins")
     parser.add_argument("command", nargs="?", default="run", choices=("run", "self-check"),

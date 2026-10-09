@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  const { el, createScriptBox } = window.PQT;
+  const { el, createScriptBox } = window.LabNet;
 
   function example(device) {
     const read = device.methods.find((method) => method.kind === "read");
@@ -37,6 +37,6 @@
     };
   }
 
-  window.PQT.panels = window.PQT.panels || {};
-  window.PQT.panels.generic = mount;
+  window.LabNet.panels = window.LabNet.panels || {};
+  window.LabNet.panels.generic = mount;
 })();

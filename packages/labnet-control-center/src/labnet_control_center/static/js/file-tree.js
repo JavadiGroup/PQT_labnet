@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  const { el, store } = window.PQT;
+  const { el, store } = window.LabNet;
   const SECTION_ORDER = ["Literature", "Data", "Experiment_layout", "Tasks", "Protocols", "ScriptsUtilized", "Analysis"];
   const OWNER_TEXT = { user: "Yours", agent: "Agent", mirror: "Automatic", shared: "Shared" };
   const OWNER_TITLE = {
@@ -62,7 +62,7 @@
   }
 
   function createFileTree(container, options) {
-    const openKey = "pqt-tree-open-" + options.storageKey;
+    const openKey = "labnet-tree-open-" + options.storageKey;
     const open = new Set(store.get("sessionStorage", openKey, []));
     let selectedKey = null;
 
@@ -244,5 +244,5 @@
     return { render, select };
   }
 
-  Object.assign(window.PQT, { createFileTree, fileKind, sizeText });
+  Object.assign(window.LabNet, { createFileTree, fileKind, sizeText });
 })();

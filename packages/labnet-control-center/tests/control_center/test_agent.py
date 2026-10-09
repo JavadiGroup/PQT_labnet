@@ -143,6 +143,7 @@ def fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 def _settings(fake, **overrides) -> ControlCenterSettings:
     values = dict(
+        automation_enabled=True, photo_agent_enabled=True,  # the optional parts, on
         server_url="http://127.0.0.1:8008", api_key="key", ca_file=None,
         bind_host="127.0.0.1", port=8080, refresh_seconds=60.0,
         agent_workspace=fake["tmp"] / "agent", agent_sources=(fake["sources"],),

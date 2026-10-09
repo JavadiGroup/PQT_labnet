@@ -221,16 +221,16 @@ def test_with_logins_any_host_name_caddy_forwards_is_answered(env: pytest.Monkey
     settings = _from_env()
     assert settings.allowed_hosts == ("*",)
     with _client(settings) as client:
-        reply = client.get("/api/me", headers={**SIGNED_IN, "Host": "pqt-control-center"})
+        reply = client.get("/api/me", headers={**SIGNED_IN, "Host": "control-center.example"})
         assert reply.status_code == 200 and reply.json()["user"] == "alice"
 
 
 def test_allowed_hosts_can_be_set(env: pytest.MonkeyPatch) -> None:
-    env.setenv("LABNET_CONTROL_CENTER_ALLOWED_HOSTS", "pqt-control-center, 192.168.50.10")
+    env.setenv("LABNET_CONTROL_CENTER_ALLOWED_HOSTS", "control-center.example, 192.0.2.10")
     settings = _from_env()
-    assert settings.allowed_hosts == ("pqt-control-center", "192.168.50.10")
+    assert settings.allowed_hosts == ("control-center.example", "192.0.2.10")
     with _client(settings) as client:
-        assert client.get("/api/me", headers={"Host": "pqt-control-center"}).status_code == 200
+        assert client.get("/api/me", headers={"Host": "control-center.example"}).status_code == 200
         assert client.get("/api/me", headers={"Host": "127.0.0.1"}).status_code == 400
 
 
@@ -249,7 +249,7 @@ def test_a_weak_or_odd_proxy_secret_is_refused(env: pytest.MonkeyPatch, secret: 
         _from_env()
 
 
-@pytest.mark.parametrize("hosts", ["pqt-control-center:443", "https://pqt-control-center", "a b", ",", "host/path"])
+@pytest.mark.parametrize("hosts", ["control-center.example:443", "https://control-center.example", "a b", ",", "host/path"])
 def test_allowed_hosts_must_be_plain_host_names(env: pytest.MonkeyPatch, hosts: str) -> None:
     env.setenv("LABNET_CONTROL_CENTER_ALLOWED_HOSTS", hosts)
     with pytest.raises(ValueError, match="ALLOWED_HOSTS"):

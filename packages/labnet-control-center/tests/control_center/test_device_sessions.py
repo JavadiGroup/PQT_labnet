@@ -32,6 +32,7 @@ PLAY = {
 
 def _settings(**overrides) -> ControlCenterSettings:
     values = dict(
+        automation_enabled=True, photo_agent_enabled=True,  # the optional parts, on
         server_url="http://127.0.0.1:8008", api_key="key", ca_file=None,
         bind_host="127.0.0.1", port=8080, refresh_seconds=60.0,
         idle_release_seconds=0.3, max_hold_minutes=30.0, script_timeout_seconds=30.0,

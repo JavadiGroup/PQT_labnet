@@ -26,7 +26,7 @@ SCRIPT = "ScriptsUtilized/analysis_scripts/fit.py"
 
 
 def settings(**overrides) -> RunnerSettings:
-    values = dict(control_center_url="https://pqt-control-center", token="lnr_" + "A" * 43,
+    values = dict(control_center_url="https://control-center.example", token="lnr_" + "A" * 43,
                   python_timeout_seconds=30.0)
     values.update(overrides)
     return RunnerSettings(**values)

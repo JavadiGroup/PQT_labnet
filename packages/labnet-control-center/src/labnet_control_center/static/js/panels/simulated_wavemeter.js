@@ -9,7 +9,7 @@
 (function () {
   "use strict";
 
-  const { el, createChart, createScriptBox } = window.PQT;
+  const { el, createChart, createScriptBox } = window.LabNet;
 
   const WINDOWS = [
     ["10 s", 10],
@@ -254,6 +254,6 @@
     };
   }
 
-  window.PQT.panels = window.PQT.panels || {};
-  window.PQT.panels.simulated_wavemeter = mount;
+  window.LabNet.panels = window.LabNet.panels || {};
+  window.LabNet.panels.simulated_wavemeter = mount;
 })();

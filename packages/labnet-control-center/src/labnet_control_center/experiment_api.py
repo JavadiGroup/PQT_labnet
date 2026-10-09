@@ -190,7 +190,7 @@ def create_experiment_router(network: NetworkSource) -> APIRouter:
         if version is not None and experiment["version"] != version:
             raise VersionConflict(experiment)
         try:
-            source = generate_script(experiment)
+            source = generate_script(experiment, generator=request.app.state.settings.title)
         except ScriptError as exc:
             raise ExperimentError(422, "Fix these problems to export a script.", errors=exc.errors) from None
         filename = f"{experiment['run']['output_name']}.py"

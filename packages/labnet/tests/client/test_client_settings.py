@@ -32,14 +32,14 @@ def ca_file(tmp_path: Path) -> Path:
 def test_from_env_reads_an_env_file(tmp_path: Path, ca_file: Path) -> None:
     env_file = tmp_path / "researcher.env"
     env_file.write_text(
-        f"LABNET_SERVER_URL=https://192.168.50.10\nLABNET_API_KEY=secret\n"
+        f"LABNET_SERVER_URL=https://192.0.2.10\nLABNET_API_KEY=secret\n"
         f"LABNET_CA_FILE={ca_file.as_posix()}\n",
         encoding="utf-8",
     )
 
     client = LabClient.from_env(env_file, authenticate_on_start=False)
     try:
-        assert client.server_url == "https://192.168.50.10"
+        assert client.server_url == "https://192.0.2.10"
         assert client.api_key == "secret"
         assert client.grpc_tls is not None
         assert client.grpc_tls.root_certificates == ca_file.read_bytes()
@@ -77,7 +77,7 @@ def test_old_grpc_ca_variable_is_rejected(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_missing_ca_file_fails_immediately() -> None:
     with pytest.raises(FileNotFoundError, match="CA file not found"):
-        LabClient("https://192.168.50.10", "secret", ca_file="missing.pem")
+        LabClient("https://192.0.2.10", "secret", ca_file="missing.pem")
 
 
 def test_without_a_ca_there_is_no_default_grpc_tls() -> None:
@@ -88,7 +88,7 @@ def test_without_a_ca_there_is_no_default_grpc_tls() -> None:
         client.close()
 
 
-def _central(device_target: str = "192.168.50.20:50051") -> httpx.MockTransport:
+def _central(device_target: str = "192.0.2.20:50051") -> httpx.MockTransport:
     """Grant one lease, then accept its release."""
 
     def handler(request: httpx.Request) -> httpx.Response:

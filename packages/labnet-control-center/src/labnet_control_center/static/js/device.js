@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  const { el, allDevices, deviceState, holderText, statusPill, watchNetwork, connectSession } = window.PQT;
+  const { el, allDevices, deviceState, holderText, statusPill, watchNetwork, connectSession } = window.LabNet;
   const deviceId = decodeURIComponent(window.location.pathname.replace(/^\/+|\/+$/g, ""));
   const title = document.getElementById("device-title");
   const subtitle = document.getElementById("summary");
@@ -13,7 +13,7 @@
   let panelRequested = false;
 
   title.textContent = deviceId;
-  document.title = deviceId + " · PQT Lab Control Center";
+  document.title = deviceId + " · " + window.LabNet.title;
 
   function mountPanel(device) {
     panelRequested = true;
@@ -34,7 +34,7 @@
       const session = connectSession(deviceId, handlers);
       control.classList.remove("placeholder");
       control.replaceChildren();
-      Object.assign(handlers, window.PQT.panels[device.panel](control, { device, session }));
+      Object.assign(handlers, window.LabNet.panels[device.panel](control, { device, session }));
     };
     script.onerror = () => {
       control.textContent = "Could not load the control panel for " + device.type_label + ".";

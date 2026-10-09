@@ -1,4 +1,4 @@
-"""labnet_devices: the PQT lab's devices, from a run_python script, while an approved experiment runs.
+"""labnet_devices: the lab's devices, from a run_python script, while an approved experiment runs.
 
     import labnet_devices
 

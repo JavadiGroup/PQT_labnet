@@ -84,17 +84,17 @@ def test_cert_and_key_enable_tls_and_listen_on_the_network(
 ) -> None:
     certificate, private_key = tls_files
     monkeypatch.setenv("LABNET_DEVICE_MANAGER_API_KEY", "key")
-    monkeypatch.setenv("LABNET_SERVER_URL", "https://192.168.50.10")
+    monkeypatch.setenv("LABNET_SERVER_URL", "https://192.0.2.10")
     monkeypatch.setenv("LABNET_GRPC_CERT_FILE", str(certificate))
     monkeypatch.setenv("LABNET_GRPC_KEY_FILE", str(private_key))
-    monkeypatch.setenv("LABNET_GRPC_ADVERTISED_TARGET", "192.168.50.20:50051")
+    monkeypatch.setenv("LABNET_GRPC_ADVERTISED_TARGET", "192.0.2.20:50051")
 
     settings = settings_from_env()
 
     assert settings.grpc_tls_enabled is True
     assert settings.grpc_tls_mode == "tls"
     assert settings.grpc_bind_host == "0.0.0.0"
-    assert settings.lab_pc_host == "192.168.50.20"
+    assert settings.lab_pc_host == "192.0.2.20"
 
 
 def test_network_bind_requires_an_advertised_target(
@@ -124,7 +124,7 @@ def test_plaintext_grpc_rejects_non_loopback_bind(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LABNET_DEVICE_MANAGER_API_KEY", "key")
-    monkeypatch.setenv("LABNET_GRPC_BIND_HOST", "192.168.50.20")
+    monkeypatch.setenv("LABNET_GRPC_BIND_HOST", "192.0.2.20")
 
     with pytest.raises(ValueError, match="Plaintext gRPC is permitted only"):
         settings_from_env()
@@ -136,7 +136,7 @@ def test_standalone_mode_is_rejected_off_loopback(
 ) -> None:
     monkeypatch.setenv("LABNET_GRPC_CERT_FILE", str(tls_files[0]))
     monkeypatch.setenv("LABNET_GRPC_KEY_FILE", str(tls_files[1]))
-    monkeypatch.setenv("LABNET_GRPC_ADVERTISED_TARGET", "192.168.50.20:50051")
+    monkeypatch.setenv("LABNET_GRPC_ADVERTISED_TARGET", "192.0.2.20:50051")
 
     with pytest.raises(ValueError, match="leases are not checked"):
         settings_from_env()

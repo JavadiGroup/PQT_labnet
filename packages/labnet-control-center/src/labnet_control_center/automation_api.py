@@ -30,6 +30,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from .agent import model_menus
 from .automation_grants import GRANT_ID
 from labnet.safe_paths import ZONES
 from .automation_protocol import (
@@ -170,6 +171,8 @@ def create_automation_router(network: NetworkSource, *, max_file_bytes: int) -> 
             "zones": [zone.describe() for zone in ZONES],
             "max_file_bytes": max_file_bytes,
             "library": {"configured": library is not None and library.is_dir()},
+            # The run settings' menus, whether or not Photo-Agent is on.
+            "run_models": model_menus(request.app.state.settings),
         }
 
     @router.get("/projects")

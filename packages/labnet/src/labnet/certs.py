@@ -1,8 +1,8 @@
 """Create the private CA and server certificates for a LabNet network.
 
     labnet-certs init-ca --dir C:\\LabNet-CA
-    labnet-certs issue central --ip 192.168.50.10 --dir C:\\LabNet-CA
-    labnet-certs issue lab-pc-01 --ip 192.168.50.20 --dir C:\\LabNet-CA
+    labnet-certs issue central --ip 192.0.2.10 --dir C:\\LabNet-CA
+    labnet-certs issue lab-pc-01 --ip 192.0.2.20 --dir C:\\LabNet-CA
     labnet-certs show C:\\LabNet-CA\\lab-pc-01.crt --ca C:\\LabNet-CA\\labnet-ca.pem
 
 The result matches the minimal model in the deployment guide: one CA that

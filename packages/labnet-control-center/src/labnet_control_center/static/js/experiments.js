@@ -5,9 +5,9 @@
   "use strict";
 
   const { el, chevronIcon, store, dialog, statusPill, deviceState, allDevices, ago, plural, watchNetwork } =
-    window.PQT;
-  const EXPANDED_KEY = "pqt-expanded-experiments";
-  const AUTHOR_KEY = "pqt-experiment-author";
+    window.LabNet;
+  const EXPANDED_KEY = "labnet-expanded-experiments";
+  const AUTHOR_KEY = "labnet-experiment-author";
   const expanded = new Set(store.get("sessionStorage", EXPANDED_KEY, []));
   const list = document.getElementById("experiments");
   const summary = document.getElementById("summary");
@@ -162,7 +162,9 @@
       items.push(
         el("li", {
           class: "empty",
-          text: "No experiments yet. Press New experiment, or ask Photo-Agent to set one up.",
+          text: window.LabNet.features.photo_agent
+            ? "No experiments yet. Press New experiment, or ask Photo-Agent to set one up."
+            : "No experiments yet. Press New experiment to set one up.",
         })
       );
     }
@@ -177,7 +179,7 @@
     const author = el("input", { maxlength: "64", placeholder: "Your name (optional)" });
     author.value = store.get("localStorage", AUTHOR_KEY, "");
     // Signed in (lab): the server records the login, so there is no name to type.
-    const { user } = await window.PQT.me;
+    const { user } = await window.LabNet.me;
     const choice = await dialog({
       title: "New experiment",
       body: el("div", { class: "dialog-fields" }, [

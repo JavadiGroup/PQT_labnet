@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  const { el, allDevices, deviceItem, plural, watchNetwork } = window.PQT;
+  const { el, allDevices, deviceItem, plural, watchNetwork } = window.LabNet;
   const list = document.getElementById("devices");
   const count = document.getElementById("device-count");
   const summary = document.getElementById("summary");

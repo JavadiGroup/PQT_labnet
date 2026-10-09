@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     setup_parser.add_argument(
         "--server-url",
-        help="Central URL the written files point at, e.g. https://192.168.50.10.",
+        help="Central URL the written files point at, e.g. https://192.0.2.10.",
     )
     setup_parser.add_argument(
         "--ca-file",

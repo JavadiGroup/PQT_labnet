@@ -2,13 +2,13 @@
 // run on the Control Center in the restricted script language (see
 // labnet_control_center/scripting.py) using the page's device lease.
 //
-//   const box = PQT.createScriptBox(container, { session, device, example });
+//   const box = LabNet.createScriptBox(container, { session, device, example });
 //   box.onScript(event); box.onState(event);   // fed from the session events
 
 (function () {
   "use strict";
 
-  const { el, store } = window.PQT;
+  const { el, store } = window.LabNet;
   const FUNCTIONS = "print, sleep, mean, stdev, lease(\"device-id\"), range, len, min, max, round, abs, sum";
 
   function signature(method) {
@@ -19,7 +19,7 @@
 
   function createScriptBox(container, options) {
     const { session, device } = options;
-    const storageKey = "pqt-script-" + device.type;
+    const storageKey = "labnet-script-" + device.type;
     const editor = el("textarea", {
       class: "script-editor",
       spellcheck: "false",
@@ -107,5 +107,5 @@
     };
   }
 
-  window.PQT.createScriptBox = createScriptBox;
+  window.LabNet.createScriptBox = createScriptBox;
 })();

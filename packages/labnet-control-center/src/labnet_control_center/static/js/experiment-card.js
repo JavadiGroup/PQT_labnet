@@ -1,4 +1,4 @@
-// Photo-Agent's experiment proposals. A ```pqt-experiment block in an answer
+// Photo-Agent's experiment proposals. A ```labnet-experiment block in an answer
 // becomes a card: on an experiment's canvas, "Apply to canvas" replaces the
 // diagram as one undo step; anywhere else, "Create experiment" saves it as a
 // new experiment and opens it. The Control Center checks every proposal
@@ -11,8 +11,8 @@
 (function () {
   "use strict";
 
-  const RESULTS_KEY = "pqt-proposals";
-  const AUTHOR_KEY = "pqt-experiment-author";
+  const RESULTS_KEY = "labnet-proposals";
+  const AUTHOR_KEY = "labnet-experiment-author";
   const states = new Map(); // proposal hash -> state
   const mounted = new Set(); // repaint functions of cards on screen
 
@@ -66,7 +66,7 @@
   }
 
   function stats(proposal) {
-    const s = window.PQT.experiments.summarize(proposal);
+    const s = window.LabNet.experiments.summarize(proposal);
     const word = (n, one, many) => n + " " + (n === 1 ? one : many);
     const parts = [word(s.devices, "device", "devices"), word(s.optics, "optic", "optics"), word(s.links, "link", "links")];
     if (s.sweeps) parts.push(word(s.sweeps, "sweep", "sweeps"));
@@ -100,7 +100,7 @@
       card.append(
         node("div", { class: "proposal-head" }, [node("span", { class: "proposal-kind", text: "Experiment proposal" })]),
         node("p", { class: "proposal-status error", text: "This proposal can't be used: " + problem + ". Ask Photo-Agent to send it again." }),
-        window.PQTMarkdown.codeBlock("json", source.split("\n"))
+        window.LabNet.markdown.codeBlock("json", source.split("\n"))
       );
       return card;
     }
@@ -113,7 +113,7 @@
 
   function paintCard(card, key, proposal, paint) {
     const state = states.get(key);
-    const page = window.PQT.experimentPage;
+    const page = window.LabNet.experimentPage;
     const result = read("sessionStorage", RESULTS_KEY, {})[key];
     const set = (changes) => {
       Object.assign(state, changes);
@@ -183,12 +183,12 @@
     } else if (result && result.kind === "applied" && !state.applied) {
       children.push(node("div", { class: "proposal-status" }, [node("p", { text: "Applied to a canvas earlier." })]));
     }
-    if (state.json) children.push(window.PQTMarkdown.codeBlock("json", JSON.stringify(proposal, null, 2).split("\n")));
+    if (state.json) children.push(window.LabNet.markdown.codeBlock("json", JSON.stringify(proposal, null, 2).split("\n")));
     card.replaceChildren(...children);
   }
 
   async function applyProposal(proposal, key, rename, set, state) {
-    const page = window.PQT.experimentPage;
+    const page = window.LabNet.experimentPage;
     set({ busy: true, message: "Checking the proposal…", tone: "", items: [] });
     try {
       await page.flushSave();
@@ -216,7 +216,7 @@
         return;
       }
       if (current.nodes.length) {
-        const choice = await window.PQT.dialog({
+        const choice = await window.LabNet.dialog({
           title: "Replace the diagram?",
           body: node("p", { text: "The proposal replaces the " + current.nodes.length + " components on this canvas. Undo brings them back." }),
           actions: [{ label: "Replace", value: "replace", primary: true }],
@@ -247,7 +247,7 @@
         return;
       }
       remember(key, { kind: "created", id: reply.experiment.id });
-      if (window.PQT.experimentPage) await window.PQT.experimentPage.flushSave();
+      if (window.LabNet.experimentPage) await window.LabNet.experimentPage.flushSave();
       window.location.href = "/experiments/" + encodeURIComponent(reply.experiment.id);
     } catch (error) {
       set({ busy: false, tone: "error", message: "Couldn't create it: " + error.message, items: [] });
@@ -263,6 +263,7 @@
     }
   }
 
-  window.PQTMarkdown.register("pqt-experiment", render);
-  window.PQT = Object.assign(window.PQT || {}, { refreshProposals });
+  window.LabNet.markdown.register("labnet-experiment", render);
+  window.LabNet.markdown.register("pqt-experiment", render); // (LabNet 2.x) chats saved before 3.0
+  window.LabNet = Object.assign(window.LabNet || {}, { refreshProposals });
 })();

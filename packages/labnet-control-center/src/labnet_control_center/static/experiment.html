@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Experiment · PQT Lab Control Center</title>
+  <title>Experiment · LabNet Control Center</title>
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body data-page="experiments">
@@ -34,6 +34,8 @@
     <div class="toast" id="toast" role="status" hidden></div>
     <span id="pulse" hidden></span><span id="updated" hidden></span>
   </main>
+  <script src="/api/features.js"></script>
+  <script src="/static/js/migrate-storage.js"></script>
   <script src="/static/js/markdown.js"></script>
   <script src="/static/js/experiment-model.js"></script>
   <script src="/static/js/experiment-card.js"></script>

@@ -9,7 +9,7 @@
 (function () {
   "use strict";
 
-  const { el, plural } = window.PQT;
+  const { el, plural } = window.LabNet;
   const container = document.getElementById("literature-search");
   const match = window.location.pathname.match(/^\/automation\/([a-z0-9][a-z0-9-]{0,40}-[a-z0-9]{6})\/?$/);
   if (!container || !match) return;

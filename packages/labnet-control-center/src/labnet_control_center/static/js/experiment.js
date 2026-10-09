@@ -7,12 +7,12 @@
 (function () {
   "use strict";
 
-  const { el, store, dialog, watchNetwork, allDevices } = window.PQT;
-  const X = window.PQT.experiments;
+  const { el, store, dialog, watchNetwork, allDevices } = window.LabNet;
+  const X = window.LabNet.experiments;
   const id = decodeURIComponent(window.location.pathname.split("/").filter(Boolean)[1] || "");
-  const AUTHOR_KEY = "pqt-experiment-author";
-  const DRAFT_KEY = "pqt-experiment-draft-" + id;
-  const VIEW_KEY = "pqt-experiment-view-" + id;
+  const AUTHOR_KEY = "labnet-experiment-author";
+  const DRAFT_KEY = "labnet-experiment-draft-" + id;
+  const VIEW_KEY = "labnet-experiment-view-" + id;
   const CONTENT_KEYS = ["name", "description", "run", "nodes", "links"];
 
   const title = document.getElementById("experiment-name");
@@ -442,7 +442,7 @@
 
   function updateHeader() {
     title.textContent = doc.name;
-    document.title = doc.name + " · PQT Lab Control Center";
+    document.title = doc.name + " · " + window.LabNet.title;
     const s = X.summarize(doc);
     subtitle.textContent = [
       s.devices + (s.devices === 1 ? " device" : " devices"),
@@ -451,8 +451,8 @@
       s.points + (s.points === 1 ? " point" : " points"),
       "version " + doc.version,
     ].join(" · ");
-    if (window.PQT.setAgentContext && agentContextOn) {
-      window.PQT.setAgentContext({ label: doc.name, fields: { experiment_id: id }, prepare: flushSave });
+    if (window.LabNet.setAgentContext && agentContextOn) {
+      window.LabNet.setAgentContext({ label: doc.name, fields: { experiment_id: id }, prepare: flushSave });
     }
   }
 
@@ -534,9 +534,10 @@
     diagram.fit();
   });
   let focused = false;
+  buttons.focus.hidden = !window.LabNet.features.photo_agent; // no sidebar to hide
   buttons.focus.addEventListener("click", () => {
     focused = !focused;
-    window.PQT.setAgentCollapsed(focused);
+    window.LabNet.setAgentCollapsed(focused);
     buttons.focus.setAttribute("aria-pressed", String(focused));
   });
   buttons.exportScript.addEventListener("click", () => exportScript());
@@ -585,7 +586,7 @@
           "Runs this experiment from any computer with LabNet installed. Point it at a client settings file and run it: ",
           el("code", { text: "LABNET_ENV_FILE=researcher.env python " + filename }),
         ]),
-        window.PQTMarkdown.codeBlock("python", lines),
+        window.LabNet.markdown.codeBlock("python", lines),
       ]),
       actions: [{ label: "Download " + filename, value: "download", primary: true }],
     });
@@ -620,7 +621,7 @@
       meta = await metaResponse.json();
       const reply = await experimentResponse.json();
 
-      diagram = window.PQT.createDiagram(document.getElementById("canvas"), {
+      diagram = window.LabNet.createDiagram(document.getElementById("canvas"), {
         commit,
         connect,
         linkKind,
@@ -629,7 +630,7 @@
         onSelect: (selection) => inspector.show(selection),
         onView: (view) => store.set("localStorage", VIEW_KEY, view),
       });
-      palette = window.PQT.createPalette(document.getElementById("palette"), {
+      palette = window.LabNet.createPalette(document.getElementById("palette"), {
         preview: (entry, x, y) => Boolean(diagram.previewDrop(entry.device ? "instrument" : entry.kind, x, y)),
         endPreview: () => diagram.endPreview(),
         drop: (entry, x, y) => {
@@ -648,7 +649,7 @@
         },
       });
       palette.setOptics(meta.optics);
-      inspector = window.PQT.createInspector(document.getElementById("inspector"), {
+      inspector = window.LabNet.createInspector(document.getElementById("inspector"), {
         doc: () => doc,
         report: () => report,
         commit,
@@ -667,7 +668,7 @@
       });
 
       adopt(reply.experiment, reply.report);
-      window.PQT.refreshProposals(); // proposal cards can now offer Apply
+      window.LabNet.refreshProposals(); // proposal cards can now offer Apply
       await offerDraft(reply.experiment);
 
       watchNetwork((snapshot) => {
@@ -688,7 +689,7 @@
   }
 
   // For Photo-Agent's proposal cards (experiment-card.js).
-  window.PQT.experimentPage = {
+  window.LabNet.experimentPage = {
     id,
     document: () => (doc ? JSON.parse(JSON.stringify(doc)) : null),
     flushSave,

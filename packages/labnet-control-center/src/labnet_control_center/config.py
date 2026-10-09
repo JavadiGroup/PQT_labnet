@@ -4,9 +4,12 @@ Only the values change between the two:
 
 * development: ``LABNET_SERVER_URL=http://127.0.0.1:8008`` and a dev key
   (``scripts/dev/seed.sh`` writes ``.devnet/control-center.env``);
-* lab: ``LABNET_SERVER_URL=https://192.168.50.10``, the lab key, and
-  ``LABNET_CA_FILE``. Caddy serves it as ``https://pqt-control-center``.
+* lab: ``LABNET_SERVER_URL=https://<Central's address>``, the lab key, and
+  ``LABNET_CA_FILE``. Caddy serves it over HTTPS under the lab's host name.
 
+``LABNET_SITE_NAME`` names the lab in titles and generated scripts ("Acme Lab"
+-> "Acme Lab Control Center"). Photo-Agent and the Automation tab are off until
+``LABNET_PHOTO_AGENT_ENABLED`` / ``LABNET_AUTOMATION_ENABLED`` turn them on.
 The ``LABNET_AGENT_*`` settings configure Photo-Agent (see ``agent.py``);
 ``LABNET_AUTOMATION_*`` the Automation tab (see ``automation_store.py``).
 ``LABNET_CONTROL_CENTER_PROXY_SECRET`` turns on logins (see ``ingress.py``).
@@ -33,6 +36,18 @@ _MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,99}")
 _HOST_NAME = re.compile(r"\*|(\*\.)?[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?")
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 MIN_PROXY_SECRET_CHARACTERS = 32
+DEFAULT_SITE_NAME = "LabNet"
+_SITE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .&'()+-]{0,39}")
+_TRUE, _FALSE = ("1", "true", "yes", "on"), ("", "0", "false", "no", "off")
+
+
+def _flag(name: str) -> bool:
+    value = os.getenv(name, "").strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    raise ValueError(f"{name} must be true or false, not {value!r}.")
 
 
 def _is_loopback(host: str) -> bool:
@@ -91,6 +106,16 @@ class ControlCenterSettings:
     agent_effort: str = "high"
     agent_timeout_seconds: float = 300.0
     agent_max_concurrent: int = 2
+    # The lab's name in titles and generated scripts: "<site_name> Control Center".
+    site_name: str = DEFAULT_SITE_NAME
+    # Optional parts, off unless the lab turns them on: the Automation tab (projects,
+    # runners, device grants) and the Photo-Agent chat.
+    automation_enabled: bool = False
+    photo_agent_enabled: bool = False
+
+    @property
+    def title(self) -> str:
+        return f"{self.site_name} Control Center"
 
     @classmethod
     def from_env(
@@ -169,6 +194,9 @@ class ControlCenterSettings:
             agent_effort=os.getenv("LABNET_AGENT_EFFORT", "").strip().lower() or "high",
             agent_timeout_seconds=float(os.getenv("LABNET_AGENT_TIMEOUT_SECONDS", "300")),
             agent_max_concurrent=int(os.getenv("LABNET_AGENT_MAX_CONCURRENT", "2")),
+            site_name=" ".join(os.getenv("LABNET_SITE_NAME", "").split()) or DEFAULT_SITE_NAME,
+            automation_enabled=_flag("LABNET_AUTOMATION_ENABLED"),
+            photo_agent_enabled=_flag("LABNET_PHOTO_AGENT_ENABLED"),
         )
         settings.validate()
         return settings
@@ -227,7 +255,7 @@ class ControlCenterSettings:
             if _HOST_NAME.fullmatch(host) is None:
                 raise ValueError(
                     f"LABNET_CONTROL_CENTER_ALLOWED_HOSTS: {host!r} is not a host name "
-                    "(no ports or schemes; e.g. pqt-control-center,192.168.50.10)."
+                    "(no ports or schemes; e.g. control-center.lab.example,192.0.2.10)."
                 )
         if self.agent_literature_dir is not None and not self.agent_literature_dir.is_dir():
             raise ValueError(f"LABNET_AGENT_LITERATURE_DIR is not a folder: {self.agent_literature_dir}")
@@ -243,6 +271,11 @@ class ControlCenterSettings:
             )
         if self.agent_effort not in AGENT_EFFORTS:
             raise ValueError(f"LABNET_AGENT_EFFORT must be one of {', '.join(AGENT_EFFORTS)}.")
+        if _SITE_NAME.fullmatch(self.site_name) is None:
+            raise ValueError(
+                "LABNET_SITE_NAME must be 1 to 40 letters, digits, spaces and . & ' ( ) + -, "
+                f"starting with a letter or digit; got {self.site_name!r}."
+            )
 
 
-__all__ = ["AGENT_EFFORTS", "ControlCenterSettings", "DEFAULT_AGENT_MODELS", "LOOPBACK_HOSTS"]
+__all__ = ["AGENT_EFFORTS", "ControlCenterSettings", "DEFAULT_AGENT_MODELS", "DEFAULT_SITE_NAME", "LOOPBACK_HOSTS"]

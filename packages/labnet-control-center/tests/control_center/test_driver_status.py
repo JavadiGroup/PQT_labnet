@@ -56,7 +56,7 @@ def test_no_report_or_a_malformed_one_is_unknown(metadata: dict) -> None:
 
 class _Central:
     def __init__(self, *devices) -> None:
-        self.network = [LabPCInfo(manager_id="lab-pc-01", host="192.168.50.20", endpoint=ENDPOINT, online=True,
+        self.network = [LabPCInfo(manager_id="lab-pc-01", host="192.0.2.20", endpoint=ENDPOINT, online=True,
                                   last_seen=NOW, devices=devices)]
 
     async def list_lab_pcs(self):

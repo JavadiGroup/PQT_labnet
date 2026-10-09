@@ -1,4 +1,4 @@
-"""PQT Lab Control Center: a web front end that is itself a LabNet client.
+"""The LabNet Control Center: a web front end that is itself a LabNet client.
 
     labnet-control-center --env-file control-center.env
 
@@ -377,17 +377,27 @@ def create_app(
 ) -> FastAPI:
     async def network_with_activity() -> dict[str, Any]:
         # A device a grant holds can't also be a session's (sessions refuse it), but the grant wins.
-        held = {**app.state.sessions.activity(), **app.state.grants.activity()}
-        return _with_activity(await app.state.status.snapshot(), held)
+        grants = app.state.grants.activity() if settings.automation_enabled else {}
+        return _with_activity(await app.state.status.snapshot(), {**app.state.sessions.activity(), **grants})
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         client = client_factory(settings)
         app.state.status = NetworkStatus(client, settings)
         # Play and scripts are refused on a device an Automation grant holds.
-        app.state.sessions = SessionManager(client, settings, blocked=lambda device_id: app.state.grants.blocked(device_id))
-        app.state.agent = agent_factory(settings, network_with_activity)
+        blocked = (lambda device_id: app.state.grants.blocked(device_id)) if settings.automation_enabled else None
+        app.state.sessions = SessionManager(client, settings, blocked=blocked)
         app.state.experiments = ExperimentStore(settings.experiments_dir)
+        app.state.agent = agent_factory(settings, network_with_activity) if settings.photo_agent_enabled else None
+        if not settings.automation_enabled:
+            try:
+                yield
+            finally:
+                if app.state.agent is not None:
+                    app.state.agent.close()
+                await app.state.sessions.close()  # releases every lease
+                await client.aclose()
+            return
         app.state.automation = AutomationStore(settings.automation_dir, settings.agent_literature_dir)
         app.state.runners = RunnerRegistry(app.state.automation.state / "runners")
         app.state.literature = Literature(app.state.automation)  # its indexing thread starts on first use
@@ -425,7 +435,8 @@ def create_app(
             with suppress(asyncio.CancelledError):
                 await app.state.run_sweeper
             await asyncio.to_thread(app.state.literature.close)  # stops a running PDF extractor
-            app.state.agent.close()
+            if app.state.agent is not None:
+                app.state.agent.close()
             await app.state.grants.close()  # safe state and release first, while the client is open
             if grant_endings:
                 await asyncio.gather(*grant_endings, return_exceptions=True)
@@ -433,11 +444,12 @@ def create_app(
             await client.aclose()
 
     app = FastAPI(
-        title="PQT Lab Control Center",
+        title=settings.title,
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
     )
+    app.state.settings = settings
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.add_middleware(
         _BodyLimit, path="/api/agent/messages", limit=MAX_ATTACHMENTS * _MAX_ATTACHMENT_BASE64 + 64 * 1024
@@ -457,9 +469,10 @@ def create_app(
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts), www_redirect=False)
     app.add_middleware(_SecurityHeaders)
     app.include_router(create_experiment_router(network_with_activity))
-    app.include_router(create_automation_router(network_with_activity, max_file_bytes=max_file_bytes))
-    app.include_router(create_gateway_router())  # grant tokens, not runner tokens
-    app.include_router(create_runner_router(max_file_bytes=max_file_bytes, network=network_with_activity))
+    if settings.automation_enabled:  # off: no Automation routes at all
+        app.include_router(create_automation_router(network_with_activity, max_file_bytes=max_file_bytes))
+        app.include_router(create_gateway_router())  # grant tokens, not runner tokens
+        app.include_router(create_runner_router(max_file_bytes=max_file_bytes, network=network_with_activity))
 
     @app.exception_handler(SessionError)
     async def session_error(_request: Request, exc: SessionError) -> JSONResponse:
@@ -501,17 +514,48 @@ def create_app(
             raise HTTPException(status_code=404, detail="Not found.")
         return page("experiment.html")
 
-    @app.get("/automation", include_in_schema=False)
-    async def automation_page() -> FileResponse:
-        return page("automation.html")
+    if settings.automation_enabled:
 
-    @app.get("/automation/{project_id}", include_in_schema=False)
-    async def automation_project_page(project_id: str) -> FileResponse:
-        """One project's files, linked experiments and tasks, e.g. /automation/aom-study-k7q2mx."""
+        @app.get("/automation", include_in_schema=False)
+        async def automation_page() -> FileResponse:
+            return page("automation.html")
 
-        if PROJECT_ID.fullmatch(project_id) is None:
-            raise HTTPException(status_code=404, detail="Not found.")
-        return page("automation-project.html")
+        @app.get("/automation/{project_id}", include_in_schema=False)
+        async def automation_project_page(project_id: str) -> FileResponse:
+            """One project's files, linked experiments and tasks, e.g. /automation/aom-study-k7q2mx."""
+
+            if PROJECT_ID.fullmatch(project_id) is None:
+                raise HTTPException(status_code=404, detail="Not found.")
+            return page("automation-project.html")
+
+    else:
+
+        @app.get("/automation/{rest:path}", include_in_schema=False)
+        async def automation_off(rest: str) -> Response:
+            # Without this, /automation would be taken for a device id (/{device_id}).
+            raise HTTPException(status_code=404, detail="Automation is not enabled on this Control Center.")
+
+    features = {
+        "site_name": settings.site_name,
+        "title": settings.title,
+        "automation": settings.automation_enabled,
+        "photo_agent": settings.photo_agent_enabled,
+    }
+
+    @app.get("/api/features")
+    async def feature_list() -> JSONResponse:
+        """What this Control Center offers; the pages show only these tabs and panels."""
+
+        return JSONResponse(features, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/features.js", include_in_schema=False)
+    async def feature_script() -> Response:
+        # Loaded before shell.js, so the page frame is built right the first time (no flicker).
+        return Response(
+            f"window.LabNetFeatures = {json.dumps(features)};\n",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
@@ -536,61 +580,66 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.get("/api/agent")
-    async def agent_info() -> dict[str, Any]:
-        return {"agent": AGENT_NAME, **app.state.agent.info()}
+    # Photo-Agent's chat API, only when LABNET_PHOTO_AGENT_ENABLED is on.
+    if settings.photo_agent_enabled:
 
-    @app.post("/api/agent/messages", response_model=None)
-    async def agent_message(body: AgentMessage) -> StreamingResponse | dict[str, Any]:
-        """Server-sent events: session, delta (answer text), activity, status, done.
+        @app.get("/api/agent")
+        async def agent_info() -> dict[str, Any]:
+            return {"agent": AGENT_NAME, **app.state.agent.info()}
 
-        A request the agent refuses (unknown model, unreadable file, ...) is
-        answered with an error status before anything streams.
-        """
+        @app.post("/api/agent/messages", response_model=None)
+        async def agent_message(body: AgentMessage) -> StreamingResponse | dict[str, Any]:
+            """Server-sent events: session, delta (answer text), activity, status, done.
 
-        agent = app.state.agent
-        if not agent.enabled:
-            if not body.message.strip():
-                raise HTTPException(status_code=422, detail="Message is empty.")
-            return {
-                "agent": AGENT_NAME,
-                "connected": False,
-                "reply": f"{AGENT_NAME} isn't connected: {agent.info()['reason']}",
-            }
-        try:
-            files = [(item.name, base64.b64decode(item.data, validate=True)) for item in body.attachments]
-        except (binascii.Error, ValueError):
-            raise HTTPException(status_code=422, detail="An attachment is not valid base64.") from None
-        experiment = None
-        if body.experiment_id:
-            experiment = await asyncio.to_thread(app.state.experiments.get, body.experiment_id)  # 404 if gone
-        project = None
-        if body.project_id:
-            project = await asyncio.to_thread(app.state.automation.agent_snapshot, body.project_id)  # 404 if gone
-        try:
-            request = agent.prepare(
-                body.message,
-                body.conversation_id,
-                model=body.model,
-                effort=body.effort,
-                attachments=files,
-                experiment=experiment,
-                project=project,
+            A request the agent refuses (unknown model, unreadable file, ...) is
+            answered with an error status before anything streams.
+            """
+
+            agent = app.state.agent
+            if not agent.enabled:
+                if not body.message.strip():
+                    raise HTTPException(status_code=422, detail="Message is empty.")
+                return {
+                    "agent": AGENT_NAME,
+                    "connected": False,
+                    "reply": f"{AGENT_NAME} isn't connected: {agent.info()['reason']}",
+                }
+            try:
+                files = [(item.name, base64.b64decode(item.data, validate=True)) for item in body.attachments]
+            except (binascii.Error, ValueError):
+                raise HTTPException(status_code=422, detail="An attachment is not valid base64.") from None
+            experiment = None
+            if body.experiment_id:
+                experiment = await asyncio.to_thread(app.state.experiments.get, body.experiment_id)  # 404 if gone
+            project = None
+            if body.project_id:
+                if not settings.automation_enabled:
+                    raise HTTPException(status_code=404, detail="Automation is not enabled on this Control Center.")
+                project = await asyncio.to_thread(app.state.automation.agent_snapshot, body.project_id)  # 404 if gone
+            try:
+                request = agent.prepare(
+                    body.message,
+                    body.conversation_id,
+                    model=body.model,
+                    effort=body.effort,
+                    attachments=files,
+                    experiment=experiment,
+                    project=project,
+                )
+            except AgentRequestError as exc:
+                return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+
+            async def stream():
+                # Closing this generator (the browser left or pressed Stop) ends
+                # ask(), which kills the claude process.
+                async for event in agent.ask(request):
+                    yield _sse(event)
+
+            return StreamingResponse(
+                stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
             )
-        except AgentRequestError as exc:
-            return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
-
-        async def stream():
-            # Closing this generator (the browser left or pressed Stop) ends
-            # ask(), which kills the claude process.
-            async for event in agent.ask(request):
-                yield _sse(event)
-
-        return StreamingResponse(
-            stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-        )
 
     # ---- device control (one session per device) --------------------------------
 
@@ -686,7 +735,7 @@ def create_app(
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="labnet-control-center",
-        description="Serve the PQT Lab Control Center web interface.",
+        description="Serve the LabNet Control Center web interface.",
     )
     parser.add_argument(
         "--env-file",

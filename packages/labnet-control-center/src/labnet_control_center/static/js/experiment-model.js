@@ -245,7 +245,7 @@
     };
   }
 
-  window.PQT = Object.assign(window.PQT || {}, {
+  window.LabNet = Object.assign(window.LabNet || {}, {
     experiments: {
       GRID,
       ID_PATTERN,

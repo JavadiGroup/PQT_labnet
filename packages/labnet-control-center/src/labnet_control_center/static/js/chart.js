@@ -1,6 +1,6 @@
 // A small live line chart on a <canvas>: time on x, one value on y.
 //
-//   const chart = PQT.createChart(canvas, { unit: "nm" });
+//   const chart = LabNet.createChart(canvas, { unit: "nm" });
 //   chart.setWindow(30);          // seconds shown; null shows everything
 //   chart.addPoints([[t, v], ...]) // t in Unix seconds
 //   chart.clear(); chart.points();
@@ -279,5 +279,5 @@
     };
   }
 
-  window.PQT.createChart = createChart;
+  window.LabNet.createChart = createChart;
 })();

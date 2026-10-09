@@ -90,7 +90,7 @@ class FakeBackend:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> RunnerSettings:
-    return RunnerSettings(control_center_url="https://pqt-control-center", token="lnr_" + "A" * 43,
+    return RunnerSettings(control_center_url="https://control-center.example", token="lnr_" + "A" * 43,
                           work_dir=tmp_path / "runner")
 
 

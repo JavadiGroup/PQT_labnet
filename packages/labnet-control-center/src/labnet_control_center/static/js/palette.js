@@ -6,8 +6,8 @@
 (function () {
   "use strict";
 
-  const { el, deviceState } = window.PQT;
-  const { iconSvg } = window.PQT.optics;
+  const { el, deviceState } = window.LabNet;
+  const { iconSvg } = window.LabNet.optics;
 
   function createPalette(host, options) {
     // options: preview(entry, x, y) -> bool, endPreview(), drop(entry, x, y),
@@ -140,5 +140,5 @@
     return { setDevices, setOptics, refresh: render };
   }
 
-  window.PQT.createPalette = createPalette;
+  window.LabNet.createPalette = createPalette;
 })();

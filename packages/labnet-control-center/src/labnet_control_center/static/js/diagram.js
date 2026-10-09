@@ -10,8 +10,8 @@
 
   const NS = "http://www.w3.org/2000/svg";
   const XHTML = "http://www.w3.org/1999/xhtml";
-  const { sizeOf, snap, GRID } = window.PQT.experiments;
-  const { iconGroup } = window.PQT.optics;
+  const { sizeOf, snap, GRID } = window.LabNet.experiments;
+  const { iconGroup } = window.LabNet.optics;
   const MIN_ZOOM = 0.25;
   const MAX_ZOOM = 3;
 
@@ -642,5 +642,5 @@
     };
   }
 
-  window.PQT.createDiagram = createDiagram;
+  window.LabNet.createDiagram = createDiagram;
 })();

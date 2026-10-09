@@ -114,6 +114,8 @@ case "$OSTYPE" in msys*|cygwin*) path_sep=";" ;; *) path_sep=":" ;; esac
 mkdir -p "$REPO_ROOT/literature" "$REPO_ROOT/experiments" "$REPO_ROOT/automation"
 cat >> "$DEVNET_DIR/$CONTROL_CENTER_USER.env" << EOF
 LABNET_CONTROL_CENTER_PORT=$CONTROL_CENTER_PORT
+LABNET_AUTOMATION_ENABLED=true
+LABNET_PHOTO_AGENT_ENABLED=true
 LABNET_CONTROL_CENTER_EXPERIMENTS_DIR=$(native_path "$REPO_ROOT/experiments")
 LABNET_AUTOMATION_DIR=$(native_path "$REPO_ROOT/automation")
 LABNET_AGENT_SOURCES=$(native_path "$REPO_ROOT/packages")$path_sep$(native_path "$REPO_ROOT/examples")

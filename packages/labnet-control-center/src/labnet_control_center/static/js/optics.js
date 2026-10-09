@@ -53,5 +53,5 @@
     return svg;
   }
 
-  window.PQT = Object.assign(window.PQT || {}, { optics: { iconGroup, iconSvg, kinds: Object.keys(PATHS) } });
+  window.LabNet = Object.assign(window.LabNet || {}, { optics: { iconGroup, iconSvg, kinds: Object.keys(PATHS) } });
 })();

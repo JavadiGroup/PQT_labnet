@@ -1,4 +1,4 @@
-"""PQT Lab Control Center web interface (``labnet-control-center``).
+"""The LabNet Control Center web interface (``labnet-control-center``).
 
 Server dependencies are imported lazily so the base client install does not
 need FastAPI or Uvicorn.

@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  const { el, sizeText, fileKind } = window.PQT;
+  const { el, sizeText, fileKind } = window.LabNet;
   const TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;
   const TABLE_PREVIEW_BYTES = 5 * 1024 * 1024;
   const TABLE_ROWS = 500;
@@ -93,7 +93,7 @@
       ];
       const facts = [];
       if (item.entry && item.entry.size !== undefined) facts.push(sizeText(item.entry.size));
-      if (item.entry && item.entry.modified) facts.push("changed " + window.PQT.ago(item.entry.modified));
+      if (item.entry && item.entry.modified) facts.push("changed " + window.LabNet.ago(item.entry.modified));
       const who = owner(item);
       const download = el("a", {
         class: "button small",
@@ -147,7 +147,7 @@
         dirty = false;
         viewButton.classList.add("active");
         editButton.classList.remove("active");
-        content.replaceChildren(window.PQTMarkdown.render(source, { doc: options.doc(item) }));
+        content.replaceChildren(window.LabNet.markdown.render(source, { doc: options.doc(item) }));
         if (!source.trim()) content.append(message("This file is empty."));
         area.replaceChildren(content);
       }
@@ -212,7 +212,7 @@
     }
 
     async function confirmDiscard() {
-      const choice = await window.PQT.dialog({
+      const choice = await window.LabNet.dialog({
         title: "Discard your changes?",
         body: el("p", { text: "Your edits to this file haven't been saved." }),
         actions: [{ label: "Discard", value: "discard", danger: true }],
@@ -258,7 +258,7 @@
       }
       container.replaceChildren(
         header(item, itemActions(item)),
-        body("code", [window.PQTMarkdown.codeBlock(language, text.replace(/\r\n?/g, "\n").split("\n"))])
+        body("code", [window.LabNet.markdown.codeBlock(language, text.replace(/\r\n?/g, "\n").split("\n"))])
       );
     }
 
@@ -321,5 +321,5 @@
     };
   }
 
-  Object.assign(window.PQT, { createFileViewer, parseDelimited });
+  Object.assign(window.LabNet, { createFileViewer, parseDelimited });
 })();

@@ -24,7 +24,7 @@ WORK = Path("/var/lib/labnet-runner/runs") / RUN / "work"
 
 
 def settings(**overrides) -> RunnerSettings:
-    values = dict(control_center_url="https://pqt-control-center", token=TOKEN, python_cpus=1.5,
+    values = dict(control_center_url="https://control-center.example", token=TOKEN, python_cpus=1.5,
                   python_memory_mb=1024, python_pids=128, python_timeout_seconds=30.0)
     values.update(overrides)
     return RunnerSettings(**values)

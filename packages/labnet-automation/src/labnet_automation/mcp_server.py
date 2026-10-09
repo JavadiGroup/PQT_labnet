@@ -35,7 +35,7 @@ END_TIMEOUT_SECONDS = 240.0  # the Control Center applies the safe state before 
 MARK_START, MARK_END = "\x02", "\x03"  # how the Control Center marks matched words in snippets
 
 INSTRUCTIONS = (
-    "The PQT lab's tools for this run: search and read the project's literature (cite pages as "
+    "The lab's tools for this run: search and read the project's literature (cite pages as "
     "`path p.N`, exactly as the results give them), run the Python scripts you write under "
     "ScriptsUtilized/ in a sandbox without network, and, for tasks that need lab devices, submit a "
     "protocol for a person's approval, check the grant and end the experiment."

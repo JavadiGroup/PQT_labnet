@@ -3,7 +3,7 @@
 (function () {
   "use strict";
 
-  const { el, ago, deviceItem, plural, statusPill, watchNetwork } = window.PQT;
+  const { el, ago, deviceItem, plural, statusPill, watchNetwork } = window.LabNet;
   const list = document.getElementById("lab-pcs");
   const summary = document.getElementById("summary");
 

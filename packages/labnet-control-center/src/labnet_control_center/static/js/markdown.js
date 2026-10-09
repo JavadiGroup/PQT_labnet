@@ -160,7 +160,7 @@
   const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
   const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
-  // Renderers for fenced blocks by language, e.g. "pqt-experiment" cards.
+  // Renderers for fenced blocks by language, e.g. "labnet-experiment" cards.
   // fn(source, {closed}) returns a Node; closed is false while the fence is
   // still streaming in. A renderer that throws falls back to a code block.
   const renderers = Object.create(null);
@@ -312,5 +312,7 @@
     }
   }
 
-  window.PQTMarkdown = { codeBlock, copyText, register, render, renderInto };
+  window.LabNet = Object.assign(window.LabNet || {}, {
+    markdown: { codeBlock, copyText, register, render, renderInto },
+  });
 })();

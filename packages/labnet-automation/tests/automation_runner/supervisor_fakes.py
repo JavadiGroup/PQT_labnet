@@ -366,6 +366,7 @@ def control_center(tmp_path: Path, **overrides: Any) -> Iterator[tuple[TestClien
         "The Pound Drever Hall technique locks a laser to a cavity using an error signal.", encoding="utf-8"
     )
     values: dict[str, Any] = dict(
+        automation_enabled=True, photo_agent_enabled=True,  # the optional parts, on
         server_url="http://127.0.0.1:8008", api_key="key", ca_file=None, bind_host="127.0.0.1", port=8080,
         refresh_seconds=60.0, experiments_dir=tmp_path / "experiments", automation_dir=tmp_path / "automation",
         agent_workspace=tmp_path / "agent", agent_literature_dir=library,

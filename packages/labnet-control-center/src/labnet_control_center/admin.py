@@ -26,7 +26,7 @@ PROG = "labnet-control-center-admin"
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog=PROG, description="Administer the PQT Lab Control Center.")
+    parser = argparse.ArgumentParser(prog=PROG, description="Administer the LabNet Control Center.")
     parser.add_argument(
         "--env-file", type=Path, help="Settings file such as control-center.env (process environment wins)."
     )

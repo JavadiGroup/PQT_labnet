@@ -4,9 +4,9 @@
 (function () {
   "use strict";
 
-  const { el, chevronIcon, store, dialog, ago, plural } = window.PQT;
-  const EXPANDED_KEY = "pqt-expanded-projects";
-  const AUTHOR_KEY = "pqt-experiment-author"; // the same name as on the Experiments tab
+  const { el, chevronIcon, store, dialog, ago, plural } = window.LabNet;
+  const EXPANDED_KEY = "labnet-expanded-projects";
+  const AUTHOR_KEY = "labnet-experiment-author"; // the same name as on the Experiments tab
   const OWNER_TEXT = { user: "Yours", agent: "Agent", mirror: "Automatic" };
   const expanded = new Set(store.get("sessionStorage", EXPANDED_KEY, []));
   const list = document.getElementById("projects");
@@ -151,7 +151,7 @@
     const author = el("input", { maxlength: "64", placeholder: "Your name (optional)" });
     author.value = store.get("localStorage", AUTHOR_KEY, "");
     // Signed in (lab): the server records the login, so there is no name to type.
-    const { user } = await window.PQT.me;
+    const { user } = await window.LabNet.me;
     const choice = await dialog({
       title: "New project",
       body: el("div", { class: "dialog-fields" }, [

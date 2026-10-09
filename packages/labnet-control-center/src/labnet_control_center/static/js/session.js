@@ -1,7 +1,7 @@
 // The browser side of a device session: live events plus Play/Pause/script
 // requests. The Control Center holds the lease; the page only asks.
 //
-//   const session = PQT.connectSession(deviceId, {
+//   const session = LabNet.connectSession(deviceId, {
 //     snapshot(event), state(event), reset(), samples(event), script(event), connection(ok)
 //   });
 //   await session.play({ settings: [...], stream: {...} });
@@ -50,5 +50,5 @@
     };
   }
 
-  window.PQT.connectSession = connectSession;
+  window.LabNet.connectSession = connectSession;
 })();
