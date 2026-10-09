@@ -23,7 +23,7 @@ def create_devices() -> list[PhysicalSimulatedWavemeter]:
     # with the real drivers for this computer when they do.
     return [
         PhysicalSimulatedWavemeter(device_id="lab-pc-01-wavemeter"),
-        # A Sacher laser with site limits (packages/labnet/README.md, "Site limits").
+        # A Sacher laser with site limits (docs/drivers.md, "Site limits").
         # This Lab PC then refuses, for every client, a call outside them; and
         # automation can bound only numbers that have a published limit. The
         # Sacher driver publishes none, so set one for every number to automate:

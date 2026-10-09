@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in LabNet doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Remove API keys, proxy secrets and passwords from anything you paste.
+        Security problems go to the Security tab instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: LabNet version
+      description: "`pip show labnet`, and any driver packages involved (`pip show labnet-sim`)."
+    validations:
+      required: true
+  - type: dropdown
+    id: roles
+    attributes:
+      label: Where it happens
+      multiple: true
+      options: [Central, Lab PC, Client script, Control Center, Safe-state watchdog, Automation runner, labnet dev / bundle / update, labnet driver build]
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and Python
+      placeholder: Windows 11, Python 3.11.9
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: On the dev network (`labnet dev up`) if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and error messages
+      render: text

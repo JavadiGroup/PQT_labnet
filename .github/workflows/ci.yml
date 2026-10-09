@@ -1,4 +1,4 @@
-# CI on the uv workspace (packages/). Still to come: lint, Linux, Docker and docs jobs.
+# CI on the uv workspace (packages/). Still to come: lint, Linux and Docker jobs.
 name: CI
 
 on:
@@ -36,6 +36,19 @@ jobs:
         run: uv run lint-imports
       - name: No site names in LabNet's code
         run: uv run python .github/scripts/no_site_names.py
+
+  docs:
+    name: Documentation (mkdocs --strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Build the site; a broken link or anchor fails it
+        run: uv run --locked --group docs mkdocs build --strict
 
   test-windows:
     name: pytest (Windows, Python 3.12)

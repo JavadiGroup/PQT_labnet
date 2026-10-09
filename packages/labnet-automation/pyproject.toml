@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,11 +8,31 @@ version = "3.0.0.dev0"
 description = "The LabNet Automation runner: an agent's experiments in containers, run only under a person's approval"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "LabNet contributors" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: System :: Hardware",
+]
 dependencies = [
     "labnet>=3.0.0.dev0,<3.1",
     "httpx>=0.27,<1.0",
     "mcp>=1.2,<2",
 ]
+
+[project.urls]
+Documentation = "https://javadigroup.github.io/labnet/"
+Source = "https://github.com/JavadiGroup/labnet"
+Issues = "https://github.com/JavadiGroup/labnet/issues"
+Changelog = "https://github.com/JavadiGroup/labnet/blob/main/CHANGELOG.md"
 
 [project.scripts]
 labnet-runner = "labnet_automation.supervisor:main"

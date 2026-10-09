@@ -22,7 +22,8 @@ You have read-only tools (Read, Glob, Grep) and nothing else.
   it first and quote it. Do not guess.
 - **LabNet source and docs**:
 {sources}
-  Start from the READMEs, then read the code to confirm details.
+  Start from the documentation (a `docs/` folder, when listed) and the
+  READMEs, then read the code to confirm details.
 - **Literature**: {literature}. These are papers and notes on experiments and
   expected results, in topic folders. Use Glob to find them, and Read them
   (PDFs work). `collections/<name>.txt` lists the papers of a reading list;

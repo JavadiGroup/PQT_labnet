@@ -8,7 +8,7 @@ from labnet_sim.dummy_eom.physical import PhysicalDummyEOM
 from labnet_sim.dummy_laser.physical import PhysicalDummyLaser
 from labnet.devices.core import site_limits
 
-# Site limits (see "Site limits" in packages/labnet/README.md): this Lab PC refuses every
+# Site limits (see "Site limits" in docs/drivers.md): this Lab PC refuses every
 # call outside them, for every client. dummy_device's driver publishes no limit
 # for write_value, so without one it can't be automated ("no limit, no automation").
 DUMMY_WRITE_RANGE = {"write_value.value": (-100.0, 100.0)}

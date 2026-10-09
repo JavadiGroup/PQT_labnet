@@ -73,9 +73,14 @@ def say(kind: str, message: str) -> None:
     print(f"{kind:>4} {message}", flush=True)
 
 
+# The modules each extra brings: its command is installed with labnet even without them.
+_EXTRA_MODULES = {"'labnet[central]'": ("sqlalchemy", "alembic", "fastapi"), "'labnet[lab-pc]'": ("fastapi",)}
+
+
 def _require(name: str, package: str) -> Path:
     found = command(name)
-    if found is None:
+    missing = [module for module in _EXTRA_MODULES.get(package, ()) if importlib.util.find_spec(module) is None]
+    if found is None or missing:
         raise DevError(f"{name} isn't installed here: pip install {package}")
     return found
 
@@ -171,8 +176,8 @@ def seed(net: DevNetwork, *, watchdog_only: bool = False) -> None:
         "LABNET_AUTOMATION_DIR": (root / "automation").as_posix(),
         "LABNET_AGENT_LITERATURE_DIR": (root / "literature").as_posix(),
     }
-    sources = [root / name for name in ("packages", "examples") if (root / name).is_dir()]
-    if sources:  # a LabNet checkout: Photo-Agent reads its code and examples
+    sources = [root / name for name in ("packages", "docs", "examples") if (root / name).is_dir()]
+    if sources:  # a LabNet checkout: Photo-Agent reads its code, docs and examples
         control_center["LABNET_AGENT_SOURCES"] = os.pathsep.join(path.as_posix() for path in sources)
     _append(net.env_file(net.control_center_user), control_center)
     say("ok", f"{net.control_center_user} -> http://127.0.0.1:{net.control_center_port}/status")

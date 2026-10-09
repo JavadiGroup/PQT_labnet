@@ -28,8 +28,8 @@ MAX_TOOL_LINE = 300
 MAX_TOOL_RESULT = 600
 MCP_PREFIX = "mcp__labnet__"
 NOT_SIGNED_IN = (
-    "Claude Code is not signed in on the runner. On the runner host, sign in once into the "
-    "login volume (see the runner's README: `claude /login`)."
+    "Claude Code is not signed in on the runner. Sign in once into its login volume: "
+    "`labnet runner login` next to a dev network, or as the runner documentation describes on a runner PC."
 )
 
 

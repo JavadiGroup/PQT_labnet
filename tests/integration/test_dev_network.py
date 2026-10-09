@@ -50,3 +50,14 @@ def test_the_dev_network_goes_up_answers_and_goes_down(tmp_path: Path, capsys: p
 def test_unknown_components_are_named(tmp_path: Path) -> None:
     with pytest.raises(DevError, match="Unknown component nonsense; choose from central, lab-pc-dev-01"):
         network.down(network.DevNetwork(root=tmp_path), ["nonsense"])
+
+
+def test_a_missing_extra_is_named_even_though_its_command_is_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from labnet.dev import network
+
+    real = network.importlib.util.find_spec
+    monkeypatch.setattr(network.importlib.util, "find_spec",
+                        lambda name, *rest: None if name == "sqlalchemy" else real(name, *rest))
+    with pytest.raises(DevError, match=r"labnet-central isn't installed here: pip install 'labnet\[central\]'"):
+        network._require("labnet-central", "'labnet[central]'")
+    assert network._require("labnet-lab-pc", "'labnet[lab-pc]'").name.startswith("labnet-lab-pc")

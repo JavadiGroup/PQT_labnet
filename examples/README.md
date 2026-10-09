@@ -88,4 +88,4 @@ For example, `SimulatedWavemeter` has `read_wavelength()` and
 
 A new family appears the same way after its `.proto` is added and code
 generation is run. See
-[the change loop](../README.md#the-change-loop-down--update--generate--redeploy).
+[the change loop](../docs/development.md#the-change-loop-down--update--generate--redeploy).

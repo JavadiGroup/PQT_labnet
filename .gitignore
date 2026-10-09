@@ -45,3 +45,6 @@ literature/
 
 # LabNet 2.x release builds (labnet bundle now writes to dist/)
 /PQT_network_releases/
+
+# mkdocs build output
+/site/

@@ -14,8 +14,7 @@ mirrored networking (so it reaches the Control Center at 127.0.0.1); a hidden
 Docker runs directly. The first ``up`` issues a runner token into
 ``.devnet/runner.env``.
 
-The lab's runner host uses docker compose directly: see "Automation runner"
-in the labnet README.
+The lab's runner host uses docker compose directly: see docs/automation/runner.md.
 """
 
 from __future__ import annotations

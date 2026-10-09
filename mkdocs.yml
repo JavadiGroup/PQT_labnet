@@ -1,0 +1,92 @@
+# The documentation site. Preview: uv sync --group docs, then uv run mkdocs serve.
+# CI builds it with --strict, so a broken link or anchor fails the build.
+site_name: LabNet
+site_description: Safe, shared access to lab instruments over a network.
+site_url: https://javadigroup.github.io/labnet/
+repo_url: https://github.com/JavadiGroup/labnet
+repo_name: JavadiGroup/labnet
+edit_uri: edit/main/docs/
+copyright: LabNet contributors
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: {icon: material/weather-sunny, name: Light mode}
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - packages/labnet/src
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            docstring_style: sphinx
+            filters: ["!^_"]
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts: concepts.md
+  - Clients: clients.md
+  - Writing a driver: drivers.md
+  - Deploying a lab:
+      - deploying/index.md
+      - Site folders: deploying/sites.md
+      - Updating a lab: deploying/updating.md
+      - Configuration: deploying/configuration.md
+      - Automation go-live checklist: deploying/go-live.md
+      - Troubleshooting: deploying/troubleshooting.md
+  - Control Center:
+      - control-center/index.md
+      - Logins: control-center/logins.md
+      - Photo-Agent: control-center/photo-agent.md
+  - Automation:
+      - automation/index.md
+      - Security model: automation/security.md
+      - The runner: automation/runner.md
+  - Development: development.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Client API: reference/api/client.md
+      - Driver API: reference/api/drivers.md
+      - Testing API: reference/api/testing.md
+  - Migrating to 3.0: migration-3.0.md
+  - Changelog: changelog.md
