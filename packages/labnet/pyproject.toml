@@ -46,8 +46,10 @@ labnet-lab-pc = "labnet.lab_pc.app:main"
 labnet-certs = "labnet.certs:main"
 
 [project.entry-points."labnet.commands"]
+bundle = "labnet.release.cli:register_bundle"
 dev = "labnet.dev.cli:register"
 driver = "labnet.driver.cli:register"
+update = "labnet.release.cli:register_update"
 
 [tool.setuptools.packages.find]
 where = ["src"]
