@@ -814,7 +814,7 @@ wheels = [
 
 [[package]]
 name = "labnet"
-version = "3.0.0.dev0"
+version = "3.0.0"
 source = { editable = "packages/labnet" }
 dependencies = [
     { name = "grpcio" },
@@ -866,7 +866,7 @@ provides-extras = ["lab-pc", "central", "postgres", "certs", "driver-dev"]
 
 [[package]]
 name = "labnet-automation"
-version = "3.0.0.dev0"
+version = "3.0.0"
 source = { editable = "packages/labnet-automation" }
 dependencies = [
     { name = "httpx" },
@@ -883,7 +883,7 @@ requires-dist = [
 
 [[package]]
 name = "labnet-control-center"
-version = "3.0.0.dev0"
+version = "3.0.0"
 source = { editable = "packages/labnet-control-center" }
 dependencies = [
     { name = "fastapi" },
@@ -902,7 +902,7 @@ requires-dist = [
 
 [[package]]
 name = "labnet-sim"
-version = "3.0.0.dev0"
+version = "3.0.0"
 source = { editable = "packages/labnet-sim" }
 dependencies = [
     { name = "labnet" },

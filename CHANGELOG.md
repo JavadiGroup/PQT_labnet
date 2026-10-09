@@ -6,7 +6,9 @@ All notable changes to LabNet. The format follows
 `labnet-control-center`, `labnet-automation` and `labnet-sim` are released
 together with the same version.
 
-## [3.0.0] - unreleased
+## [Unreleased]
+
+## [3.0.0] - 2026-10-08
 
 The first public release.
 

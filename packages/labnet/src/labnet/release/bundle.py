@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 import zipfile
 from dataclasses import dataclass, field
@@ -33,6 +34,9 @@ FORMAT = 1
 # What a site folder may hold: templates and inventories, never a lab's secrets.
 _SECRET = re.compile(r"(^|/)(\.env|[^/]*\.env|[^/]*\.(key|pem|p12|pfx)|logins\.txt)$", re.IGNORECASE)
 LABNET_PACKAGES = ("labnet", "labnet-control-center")
+# Left in a package folder by earlier builds and editable installs. setuptools reuses
+# build/lib, so a wheel built in place can carry modules deleted from the source.
+BUILD_LEFTOVERS = ("build", "dist", "*.egg-info", "__pycache__", ".pytest_cache")
 
 
 class BundleError(RuntimeError):
@@ -69,6 +73,13 @@ def _wheel_file(folder: Path, name: str, version: str) -> Path:
     if not found:
         raise BundleError(f"pip did not produce a wheel for {name} {version}.")
     return found[0]
+
+
+def clean_copy(project: Path, target: Path) -> Path:
+    """The package's source without what earlier builds left in it."""
+
+    shutil.copytree(project, target, ignore=shutil.ignore_patterns(*BUILD_LEFTOVERS))
+    return target
 
 
 def check_site(site: Path) -> list[Path]:
@@ -113,7 +124,9 @@ class Bundle:
         wheels.mkdir(parents=True)
         try:
             print(f" ==> Building {len(projects)} wheels")
-            _pip("wheel", "--no-deps", "--wheel-dir", str(wheels), *(str(project) for project in projects))
+            with tempfile.TemporaryDirectory(prefix="labnet-bundle-") as scratch:
+                sources = [clean_copy(project, Path(scratch) / project.name) for project in projects]
+                _pip("wheel", "--no-deps", "--wheel-dir", str(wheels), *(str(source) for source in sources))
             packages = {}
             for project in projects:
                 name, project_version = project_name(project)
@@ -159,4 +172,4 @@ def _git_revision(source: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-__all__ = ["INSTALLER", "MANIFEST", "Bundle", "BundleError", "check_site", "sha256"]
+__all__ = ["INSTALLER", "MANIFEST", "Bundle", "BundleError", "check_site", "clean_copy", "sha256"]

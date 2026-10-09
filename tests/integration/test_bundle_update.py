@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from labnet.release.bundle import INSTALLER, Bundle, BundleError, check_site, sha256
+from labnet.release.bundle import INSTALLER, Bundle, BundleError, check_site, clean_copy, sha256
 from labnet.release.update import Update, backup_sqlite, point, read_manifest, requirements, verify
 
 REPO = Path(__file__).resolve().parents[2]
@@ -64,6 +64,27 @@ def test_a_bundle_lists_every_file_with_its_sha256(bundle: Path) -> None:
     with zipfile.ZipFile(bundle / "site-acme.zip") as archive:
         assert sorted(archive.namelist()) == ["central.env.example", "inventories/lab_pc_01.py"]
     verify(bundle, manifest)
+
+
+def test_wheels_carry_only_modules_in_the_source(bundle: Path) -> None:
+    """A build/ left by an earlier build must not put deleted modules back into a release."""
+
+    manifest = read_manifest(bundle)
+    for name, folder in (("labnet", "packages/labnet/src"), ("labnet-control-center", "packages/labnet-control-center/src")):
+        with zipfile.ZipFile(bundle / "wheels" / manifest["packages"][name]) as wheel:
+            shipped = [entry for entry in wheel.namelist() if ".dist-info/" not in entry]
+        stale = [entry for entry in shipped if not (REPO / folder / entry).is_file()]
+        assert not stale, f"{name} wheel has files not in {folder}: {stale[:5]}"
+
+
+def test_a_clean_copy_leaves_build_leftovers_behind(tmp_path: Path) -> None:
+    project = tmp_path / "pkg"
+    for leftover in ("build/lib/pkg/old.py", "src/pkg.egg-info/SOURCES.txt", "src/pkg/__pycache__/x.pyc"):
+        (project / leftover).parent.mkdir(parents=True, exist_ok=True)
+        (project / leftover).write_text("", encoding="utf-8")
+    (project / "src/pkg/new.py").write_text("", encoding="utf-8")
+    copy = clean_copy(project, tmp_path / "copy")
+    assert sorted(path.relative_to(copy).as_posix() for path in copy.rglob("*") if path.is_file()) == ["src/pkg/new.py"]
 
 
 def test_a_changed_or_missing_file_is_refused(bundle: Path, tmp_path: Path) -> None:
