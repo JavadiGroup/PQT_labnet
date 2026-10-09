@@ -46,6 +46,7 @@ labnet-lab-pc = "labnet.lab_pc.app:main"
 labnet-certs = "labnet.certs:main"
 
 [project.entry-points."labnet.commands"]
+dev = "labnet.dev.cli:register"
 driver = "labnet.driver.cli:register"
 
 [tool.setuptools.packages.find]

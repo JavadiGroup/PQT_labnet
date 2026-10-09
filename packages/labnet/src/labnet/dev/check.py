@@ -1,23 +1,18 @@
 """Inspect or exercise a running LabNet network as a researcher client.
 
-    python scripts/dev/netcheck.py status   # what Central knows about each device
-    python scripts/dev/netcheck.py smoke    # lease every available device and call it
-
-Connects with LabClient.from_env(); the scripts/dev wrappers point
-LABNET_ENV_FILE at .devnet/researcher.env.
+``labnet dev status`` and ``labnet dev smoke`` call these with LABNET_ENV_FILE
+pointing at ``.devnet/researcher.env``.
 """
 
 from __future__ import annotations
-
-import argparse
-import asyncio
-import sys
 
 from labnet import AsyncLabClient, LabClient
 from labnet.contracts import registry
 
 
 def status() -> int:
+    """Print what Central knows about each device; 1 if it knows none."""
+
     with LabClient.from_env() as central:
         devices = central.list_devices()
     if not devices:
@@ -41,7 +36,9 @@ def status() -> int:
     return 0
 
 
-async def _smoke() -> int:
+async def smoke() -> int:
+    """Lease every available device, call its first scalar read, release it; 1 if any failed."""
+
     failures = 0
     async with AsyncLabClient.from_env() as central:
         devices = await central.list_available_devices()
@@ -73,12 +70,4 @@ async def _smoke() -> int:
     return 1 if failures else 0
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["status", "smoke"])
-    command = parser.parse_args().command
-    sys.exit(status() if command == "status" else asyncio.run(_smoke()))
-
-
-if __name__ == "__main__":
-    main()
+__all__ = ["smoke", "status"]
