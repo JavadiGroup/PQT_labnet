@@ -17,6 +17,10 @@ dependencies = [
 [project.scripts]
 labnet-runner = "labnet_automation.supervisor:main"
 
+# `labnet runner build|up|down|...`: the runner next to a dev network.
+[project.entry-points."labnet.commands"]
+runner = "labnet_automation.host:register"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["labnet_automation*"]
