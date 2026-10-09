@@ -42,7 +42,6 @@ Then open <http://127.0.0.1:8080/status>. The
 | [Control Center](docs/control-center/index.md) | The web interface, its logins, and Photo-Agent |
 | [Automation](docs/automation/index.md) | Agent-run experiments, and the [security model](docs/automation/security.md) that keeps people in charge |
 | [Development](docs/development.md) | Working on LabNet itself |
-| [Migrating to 3.0](docs/migration-3.0.md) | For labs running LabNet 2.x |
 
 The same pages, with the API reference, build into a site with
 `uv run --group docs mkdocs serve`.

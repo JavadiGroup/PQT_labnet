@@ -88,5 +88,4 @@ nav:
       - Client API: reference/api/client.md
       - Driver API: reference/api/drivers.md
       - Testing API: reference/api/testing.md
-  - Migrating to 3.0: migration-3.0.md
   - Changelog: changelog.md

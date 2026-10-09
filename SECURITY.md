@@ -11,7 +11,6 @@ handling, TLS, injection, and escaping the Automation runner's containers.
 | Version | Supported |
 | --- | --- |
 | 3.0.x | Yes |
-| 2.x and earlier | No (never released publicly) |
 
 ## Reporting a vulnerability
 
