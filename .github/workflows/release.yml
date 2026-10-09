@@ -1,17 +1,16 @@
 # Releases LabNet. A v* tag builds the four packages, checks them
 # (.github/scripts/check_release.py), publishes them to PyPI and makes a GitHub
-# Release. Run by hand, it publishes to TestPyPI instead: a dry run.
+# Release.
 #
 # Publishing uses PyPI's Trusted Publishing, so no token is stored here. Each
 # project on PyPI trusts this repository's release.yml in its own environment,
-# pypi-<project> (testpypi-<project> on TestPyPI): PyPI accepts one pending
-# publisher per repository, workflow and environment, so four projects need four.
+# pypi-<project>: PyPI accepts one pending publisher per repository, workflow
+# and environment, so four projects need four.
 name: Release
 
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,7 +27,7 @@ jobs:
       - name: Build wheels and sdists
         run: uv build --all-packages -o dist
       - name: Check versions, files and changelog
-        run: uv run --no-project python .github/scripts/check_release.py dist ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: uv run --no-project python .github/scripts/check_release.py dist ${{ github.ref_name }}
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -49,8 +48,8 @@ jobs:
           - {project: labnet-automation, stem: labnet_automation}
           - {project: labnet-sim, stem: labnet_sim}
     environment:
-      name: ${{ github.event_name == 'workflow_dispatch' && 'testpypi' || 'pypi' }}-${{ matrix.project }}
-      url: ${{ github.event_name == 'workflow_dispatch' && 'https://test.pypi.org' || 'https://pypi.org' }}/project/${{ matrix.project }}/
+      name: pypi-${{ matrix.project }}
+      url: https://pypi.org/project/${{ matrix.project }}/
     permissions:
       id-token: write
     steps:
@@ -59,20 +58,12 @@ jobs:
           name: dist
       - name: Only ${{ matrix.project }}'s wheel and sdist
         run: mkdir upload && cp dist/${{ matrix.stem }}-[0-9]* upload/ && ls upload
-      - name: Publish to TestPyPI (a run started by hand)
-        if: github.event_name == 'workflow_dispatch'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: upload/
-          repository-url: https://test.pypi.org/legacy/
-      - name: Publish to PyPI (a v* tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: upload/
 
   github-release:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: publish
     runs-on: ubuntu-latest
     permissions:

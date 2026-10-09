@@ -64,7 +64,10 @@ jobs:
         run: uv sync --locked
       - name: pytest
         # faulthandler dumps every thread's stack if a single test hangs.
-        run: uv run pytest -ra -p no:cacheprovider -o faulthandler_timeout=300
+        run: uv run pytest -ra -p no:cacheprovider -o faulthandler_timeout=300 --junitxml=pytest-results.xml
+      - name: Failed tests as annotations
+        if: failure()
+        run: uv run --no-project python .github/scripts/junit_annotations.py pytest-results.xml
 
   wheel-smoke:
     name: Wheels install and run
@@ -99,10 +102,11 @@ jobs:
         shell: bash
         run: |
           uv venv --python 3.12 "$RUNNER_TEMP/driver"
-          py="$RUNNER_TEMP/driver/Scripts/python"
-          uv pip install --python "$py" -e packages/labnet
+          py="$RUNNER_TEMP/driver/Scripts/python.exe"
+          # uv pip takes the environment's folder (it no longer accepts .../Scripts/python without .exe)
+          uv pip install --python "$RUNNER_TEMP/driver" -e packages/labnet
           "$RUNNER_TEMP/driver/Scripts/labnet" driver new acme-thing --service AcmeThing --directory "$RUNNER_TEMP/acme-thing"
-          uv pip install --python "$py" -e packages/labnet -e "$RUNNER_TEMP/acme-thing[dev]"
+          uv pip install --python "$RUNNER_TEMP/driver" -e packages/labnet -e "$RUNNER_TEMP/acme-thing[dev]"
           cd "$RUNNER_TEMP/acme-thing"
           "$RUNNER_TEMP/driver/Scripts/labnet" driver build --import-check
           "$RUNNER_TEMP/driver/Scripts/labnet" driver build --check
