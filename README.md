@@ -449,17 +449,20 @@ Center, Caddy, and Central). Then update and start them in this order:
 PowerShell:
 
 ```powershell
-$B = '\\192.168.50.40\LabNet-Releases\x.y.z'     # or a local copy of the folder
-# labnet itself, in a throwaway environment, to run the update with:
-py -3.11 -m venv $env:TEMP\labnet-update
-& $env:TEMP\labnet-update\Scripts\pip install --quiet --no-index --find-links $B\wheels labnet
-& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role central          # on central_server_pc
-& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role control-center   # on central_server_pc too
-& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role lab-pc           # on each Lab PC
-& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role client           # on each client
+$install = '\\192.168.50.40\LabNet-Releases\x.y.z\install.ps1'     # or a local copy of the bundle
+powershell -ExecutionPolicy Bypass -File $install -Role central          # on central_server_pc
+powershell -ExecutionPolicy Bypass -File $install -Role control-center   # on central_server_pc too
+powershell -ExecutionPolicy Bypass -File $install -Role lab-pc           # on each Lab PC
+powershell -ExecutionPolicy Bypass -File $install -Role client           # on each client
 ```
 
-(For a `--no-dependencies` bundle, leave out `--no-index`.)
+`install.ps1` checks the bundle, installs `labnet` from it into a temporary
+environment, and runs `labnet update` from there, so the update never runs
+from the environment it replaces. It needs only Python 3.11 and its `py`
+launcher (`-Python <python.exe>` picks another). `-ExecutionPolicy Bypass`
+applies to that one run: Windows otherwise refuses unsigned scripts from a
+share. Where `labnet` is already installed, `labnet update --from <bundle>
+--role <role>` does the same.
 
 `labnet update` handles the steps that are easy to get wrong:
 

@@ -6,8 +6,10 @@ A bundle is a folder::
       MANIFEST.json            the version, the site, which wheels each role uses, sha256 of every file
       wheels/*.whl             LabNet's packages, the driver packages, and (by default) every dependency
       site-<site>.zip          the lab's site folder: env templates, Caddyfile template, Lab PC inventories
+      install.ps1              runs ``labnet update`` from a temporary environment (Windows)
 
-Copy it to a share the lab's computers can read; ``labnet update --from <it>`` installs from it.
+Copy it to a share the lab's computers can read. On each computer,
+``install.ps1 -Role <role>`` (or ``labnet update --from <it>``) installs from it.
 """
 
 from __future__ import annotations
@@ -22,9 +24,11 @@ import sys
 import tomllib
 import zipfile
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 
 MANIFEST = "MANIFEST.json"
+INSTALLER = "install.ps1"
 FORMAT = 1
 # What a site folder may hold: templates and inventories, never a lab's secrets.
 _SECRET = re.compile(r"(^|/)(\.env|[^/]*\.env|[^/]*\.(key|pem|p12|pfx)|logins\.txt)$", re.IGNORECASE)
@@ -124,6 +128,7 @@ class Bundle:
             with zipfile.ZipFile(site_zip, "w", zipfile.ZIP_DEFLATED) as archive:
                 for path in site_files:
                     archive.write(path, path.relative_to(self.site.resolve()).as_posix())
+            (out / INSTALLER).write_bytes((resources.files("labnet.release") / INSTALLER).read_bytes())
             files = {path.relative_to(out).as_posix(): sha256(path)
                      for path in sorted(out.rglob("*")) if path.is_file()}
             manifest = {
@@ -154,4 +159,4 @@ def _git_revision(source: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-__all__ = ["Bundle", "BundleError", "MANIFEST", "check_site", "sha256"]
+__all__ = ["INSTALLER", "MANIFEST", "Bundle", "BundleError", "check_site", "sha256"]

@@ -59,6 +59,7 @@ namespaces = false
 [tool.setuptools.package-data]
 labnet = ["py.typed", "protos/labnet/devices/v1/*.proto"]
 "labnet.driver" = ["template/*.tmpl"]
+"labnet.release" = ["install.ps1"]
 "labnet.grpc.generated" = ["*.pyi"]
 "labnet.central" = [
     "alembic.ini",

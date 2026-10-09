@@ -41,6 +41,7 @@ FILES = (
     ("labnet_automation", "automation_briefing.md"),
     ("labnet.central", "alembic.ini"),
     ("labnet", "py.typed"),
+    ("labnet.release", "install.ps1"),
     ("labnet_sim._generated", "facades.pyi"),
 )
 

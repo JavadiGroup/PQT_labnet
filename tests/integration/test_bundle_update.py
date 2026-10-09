@@ -9,14 +9,16 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import shutil
 import socket
+import subprocess
 import threading
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from labnet.release.bundle import Bundle, BundleError, check_site, sha256
+from labnet.release.bundle import INSTALLER, Bundle, BundleError, check_site, sha256
 from labnet.release.update import Update, backup_sqlite, point, read_manifest, requirements, verify
 
 REPO = Path(__file__).resolve().parents[2]
@@ -56,7 +58,7 @@ def test_a_bundle_lists_every_file_with_its_sha256(bundle: Path) -> None:
     manifest = read_manifest(bundle)
     assert manifest["site"] == "acme" and manifest["dependencies"] is False
     assert set(manifest["packages"]) == {"labnet", "labnet-control-center", "labnet-sim"}
-    assert manifest["drivers"] == ["labnet-sim"]
+    assert manifest["drivers"] == ["labnet-sim"] and INSTALLER in manifest["files"]
     on_disk = {path.relative_to(bundle).as_posix() for path in bundle.rglob("*") if path.is_file()} - {"MANIFEST.json"}
     assert set(manifest["files"]) == on_disk
     with zipfile.ZipFile(bundle / "site-acme.zip") as archive:
@@ -127,3 +129,27 @@ def test_the_manifest_hashes_are_sha256(bundle: Path) -> None:
     manifest = json.loads((bundle / "MANIFEST.json").read_text(encoding="utf-8"))
     name, digest = next(iter(manifest["files"].items()))
     assert sha256(bundle / name) == digest and len(digest) == 64
+
+
+def test_the_interpreter_may_be_a_path_with_spaces_or_a_command(tmp_path: Path) -> None:
+    python = tmp_path / "Program Files" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"")
+    assert Update(bundle=tmp_path, role="client", python=str(python))._interpreter() == [str(python)]
+    assert Update(bundle=tmp_path, role="client", python="py -3.11")._interpreter() == ["py", "-3.11"]
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="needs Windows PowerShell")
+def test_install_ps1_refuses_a_changed_bundle_before_installing_anything(bundle: Path, tmp_path: Path) -> None:
+    copy = tmp_path / "bundle"
+    shutil.copytree(bundle, copy)
+    (copy / "site-acme.zip").write_bytes(b"changed")
+    home = tmp_path / "home"
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(copy / INSTALLER),
+         "-Role", "client", "-LabNetHome", str(home)],
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "site-acme.zip does not match its sha256" in result.stdout
+    assert not home.exists()

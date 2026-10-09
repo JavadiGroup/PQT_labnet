@@ -192,7 +192,7 @@ class Update:
     bundle: Path
     role: str
     home: Path = DEFAULT_HOME
-    python: str = sys.executable  # the interpreter new environments are made from
+    python: str = sys.executable  # the interpreter new environments are made from (a path, or e.g. "py -3.11")
 
     def run(self) -> Path:
         if self.role not in ROLES:
@@ -216,8 +216,7 @@ class Update:
         _say("==>", f"Building {venv}")
         venv.parent.mkdir(parents=True, exist_ok=True)
         try:
-            _run([*self.python.split(" "), "-m", "venv", str(venv)] if " " in self.python
-                 else [self.python, "-m", "venv", str(venv)], "Creating the environment")
+            _run([*self._interpreter(), "-m", "venv", str(venv)], "Creating the environment")
             python = venv_python(venv)
             wheels = bundle / "wheels"
             source = ["--no-index"] if manifest.get("dependencies") else []
@@ -238,6 +237,10 @@ class Update:
                   "environment": str(venv), "previous_environment": previous}
         (home / f"{role}-RELEASE.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         return venv
+
+    def _interpreter(self) -> list[str]:
+        # A path may hold spaces (C:\Program Files\Python311\python.exe); a command such as py -3.11 is split.
+        return [self.python] if Path(self.python).is_file() else self.python.split()
 
     def _refuse_while_running(self, settings: dict, home: Path) -> None:
         checks = []

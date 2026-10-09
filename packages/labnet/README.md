@@ -239,21 +239,20 @@ holds any.
 
 #### Installing from the bundle
 
-Every computer installs its role with `labnet update`. Run it from a
-throwaway environment, so it never runs from the environment it replaces:
+Every computer installs its role with the bundle's `install.ps1`, which
+needs only Python 3.11 and its `py` launcher:
 
 ```powershell
-$B = '\\192.168.50.40\LabNet-Releases\x.y.z'
-py -3.11 -m venv $env:TEMP\labnet-update
-& $env:TEMP\labnet-update\Scripts\pip install --quiet --no-index --find-links $B\wheels labnet
-$labnet = "$env:TEMP\labnet-update\Scripts\labnet.exe"
-& $labnet update --from $B --role <central|control-center|lab-pc|client>
+$install = '\\192.168.50.40\LabNet-Releases\x.y.z\install.ps1'
+powershell -ExecutionPolicy Bypass -File $install -Role <central|control-center|lab-pc|client>
 ```
 
-It verifies the bundle, refuses while the role runs, builds
+It checks the bundle, installs `labnet` from it into a temporary environment,
+and runs `labnet update` from there, which refuses while the role runs, builds
 `C:\ProgramData\LabNet\venvs\<role>-x.y.z-<time>`, checks it, and only then
-points `C:\ProgramData\LabNet\<role>-venv` at it. The steps below use
-`$B` and `$labnet` from this block.
+points `C:\ProgramData\LabNet\<role>-venv` at it. `-ExecutionPolicy Bypass`
+applies to that one run (Windows otherwise refuses unsigned scripts from a
+share). The steps below use `$install` from this block.
 
 ### 2. Set up `central_server_pc`
 
@@ -272,7 +271,7 @@ points `C:\ProgramData\LabNet\<role>-venv` at it. The steps below use
    `C:\ProgramData\LabNet\central-venv`, and creates the database schema.
 
    ```powershell
-   & $labnet update --from $B --role central
+   powershell -ExecutionPolicy Bypass -File $install -Role central
    ```
 
 4. **Users and their settings files**, in one command:
@@ -367,7 +366,7 @@ points `C:\ProgramData\LabNet\<role>-venv` at it. The steps below use
    catch a mistake or a missing driver immediately.
 
    ```powershell
-   & $labnet update --from $B --role lab-pc
+   powershell -ExecutionPolicy Bypass -File $install -Role lab-pc
    ```
 
 5. **Start the Lab PC** by hand in its own PowerShell window, and leave it open:
@@ -388,7 +387,7 @@ points `C:\ProgramData\LabNet\<role>-venv` at it. The steps below use
 2. Install the library and the drivers:
 
    ```powershell
-   & $labnet update --from $B --role client
+   powershell -ExecutionPolicy Bypass -File $install -Role client
    ```
 
 3. Point clients at the settings file once (user environment variable), then
@@ -1976,7 +1975,7 @@ people have the page open.
    add `LABNET_CONTROL_CENTER_PORT=8080`, as in
    [`sites/pqt/control-center.env.example`](../../sites/pqt/control-center.env.example).
 2. **Install.** On the same computer, run
-   `& $labnet update --from $B --role control-center`
+   `powershell -ExecutionPolicy Bypass -File $install -Role control-center`
    ([Installing from the bundle](#installing-from-the-bundle)). It installs
    into `control-center-venv` and checks that the settings file loads.
 3. **Address.** Choose how the lab reaches the page:

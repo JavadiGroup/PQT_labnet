@@ -54,7 +54,9 @@ def _bundle(arguments: argparse.Namespace) -> int:
     except BundleError as exc:
         print(f"labnet bundle: {exc}")
         return 1
-    print(f"  ok Bundle ready: {out}\n     On each computer: labnet update --from <a copy of it> --role <role>")
+    print(f"  ok Bundle ready: {out}\n"
+          f"     On each computer: powershell -ExecutionPolicy Bypass -File <it>\\install.ps1 -Role <role>\n"
+          f"     (or, anywhere labnet is installed: labnet update --from <it> --role <role>)")
     return 0
 
 
