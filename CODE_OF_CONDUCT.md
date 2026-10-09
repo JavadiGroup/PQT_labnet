@@ -9,7 +9,7 @@ acceptable, in the project's spaces or when representing it elsewhere.
 ## Reporting
 
 Report unacceptable behaviour privately to the maintainers at
-**TODO(before going public): a contact address for conduct reports**. Every
+**robert.a.miller.410@gmail.com**. Every
 report will be reviewed and investigated promptly and fairly, and the
 maintainers will respect the reporter's privacy.
 

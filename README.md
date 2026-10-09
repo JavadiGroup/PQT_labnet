@@ -59,7 +59,7 @@ The same pages, with the API reference, build into a site with
 ## Working on LabNet
 
 ```bash
-git clone https://github.com/JavadiGroup/labnet && cd labnet
+git clone https://github.com/mill0851/labnet && cd labnet
 uv sync                       # every package, editable, with the test tools
 uv run labnet dev up          # the development network
 uv run pytest

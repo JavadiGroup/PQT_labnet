@@ -61,7 +61,7 @@ finally:
 
 While the script holds the lease, the Control Center shows the wavemeter as
 leased, and no one else can use it. The
-[example scripts](https://github.com/JavadiGroup/labnet/tree/main/examples)
+[example scripts](https://github.com/mill0851/labnet/tree/main/examples)
 go further: choosing devices, streaming, and an experiment across two Lab PCs.
 
 ## 4. Stop

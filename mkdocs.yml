@@ -2,11 +2,11 @@
 # CI builds it with --strict, so a broken link or anchor fails the build.
 site_name: LabNet
 site_description: Safe, shared access to lab instruments over a network.
-site_url: https://javadigroup.github.io/labnet/
-repo_url: https://github.com/JavadiGroup/labnet
-repo_name: JavadiGroup/labnet
+site_url: https://mill0851.github.io/labnet/
+repo_url: https://github.com/mill0851/labnet
+repo_name: mill0851/labnet
 edit_uri: edit/main/docs/
-copyright: LabNet contributors
+copyright: Copyright &copy; 2026 Robert Miller
 
 theme:
   name: material

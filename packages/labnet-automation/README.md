@@ -6,7 +6,7 @@ that reach only the Control Center and the model API, and touches lab
 devices only through a grant a person approved.
 
 The runner runs in Docker, from the images in this package's
-[`docker/`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet-automation/docker)
+[`docker/`](https://github.com/mill0851/labnet/tree/main/packages/labnet-automation/docker)
 folder: on a Linux PC in the lab, or in WSL next to a development network:
 
 ```bash
@@ -16,7 +16,7 @@ labnet runner up           # issue a runner token and start it
 labnet runner self-check   # check its isolation
 ```
 
-Documentation: [the runner](https://javadigroup.github.io/labnet/automation/runner/)
-and the [security model](https://javadigroup.github.io/labnet/automation/security/).
+Documentation: [the runner](https://mill0851.github.io/labnet/automation/runner/)
+and the [security model](https://mill0851.github.io/labnet/automation/security/).
 
-LabNet is MIT licensed. Source: <https://github.com/JavadiGroup/labnet>.
+LabNet is MIT licensed. Source: <https://github.com/mill0851/labnet>.

@@ -71,7 +71,7 @@ environment.
   load any Claude Code settings someone put in it.
 - **Briefing:** its role and the lab's script style (`from_env()`,
   try/except/finally, release in reverse order) are in
-  [`agent_briefing.md`](https://github.com/JavadiGroup/labnet/blob/main/packages/labnet-control-center/src/labnet_control_center/agent_briefing.md).
+  [`agent_briefing.md`](https://github.com/mill0851/labnet/blob/main/packages/labnet-control-center/src/labnet_control_center/agent_briefing.md).
 
 It writes scripts for people to run. It never runs them.
 

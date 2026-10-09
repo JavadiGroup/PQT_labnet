@@ -456,7 +456,7 @@ A watchdog stopped mid-takeover releases what it holds. If its claim was
 
 2. Move `C:\LabNet-Keys\automation-watchdog.env` to
    `C:\ProgramData\LabNet\watchdog.env`, then delete `C:\LabNet-Keys`. Add
-   the lines from [`sites/pqt/watchdog.env.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/watchdog.env.example):
+   the lines from [`sites/pqt/watchdog.env.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/watchdog.env.example):
    at least `LABNET_AUTOMATION_DIR`, the Control Center's own (default
    `C:\ProgramData\LabNet\automation`), and `LABNET_CA_FILE` if
    `control-center.env` sets one.

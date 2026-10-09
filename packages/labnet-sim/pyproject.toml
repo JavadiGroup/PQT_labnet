@@ -9,7 +9,7 @@ description = "Simulated LabNet devices: an optics bench (laser, AOM, EOM, AWG),
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{ name = "LabNet contributors" }]
+authors = [{ name = "Robert Miller" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -27,10 +27,10 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://javadigroup.github.io/labnet/"
-Source = "https://github.com/JavadiGroup/labnet"
-Issues = "https://github.com/JavadiGroup/labnet/issues"
-Changelog = "https://github.com/JavadiGroup/labnet/blob/main/CHANGELOG.md"
+Documentation = "https://mill0851.github.io/labnet/"
+Source = "https://github.com/mill0851/labnet"
+Issues = "https://github.com/mill0851/labnet/issues"
+Changelog = "https://github.com/mill0851/labnet/blob/main/CHANGELOG.md"
 
 # One entry per device type; `labnet driver build` checks these against the protos.
 [project.entry-points."labnet.devices"]

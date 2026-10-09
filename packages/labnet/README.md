@@ -45,10 +45,10 @@ finally:
 
 ## Documentation
 
-<https://javadigroup.github.io/labnet/>: the
-[Quickstart](https://javadigroup.github.io/labnet/quickstart/),
-[writing a driver](https://javadigroup.github.io/labnet/drivers/),
-[deploying a lab](https://javadigroup.github.io/labnet/deploying/), and the
-[API reference](https://javadigroup.github.io/labnet/reference/api/client/).
+<https://mill0851.github.io/labnet/>: the
+[Quickstart](https://mill0851.github.io/labnet/quickstart/),
+[writing a driver](https://mill0851.github.io/labnet/drivers/),
+[deploying a lab](https://mill0851.github.io/labnet/deploying/), and the
+[API reference](https://mill0851.github.io/labnet/reference/api/client/).
 
-LabNet is MIT licensed. Source: <https://github.com/JavadiGroup/labnet>.
+LabNet is MIT licensed. Source: <https://github.com/mill0851/labnet>.

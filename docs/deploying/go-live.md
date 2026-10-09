@@ -44,7 +44,7 @@ On `central_server_pc`:
          prints ([Logins](../control-center/logins.md#logins)).
 - [ ] The Caddyfile starts with `{ admin off }`, imports the logins snippet,
       and the Control Center's site block uses `import labnet_control_center`
-      ([`sites/pqt/Caddyfile.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/Caddyfile.example)).
+      ([`sites/pqt/Caddyfile.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/Caddyfile.example)).
 - [ ] Restart Caddy, then the Control Center.
 - [ ] **Check:**
       - opening the Control Center from another computer asks for a login,
@@ -76,7 +76,7 @@ On `central_server_pc`, following
 - [ ] Create its Central user (`labnet-central-admin setup --user
       automation-watchdog …`).
 - [ ] Put its settings in `C:\ProgramData\LabNet\watchdog.env`, as in
-      [`sites/pqt/watchdog.env.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/watchdog.env.example).
+      [`sites/pqt/watchdog.env.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/watchdog.env.example).
 - [ ] Start it next to the Control Center. Then register its Task Scheduler
       task, so it also starts at logon.
 - [ ] **Check:** `http://127.0.0.1:8081/health/ready` answers 200 on the

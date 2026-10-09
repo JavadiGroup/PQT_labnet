@@ -94,7 +94,7 @@ The Control Center exempts the same two prefixes (lowercase, exactly). Caddy
 removes the two headers there, so they can't be forged.
 
 **Caddy's admin API must be off** (`admin off` in the Caddyfile's first
-block, as in [`sites/pqt/Caddyfile.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/Caddyfile.example)). Caddy
+block, as in [`sites/pqt/Caddyfile.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/Caddyfile.example)). Caddy
 otherwise answers on `localhost:2019` without a password: any program on the
 server could read the running config, secret included, or load one without
 logins.

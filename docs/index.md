@@ -56,4 +56,4 @@ expires a lease after 15 minutes with no device commands.
 
 ## License
 
-LabNet is licensed under the [MIT License](https://github.com/JavadiGroup/labnet/blob/main/LICENSE).
+LabNet is licensed under the [MIT License](https://github.com/mill0851/labnet/blob/main/LICENSE).

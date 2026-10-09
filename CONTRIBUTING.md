@@ -10,7 +10,7 @@ first.
 You need Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/JavadiGroup/labnet && cd labnet
+git clone https://github.com/mill0851/labnet && cd labnet
 uv sync                  # every package, editable, with the test tools
 uv run labnet dev up     # a whole simulated lab on 127.0.0.1
 ```

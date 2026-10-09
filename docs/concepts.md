@@ -53,7 +53,7 @@ responsible for hardware timing and driver behavior.
 ## From physical device to network call
 
 Every device family lives in a **driver package**, installed like any Python
-package. [`labnet-sim`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet-sim) is the one LabNet ships: a
+package. [`labnet-sim`](https://github.com/mill0851/labnet/tree/main/packages/labnet-sim) is the one LabNet ships: a
 simulated optics bench (`DummyLaser`, `DummyAOM`, `DummyEOM`, `DummyAWG`),
 `DummyDevice`, a `SimulatedTunableLaser` and a `SimulatedWavemeter`. You write
 three small pieces; the rest is generated or shared framework code.

@@ -83,4 +83,4 @@ asyncio.run(main())
 
 Asyncio lets unrelated operations overlap. It does not make one instrument
 run several driver calls at once; that instrument's worker stays serialized.
-The [`examples/`](https://github.com/JavadiGroup/labnet/blob/main/examples/README.md) directory has five complete scripts.
+The [`examples/`](https://github.com/mill0851/labnet/blob/main/examples/README.md) directory has five complete scripts.

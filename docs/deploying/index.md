@@ -42,7 +42,7 @@ PowerShell).
 Clone the repository and create the development environment:
 
 ```bash
-git clone https://github.com/JavadiGroup/labnet && cd labnet
+git clone https://github.com/mill0851/labnet && cd labnet
 uv sync
 ```
 
@@ -148,7 +148,7 @@ share). The steps below use `$install` from this block.
 1. **Certificates.** Copy `central.crt` and `central.key` to
    `C:\ProgramData\LabNet\certs\`.
 2. **Settings.** Create `C:\ProgramData\LabNet\central.env` from
-   [`sites/pqt/central.env.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/central.env.example):
+   [`sites/pqt/central.env.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/central.env.example):
 
    ```dotenv
    LABNET_DATABASE_URL=sqlite:///C:/ProgramData/LabNet/Central/labnet.db
@@ -209,7 +209,7 @@ share). The steps below use `$install` from this block.
    and forwards to Central with
    [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
    Central's private key never touches the Python process.
-   [`sites/pqt/Caddyfile.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/Caddyfile.example) is the whole file,
+   [`sites/pqt/Caddyfile.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/Caddyfile.example) is the whole file,
    with the Control Center's site and its logins added (see
    [Control Center](../control-center/index.md#control-center)).
 
@@ -228,7 +228,7 @@ share). The steps below use `$install` from this block.
    `lab-pc-01.key` → `…\lab-pc.key`, and `labnet-ca.pem` → `…\labnet-ca.pem`.
 2. **Settings.** Rename the transferred `lab-pc-01.env` to
    `C:\ProgramData\LabNet\lab-pc.env` and add the lines from
-   [`sites/pqt/lab-pc.env.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/lab-pc.env.example):
+   [`sites/pqt/lab-pc.env.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/lab-pc.env.example):
 
    ```dotenv
    # from setup --write-env

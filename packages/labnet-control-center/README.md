@@ -19,9 +19,9 @@ pip install "labnet[central,lab-pc]" labnet-sim labnet-control-center
 labnet dev up          # then open http://127.0.0.1:8080/status
 ```
 
-Documentation: [the Control Center](https://javadigroup.github.io/labnet/control-center/),
-[logins](https://javadigroup.github.io/labnet/control-center/logins/), and
-[Automation](https://javadigroup.github.io/labnet/automation/) with its
-[security model](https://javadigroup.github.io/labnet/automation/security/).
+Documentation: [the Control Center](https://mill0851.github.io/labnet/control-center/),
+[logins](https://mill0851.github.io/labnet/control-center/logins/), and
+[Automation](https://mill0851.github.io/labnet/automation/) with its
+[security model](https://mill0851.github.io/labnet/automation/security/).
 
-LabNet is MIT licensed. Source: <https://github.com/JavadiGroup/labnet>.
+LabNet is MIT licensed. Source: <https://github.com/mill0851/labnet>.

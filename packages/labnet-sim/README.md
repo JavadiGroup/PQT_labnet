@@ -39,6 +39,6 @@ everything in `src/labnet_sim/_generated/` built by `labnet driver build`.
 Ready-made Lab PC inventories for a development network are in
 `labnet_sim.inventories`.
 
-Documentation: <https://javadigroup.github.io/labnet/drivers/> (writing a driver
+Documentation: <https://mill0851.github.io/labnet/drivers/> (writing a driver
 package like this one). LabNet is MIT licensed. Source:
-<https://github.com/JavadiGroup/labnet>.
+<https://github.com/mill0851/labnet>.

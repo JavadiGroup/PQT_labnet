@@ -64,7 +64,7 @@ registration and lease checks; having no certificate keeps it on loopback
 plaintext. `.devnet/` is git-ignored, and its keys are throwaway.
 
 To change the topology (more Lab PCs, other ports), edit `DevNetwork` in
-[`labnet/dev/network.py`](https://github.com/JavadiGroup/labnet/blob/main/packages/labnet/src/labnet/dev/network.py), add an inventory under
+[`labnet/dev/network.py`](https://github.com/mill0851/labnet/blob/main/packages/labnet/src/labnet/dev/network.py), add an inventory under
 `packages/labnet-sim/src/labnet_sim/inventories/`, then run `labnet dev down`,
 `labnet dev seed`, and `labnet dev up`.
 
@@ -139,7 +139,7 @@ python examples/01_hello_device.py
 python examples/04_scan_two_devices.py               # leases devices on both Lab PCs
 ```
 
-[`examples/README.md`](https://github.com/JavadiGroup/labnet/blob/main/examples/README.md) describes all five examples.
+[`examples/README.md`](https://github.com/mill0851/labnet/blob/main/examples/README.md) describes all five examples.
 
 ## The change loop: down → update → generate → redeploy
 
@@ -236,13 +236,13 @@ package runs `labnet driver build` in its folder). Generated files are pinned to
 
 | Path | Purpose |
 | --- | --- |
-| [`packages/`](https://github.com/JavadiGroup/labnet/tree/main/packages) | The installable packages: `labnet` ([full guide](concepts.md)), `labnet-control-center`, `labnet-automation` and `labnet-sim` |
-| [`packages/labnet/src/labnet/protos/`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet/src/labnet/protos) | LabNet's shared protobuf messages and RPC options |
-| [`packages/labnet/src/labnet/driver/`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet/src/labnet/driver) | `labnet driver build` and `new`: contract validator, code generator, driver template |
-| [`packages/labnet-sim/`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet-sim) | The simulated device families: a complete driver package |
-| [`packages/labnet/src/labnet/lab_pc/`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet/src/labnet/lab_pc) | The `labnet-lab-pc` runtime and its settings rules |
-| [`packages/labnet-control-center/src/labnet_control_center/`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet-control-center/src/labnet_control_center) | The `labnet-control-center` web interface (backend + `static/` pages) |
-| `packages/*/tests/`, [`tests/`](https://github.com/JavadiGroup/labnet/tree/main/tests) | Each package's tests; full-stack and example tests |
+| [`packages/`](https://github.com/mill0851/labnet/tree/main/packages) | The installable packages: `labnet` ([full guide](concepts.md)), `labnet-control-center`, `labnet-automation` and `labnet-sim` |
+| [`packages/labnet/src/labnet/protos/`](https://github.com/mill0851/labnet/tree/main/packages/labnet/src/labnet/protos) | LabNet's shared protobuf messages and RPC options |
+| [`packages/labnet/src/labnet/driver/`](https://github.com/mill0851/labnet/tree/main/packages/labnet/src/labnet/driver) | `labnet driver build` and `new`: contract validator, code generator, driver template |
+| [`packages/labnet-sim/`](https://github.com/mill0851/labnet/tree/main/packages/labnet-sim) | The simulated device families: a complete driver package |
+| [`packages/labnet/src/labnet/lab_pc/`](https://github.com/mill0851/labnet/tree/main/packages/labnet/src/labnet/lab_pc) | The `labnet-lab-pc` runtime and its settings rules |
+| [`packages/labnet-control-center/src/labnet_control_center/`](https://github.com/mill0851/labnet/tree/main/packages/labnet-control-center/src/labnet_control_center) | The `labnet-control-center` web interface (backend + `static/` pages) |
+| `packages/*/tests/`, [`tests/`](https://github.com/mill0851/labnet/tree/main/tests) | Each package's tests; full-stack and example tests |
 | [`sites/pqt/`](deploying/sites.md) | A lab's configuration (here the PQT lab's): env templates, the Caddyfile template, and Lab PC inventories |
-| [`examples/`](https://github.com/JavadiGroup/labnet/blob/main/examples/README.md) | Experiment scripts 01–05 |
-| [`scripts/lab/`](https://github.com/JavadiGroup/labnet/tree/main/scripts/lab) | `setup_logins.ps1`, run on Central to manage Control Center logins |
+| [`examples/`](https://github.com/mill0851/labnet/blob/main/examples/README.md) | Experiment scripts 01–05 |
+| [`scripts/lab/`](https://github.com/mill0851/labnet/tree/main/scripts/lab) | `setup_logins.ps1`, run on Central to manage Control Center logins |

@@ -13,7 +13,7 @@ pytest                                               # check_driver + the facade
 1. Edit `protos/acme_thing/v1/acme_thing.proto`. Every RPC needs the
    `pattern`, `physical_method`, and `default_unit` options; its package is
    `acme_thing.v1` (`labnet.*` is LabNet's own). See
-   [`labnet-sim`'s protos](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet-sim/protos/labnet_sim/v1) for more.
+   [`labnet-sim`'s protos](https://github.com/mill0851/labnet/tree/main/packages/labnet-sim/protos/labnet_sim/v1) for more.
 2. `labnet driver build`. It fails with a precise message if an option is
    missing or doesn't fit the RPC's shape, and tells you the
    `[project.entry-points."labnet.devices"]` line for each family.
@@ -32,7 +32,7 @@ retype fields, add new fields as optional, and reserve removed numbers. See
 
 A device family is a driver package: `labnet driver new acme-thing --service
 AcmeThing` creates a working one, and
-[`labnet-sim`](https://github.com/JavadiGroup/labnet/tree/main/packages/labnet-sim) is a larger example. In short:
+[`labnet-sim`](https://github.com/mill0851/labnet/tree/main/packages/labnet-sim) is a larger example. In short:
 
 1. **Define the contract** in `protos/<package>/v1/<family>.proto` (package
    `<package>.v1`; `labnet.*` is reserved). It imports

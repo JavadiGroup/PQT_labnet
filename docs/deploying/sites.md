@@ -4,7 +4,7 @@ A lab's own configuration lives in a *site folder* in its copy of the
 repository, `sites/<lab>/`. It is not code: `labnet bundle --site sites/<lab>`
 packs it into the bundle, and `labnet update --role lab-pc` installs it on each
 Lab PC as `C:\ProgramData\LabNet\site\`. The repository's
-[`sites/pqt/`](https://github.com/JavadiGroup/labnet/tree/main/sites/pqt) is a complete example.
+[`sites/pqt/`](https://github.com/mill0851/labnet/tree/main/sites/pqt) is a complete example.
 
 | File | Used on | Purpose |
 | --- | --- | --- |

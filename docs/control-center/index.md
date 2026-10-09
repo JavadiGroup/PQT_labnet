@@ -198,7 +198,7 @@ people have the page open.
 
    Move `control-center.env` to `C:\ProgramData\LabNet\control-center.env` and
    add `LABNET_CONTROL_CENTER_PORT=8080`, as in
-   [`sites/pqt/control-center.env.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/control-center.env.example).
+   [`sites/pqt/control-center.env.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/control-center.env.example).
 2. **Install.** On the same computer, run
    `powershell -ExecutionPolicy Bypass -File $install -Role control-center`
    ([Installing from the bundle](../deploying/index.md#installing-from-the-bundle)). It installs
@@ -214,7 +214,7 @@ people have the page open.
 
    Either site block forwards to the Control Center through the logins
    snippet that step 4 writes
-   ([`sites/pqt/Caddyfile.example`](https://github.com/JavadiGroup/labnet/blob/main/sites/pqt/Caddyfile.example) has the whole file):
+   ([`sites/pqt/Caddyfile.example`](https://github.com/mill0851/labnet/blob/main/sites/pqt/Caddyfile.example) has the whole file):
 
    ```caddyfile
    {
