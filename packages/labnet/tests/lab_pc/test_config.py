@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from labnet.lab_pc.config import REMOVED_SETTINGS, LabPCSettings
+from labnet.lab_pc.config import LabPCSettings
 
 
 @pytest.fixture(autouse=True)
@@ -184,17 +184,6 @@ def test_non_finite_intervals_are_rejected(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("LABNET_HEARTBEAT_INTERVAL_SECONDS", "nan")
 
     with pytest.raises(ValueError, match="must be greater"):
-        settings_from_env()
-
-
-@pytest.mark.parametrize("name", sorted(REMOVED_SETTINGS))
-def test_removed_settings_fail_with_their_replacement(
-    monkeypatch: pytest.MonkeyPatch,
-    name: str,
-) -> None:
-    monkeypatch.setenv(name, "anything")
-
-    with pytest.raises(ValueError, match=f"{name} was removed in LabNet 2.0"):
         settings_from_env()
 
 

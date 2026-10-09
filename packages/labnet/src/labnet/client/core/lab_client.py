@@ -243,11 +243,6 @@ def _client_settings_from_env(
 ) -> tuple[str, str, str | None]:
     # Clients have no command line, so LABNET_ENV_FILE plays --env-file's role.
     load_env_file(env_file or os.getenv("LABNET_ENV_FILE") or None, search_cwd=True)
-    if os.getenv("LABNET_GRPC_CA_FILE"):
-        raise ValueError(
-            "LABNET_GRPC_CA_FILE was removed in LabNet 2.0. Set LABNET_CA_FILE; "
-            "it verifies both Central and the Lab PCs."
-        )
     api_key = os.getenv("LABNET_API_KEY", "").strip()
     if not api_key:
         raise ValueError(

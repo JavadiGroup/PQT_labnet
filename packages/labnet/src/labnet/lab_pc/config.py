@@ -22,25 +22,6 @@ from labnet.envfile import load_env_file
 from labnet.identifiers import validate_labnet_identifier
 
 
-# Settings from LabNet 1.x that would now be silently ignored. Failing loudly
-# keeps an old .env from meaning something different than it says.
-REMOVED_SETTINGS = {
-    "LABNET_CENTRAL_ENABLED": (
-        "Central registration is on whenever LABNET_DEVICE_MANAGER_API_KEY is set."
-    ),
-    "LABNET_LEASE_VALIDATION_MODE": (
-        "Central validates leases whenever LABNET_DEVICE_MANAGER_API_KEY is set; "
-        "without a key the Lab PC runs standalone (development, loopback only)."
-    ),
-    "LABNET_GRPC_TLS_MODE": (
-        "gRPC uses TLS whenever LABNET_GRPC_CERT_FILE and LABNET_GRPC_KEY_FILE are set."
-    ),
-    "LABNET_LAB_PC_ENV_FILE": (
-        "Pass the settings file with `labnet-lab-pc --env-file PATH`."
-    ),
-}
-
-
 def _is_loopback_host(host: str) -> bool:
     normalized = host.strip().strip("[]").lower()
     if normalized == "localhost":
@@ -237,10 +218,6 @@ class LabPCSettings:
         # Relative paths in a settings file are relative to that file.
         base_directory = loaded.parent if loaded is not None else Path.cwd()
 
-        for name, replacement in REMOVED_SETTINGS.items():
-            if os.getenv(name) is not None:
-                raise ValueError(f"{name} was removed in LabNet 2.0. {replacement}")
-
         cert_file = _get_path("LABNET_GRPC_CERT_FILE", base_directory)
         key_file = _get_path("LABNET_GRPC_KEY_FILE", base_directory)
         tls_enabled = cert_file is not None and key_file is not None
@@ -418,4 +395,4 @@ class LabPCSettings:
             )
 
 
-__all__ = ["LabPCSettings", "REMOVED_SETTINGS"]
+__all__ = ["LabPCSettings"]

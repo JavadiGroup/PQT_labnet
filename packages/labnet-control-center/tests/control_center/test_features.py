@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -73,8 +71,7 @@ def test_the_features_script_loads_before_the_page_frame(tmp_path: Path) -> None
                         "photo_agent": False}
     for page in STATIC.glob("*.html"):
         source = page.read_text(encoding="utf-8")
-        assert source.index("/api/features.js") < source.index("/static/js/migrate-storage.js") \
-            < source.index("/static/js/shell.js"), page.name
+        assert source.index("/api/features.js") < source.index("/static/js/shell.js"), page.name
 
 
 def test_the_site_name_names_the_app_and_its_scripts(tmp_path: Path) -> None:
@@ -112,38 +109,6 @@ def test_the_env_file_turns_them_on(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_bad_values_are_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, values: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         _env(tmp_path, monkeypatch, **values)
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node.js")
-def test_saved_browser_state_moves_to_the_new_keys_once() -> None:
-    script = """
-    class Storage {
-      constructor(items) { this.items = new Map(Object.entries(items)); }
-      get length() { return this.items.size; }
-      key(i) { return [...this.items.keys()][i] ?? null; }
-      getItem(k) { return this.items.has(k) ? this.items.get(k) : null; }
-      setItem(k, v) { this.items.set(k, String(v)); }
-      removeItem(k) { this.items.delete(k); }
-    }
-    globalThis.localStorage = new Storage({
-      "pqt-agent-model": '"opus"', "pqt-expanded-devices": '["aom"]', "labnet-agent-model": '"haiku"', "other": "1",  // (LabNet 2.x) keys
-    });
-    globalThis.sessionStorage = new Storage({ "pqt-agent-chat": '{"messages":[]}' });  // (LabNet 2.x)
-    require(process.argv[1]);
-    const dump = (s) => Object.fromEntries(s.items);
-    console.log(JSON.stringify({ local: dump(localStorage), session: dump(sessionStorage),
-                                 again: globalThis.LabNet.migrateStoredKeys(localStorage, "pqt-", "labnet-") }));  // (LabNet 2.x)
-    """
-    result = subprocess.run(["node", "-e", script, str(STATIC / "js" / "migrate-storage.js")],
-                            capture_output=True, text=True, check=True)
-    moved = json.loads(result.stdout)
-    assert moved["local"] == {
-        "labnet-agent-model": '"haiku"',  # already chosen under the new key: kept
-        "labnet-expanded-devices": '["aom"]',
-        "other": "1",
-    }
-    assert moved["session"] == {"labnet-agent-chat": '{"messages":[]}'}
-    assert moved["again"] == []  # nothing left to move
 
 
 def test_automation_without_photo_agent_still_offers_run_models(tmp_path: Path) -> None:

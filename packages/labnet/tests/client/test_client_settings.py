@@ -67,14 +67,6 @@ def test_from_env_without_a_key_explains_what_to_set() -> None:
         LabClient.from_env()
 
 
-def test_old_grpc_ca_variable_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LABNET_API_KEY", "secret")
-    monkeypatch.setenv("LABNET_GRPC_CA_FILE", "labnet-ca.pem")
-
-    with pytest.raises(ValueError, match="Set LABNET_CA_FILE"):
-        LabClient.from_env()
-
-
 def test_missing_ca_file_fails_immediately() -> None:
     with pytest.raises(FileNotFoundError, match="CA file not found"):
         LabClient("https://192.0.2.10", "secret", ca_file="missing.pem")

@@ -55,22 +55,6 @@ keep sensible defaults: `LABNET_HEARTBEAT_INTERVAL_SECONDS` (5),
 | `LABNET_CA_FILE` | system trust | Verifies Central and every Lab PC |
 | `LABNET_ENV_FILE` | none | Process environment only: which file `from_env()` loads |
 
-## Removed in 2.0
-
-Each removed setting now stops startup with a message naming its replacement.
-
-| 1.x | 2.0 |
-| --- | --- |
-| `LABNET_CENTRAL_ENABLED`, `LABNET_LEASE_VALIDATION_MODE` | Set `LABNET_DEVICE_MANAGER_API_KEY`; omit it for standalone development |
-| `LABNET_GRPC_TLS_MODE` | Set `LABNET_GRPC_CERT_FILE` and `LABNET_GRPC_KEY_FILE` |
-| `LABNET_LAB_PC_ENV_FILE` | `labnet-lab-pc --env-file PATH` |
-| `LABNET_GRPC_CA_FILE` (clients), `SSL_CERT_FILE` (for LabNet) | `LABNET_CA_FILE` |
-| `python -m examples.central_server` / `examples.lab_pc` | `labnet-central` / `labnet-lab-pc` |
-| `examples/lab_pc/device_inventory.py` | `sites/<lab>/inventories/<lab pc>.py` + `LABNET_DEVICE_INVENTORY` |
-| `lab-pc-app.zip`, `sync-client-example.zip` | the bundle's `site-<lab>.zip`; `examples/` |
-| Keys printed by `user create`, copied by hand | `setup --write-env` writes ready settings files |
-| OpenSSL commands | `labnet-certs` |
-
 ## Central database and API
 
 Central stores users, API-key hashes, Lab PC and device registrations,

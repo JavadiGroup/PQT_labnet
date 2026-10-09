@@ -264,6 +264,5 @@
   }
 
   window.LabNet.markdown.register("labnet-experiment", render);
-  window.LabNet.markdown.register("pqt-experiment", render); // (LabNet 2.x) chats saved before 3.0
   window.LabNet = Object.assign(window.LabNet || {}, { refreshProposals });
 })();

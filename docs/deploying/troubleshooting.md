@@ -2,7 +2,6 @@
 
 | Symptom | Likely cause | Check |
 | --- | --- | --- |
-| A command stops with "… was removed in LabNet 2.0" | A 1.x setting in a settings file | Apply the replacement in [Removed in 2.0](configuration.md#removed-in-20) |
 | Central readiness is 503 | Missing migration or unreachable database | `labnet-central-admin --env-file central.env db upgrade`; check `LABNET_DATABASE_URL` |
 | Admin CLI says the schema is not ready | CLI and server read different databases | Pass the same `--env-file` to both |
 | Lab PC cannot register | Wrong key, or Central's certificate not trusted | Recreate or rotate the device_manager key; check `LABNET_CA_FILE` |
