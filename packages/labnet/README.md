@@ -2497,6 +2497,7 @@ restore the `labnet.db.before-<version>.<time>` backup for that.
 | Client sees no available devices | Lab PC down, device unhealthy, or every device leased | Both health endpoints and Central's device list |
 | Client times out connecting to a TLS Lab PC | CA not configured, or IP not in the Lab PC certificate | `LABNET_CA_FILE`; compare `labnet-certs show` with `LABNET_GRPC_ADVERTISED_TARGET` |
 | Proto check reports stale files | Generated bindings do not match the protos | `labnet driver build --core`, then commit every generated change |
+| A device shows **Driver mismatch** or **No driver here** | The Lab PC and the Control Center run different driver packages or versions for that device type, or the Control Center lacks it | Install the same release of the driver package (for example `labnet-sim`) on both; the device's details say which. Automation refuses a mismatched device |
 | Physical contract validation fails | Driver method missing or with an incompatible signature | Compare `physical_method` and forwarded fields with `physical.py` |
 | Lease lost during an experiment | Renewal failure, lease deadline, or idle timeout | Client and Central logs; network stability; timeout policy |
 

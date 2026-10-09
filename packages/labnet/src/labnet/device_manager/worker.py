@@ -558,6 +558,11 @@ class DeviceWorker:
             metadata["capabilities"] = [
                 method.python_name for method in contract.methods
             ]
+            # Which package, version and contract this Lab PC runs, so a Control
+            # Center can tell whether its own driver for the type matches.
+            driver = registry.driver_info(device_type.strip())
+            if driver is not None:
+                metadata["driver"] = driver.as_dict()
             try:
                 limits = resolve_limits(
                     contract,

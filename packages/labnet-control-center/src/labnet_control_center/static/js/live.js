@@ -22,6 +22,19 @@
     return DEVICE_STATES[device.state] || DEVICE_STATES.unavailable;
   }
 
+  // Whether the Lab PC's driver for the device is this Control Center's own.
+  const DRIVER_FLAGS = {
+    missing: { label: "No driver here", tone: "warn" },
+    mismatch: { label: "Driver mismatch", tone: "bad" },
+  };
+
+  function driverFlag(device) {
+    const driver = device.driver || {};
+    const flag = DRIVER_FLAGS[driver.status];
+    if (!flag) return [];
+    return [el("span", { class: "driver-flag " + flag.tone, title: driver.detail || "", text: flag.label })];
+  }
+
   function ago(iso) {
     if (!iso) return "never";
     const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -119,13 +132,11 @@
   }
 
   function deviceDetail(device, detailId) {
+    const driver = device.driver || {};
     const methods = device.known_contract
       ? el("ul", { class: "methods" }, device.methods.map(methodItem))
       : el("p", {
-          text:
-            "This Control Center has no contract for '" +
-            device.type +
-            "'. Update it to the Lab PC's LabNet release.",
+          text: driver.detail || "This Control Center has no driver for '" + device.type + "'.",
         });
     return el("div", { class: "device-detail", id: detailId, hidden: !expanded.has(device.id) }, [
       el("h3", { text: "Callable methods" }),
@@ -134,6 +145,7 @@
         el("div", {}, [el("dt", { text: "Status" }), el("dd", { text: device.detail })]),
         el("div", {}, [el("dt", { text: "Runtime" }), el("dd", { text: device.runtime_state })]),
         el("div", {}, [el("dt", { text: "Last report" }), el("dd", { text: ago(device.last_seen) })]),
+        el("div", {}, [el("dt", { text: "Driver" }), el("dd", { text: driver.detail || "Not reported" })]),
       ]),
     ]);
   }
@@ -219,7 +231,7 @@
     const cells = [
       el("span", { class: "device-name", title: device.id, text: device.id }),
       statusPill(state.label, state.tone),
-      el("span", { class: "device-type" }, ["Type: ", el("b", { text: device.type_label })]),
+      el("span", { class: "device-type" }, ["Type: ", el("b", { text: device.type_label }), ...driverFlag(device)]),
     ];
     if (showLabPc) {
       cells.push(el("span", { class: "device-lab-pc" }, ["Lab PC: ", el("b", { text: device.lab_pc.id })]));

@@ -475,6 +475,10 @@ def _device(
     if contract_type and contract is None:
         problems.add(_key(path, "device_type"), f"This Control Center has no contract for {contract_type}, so it "
                                                 "can't be automated.")
+    driver = (found or {}).get("driver") or {}
+    if contract is not None and driver.get("status") == "mismatch":
+        problems.add(_key(path, "device_type"), f"{device_id}'s driver doesn't match this Control Center's, so it "
+                                                f"can't be automated: {driver.get('detail', '')}")
     methods: dict[str, dict[str, Any]] = {}
     if "methods" in raw and _object(raw["methods"], _key(path, "methods"), tuple(raw["methods"]) if isinstance(
             raw["methods"], dict) else (), (), problems, "methods"):

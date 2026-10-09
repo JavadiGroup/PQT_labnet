@@ -283,6 +283,19 @@ a { color: var(--accent); }
 .status.warn::before { background: var(--warn); box-shadow: 0 0 0 3px rgba(232, 137, 12, 0.2); }
 .status.bad::before { background: var(--bad); box-shadow: 0 0 0 3px rgba(224, 49, 49, 0.18); }
 
+/* A device whose driver this Control Center lacks or doesn't match (live.js driverFlag). */
+.driver-flag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.driver-flag.warn { color: var(--warn); border: 1px solid var(--warn); }
+.driver-flag.bad { color: var(--bad); border: 1px solid var(--bad); }
+
 /* ---- Device rows -------------------------------------------------------- */
 
 .devices {

@@ -8,6 +8,7 @@ device family.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from labnet.contracts import DeviceContract, RpcSpec, registry
@@ -215,11 +216,70 @@ def type_label(device_type: str) -> str:
     return " ".join(part.capitalize() for part in device_type.split("_") if part) or "Unknown"
 
 
+_PACKAGE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+_VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+!_-]{0,63}")
+_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
+DRIVER_STATUSES = ("ok", "missing", "mismatch", "unknown")
+
+
+def _reported_driver(metadata: Any) -> dict[str, str] | None:
+    """The ``metadata["driver"]`` a Lab PC reported, if well-formed (it is untrusted input)."""
+
+    driver = metadata.get("driver") if isinstance(metadata, Mapping) else None
+    if not isinstance(driver, Mapping):
+        return None
+    fields = {key: driver.get(key) for key in ("package", "version", "fingerprint")}
+    patterns = {"package": _PACKAGE, "version": _VERSION, "fingerprint": _FINGERPRINT}
+    if not all(isinstance(value, str) and patterns[key].fullmatch(value) for key, value in fields.items()):
+        return None
+    return fields  # type: ignore[return-value]
+
+
+def driver_status(device_type: str, metadata: Any) -> dict[str, Any]:
+    """How the driver a Lab PC runs for a device compares with this Control Center's own.
+
+    ``ok``: the same package, version and contract. ``missing``: this Control
+    Center has no driver for the type, so it can't describe or automate the
+    device (the detail says what to install). ``mismatch``: a different package,
+    version or contract; automation refuses the device until both match.
+    ``unknown``: the Lab PC reported no driver.
+    """
+
+    reported = _reported_driver(metadata)
+    local = registry.driver_info(device_type)
+    if local is None:
+        if reported is None:
+            detail = f"This Control Center has no driver for {device_type}; install the package that provides it."
+        else:
+            detail = (
+                f"This Control Center has no driver for {device_type}: install "
+                f"{reported['package']} {reported['version']} (pip install \"{reported['package']}>={reported['version']}\")."
+            )
+        return {"status": "missing", "reported": reported, "local": None, "detail": detail}
+    mine = local.as_dict()
+    if reported is None:
+        return {"status": "unknown", "reported": None, "local": mine,
+                "detail": f"Its Lab PC doesn't say which driver it runs; this Control Center has "
+                          f"{mine['package']} {mine['version']}."}
+    if reported == mine:
+        return {"status": "ok", "reported": reported, "local": mine,
+                "detail": f"{mine['package']} {mine['version']}, the same as this Control Center."}
+    if (reported["package"], reported["fingerprint"]) != (mine["package"], mine["fingerprint"]):
+        why = "a different contract" if reported["package"] == mine["package"] else "a different package"
+    else:
+        why = "a different version"
+    return {"status": "mismatch", "reported": reported, "local": mine,
+            "detail": f"Its Lab PC runs {reported['package']} {reported['version']}, and this Control Center "
+                      f"{mine['package']} {mine['version']} ({why}). Install the same release on both."}
+
+
 __all__ = [
+    "DRIVER_STATUSES",
     "LIMIT_SOURCES",
     "clean_hints",
     "describe_device_type",
     "describe_method",
+    "driver_status",
     "facade_class_name",
     "facade_import",
     "hint_lines",

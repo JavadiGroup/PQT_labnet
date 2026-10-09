@@ -44,7 +44,7 @@ from .automation_runners import RunnerRegistry
 from .automation_runs import RunStore, sweep_forever
 from .automation_store import PROJECT_ID, AutomationStore
 from .config import ControlCenterSettings
-from .contracts import clean_hints, describe_device_type, facade_class_name, type_label
+from .contracts import clean_hints, describe_device_type, driver_status, facade_class_name, type_label
 from .experiment_api import create_experiment_router
 from .experiment_schema import EXPERIMENT_ID
 from .experiment_store import ExperimentError, ExperimentStore
@@ -193,6 +193,8 @@ def _device(device: DeviceInfo, *, lab_pc_online: bool) -> dict[str, Any]:
         "python_class": facade_class_name(contract) if contract is not None else None,
         # Channels, ranges and choices the driver publishes (contracts don't say).
         "hints": clean_hints(device.metadata),
+        # Whether the Lab PC's driver for the type is this Control Center's (ok, missing, mismatch).
+        "driver": driver_status(device.device_type, device.metadata),
     }
 
 
