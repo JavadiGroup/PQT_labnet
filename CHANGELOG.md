@@ -8,7 +8,7 @@ together with the same version.
 
 ## [Unreleased]
 
-## [3.0.0] - 2026-10-08
+## [3.0.0] - 2026-10-09
 
 The first public release.
 
