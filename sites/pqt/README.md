@@ -1,8 +1,9 @@
 # Site configuration
 
 This directory is the PQT lab's own LabNet configuration. It is not example
-code: every release ships it as `site.zip`, and `update_host.sh lab-pc`
-installs it on each Lab PC as `C:\ProgramData\LabNet\site\`.
+code: `labnet bundle --site sites/pqt` packs it as `site-pqt.zip`, and
+`labnet update --role lab-pc` installs it on each Lab PC as
+`C:\ProgramData\LabNet\site\`.
 
 | File | Used on | Purpose |
 | --- | --- | --- |
@@ -54,5 +55,5 @@ Rules:
    `labnet-central-admin --env-file central.env setup --lab-pc lab-pc-02 --write-env <dir> --server-url https://192.168.50.10 --ca-file C:/ProgramData/LabNet/certs/labnet-ca.pem`
 3. Issue its certificate on the development PC:
    `labnet-certs issue lab-pc-02 --ip <its static IP> --dir C:\LabNet-CA`
-4. Commit the inventory, build a release, and follow the Lab PC steps in
-   [`packages/labnet/README.md`](../packages/labnet/README.md#3-set-up-each-lab-pc).
+4. Commit the inventory, make a bundle, and follow the Lab PC steps in
+   [`packages/labnet/README.md`](../../packages/labnet/README.md#3-set-up-each-lab-pc).

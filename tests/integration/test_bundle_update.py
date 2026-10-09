@@ -39,8 +39,11 @@ def test_a_site_folder_with_secrets_is_refused(tmp_path: Path, secret: str) -> N
         check_site(site)
 
 
-def test_the_pqt_site_is_templates_only() -> None:
-    assert check_site(REPO / "sites" / "pqt")
+def test_every_site_in_the_repository_is_templates_only() -> None:
+    sites = [path for path in (REPO / "sites").iterdir() if path.is_dir()]
+    assert sites
+    for site in sites:
+        assert check_site(site)
 
 
 @pytest.fixture(scope="module")

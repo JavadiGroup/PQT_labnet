@@ -13,7 +13,7 @@ def register_bundle(commands: argparse._SubParsersAction) -> None:
         description="Build LabNet's and the drivers' wheels (plus every dependency, for computers without "
                     "internet), zip the lab's site folder, and list it all with sha256s in MANIFEST.json.",
     )
-    bundle.add_argument("--site", type=Path, required=True, help="The lab's site folder, e.g. sites/pqt.")
+    bundle.add_argument("--site", type=Path, required=True, help="The lab's site folder, e.g. sites/<lab>.")
     bundle.add_argument("--out", type=Path, help="Where to make it (default: dist/labnet-<version>-<site>).")
     bundle.add_argument("--source", type=Path, default=Path("."), help="The LabNet checkout (default: here).")
     bundle.add_argument("--driver", type=Path, action="append", default=[],

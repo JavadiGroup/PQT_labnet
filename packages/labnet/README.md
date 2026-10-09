@@ -98,21 +98,23 @@ the additional dependencies:
 | `pip install "labnet[central]"` | FastAPI, SQLAlchemy, Alembic, Uvicorn | Central |
 | `pip install "labnet[central,postgres]"` | + psycopg | Central with PostgreSQL |
 | `pip install "labnet[certs]"` | cryptography | The computer that issues certificates |
-| `pip install "labnet[control-center]"` | FastAPI, Uvicorn, pypdf | The Control Center (on the Central computer) |
-| `pip install -e ".[dev,central,lab-pc]"` | Everything, plus protobuf tools and pytest | Development (`scripts/dev/setup.sh` does this) |
+| `pip install labnet-control-center` | FastAPI, Uvicorn, pypdf, the watchdog | The Control Center (on the Central computer) |
+| `pip install "labnet[driver-dev]"` | grpcio-tools | Writing a driver package (`labnet driver build`) |
+| `uv sync` (repository root) | Every package, editable, plus pytest and import-linter | Development |
 
-Production hosts install a reviewed wheel, never an editable checkout. In
-practice `update_host.sh` creates each role's virtual environment and
-installs the wheel for you.
+Production hosts install a reviewed bundle, never an editable checkout. In
+practice `labnet update` creates each role's virtual environment and
+installs the wheels for you.
 
 ## Local setup
 
-From the repository root, in Git Bash:
+From the repository root:
 
 ```bash
-scripts/dev/setup.sh && scripts/dev/seed.sh && scripts/dev/up.sh
-export LABNET_ENV_FILE=.devnet/researcher.env
-python examples/01_hello_device.py
+uv sync
+uv run labnet dev up
+export LABNET_ENV_FILE=.devnet/researcher.env      # PowerShell: $env:LABNET_ENV_FILE = ".devnet\researcher.env"
+uv run python examples/01_hello_device.py
 ```
 
 This runs Central and two simulated Lab PCs on loopback. The equivalent
@@ -136,15 +138,15 @@ are static and all connections use raw IP addresses; no DNS service is assumed.
 
 | Computer | Static IP | Runs | Required inbound traffic |
 | --- | --- | --- | --- |
-| `development_pc` | `192.168.50.40` | repository clone, `labnet-certs`, `build.sh` | only the chosen file-transfer method |
+| `development_pc` | `192.168.50.40` | repository clone, `labnet-certs`, `labnet bundle` | only the chosen file-transfer method |
 | `central_server_pc` | `192.168.50.10` | `labnet-central` behind Caddy | TCP 443 from Lab PCs and clients |
 | `lab_pc_1` | `192.168.50.20` | `labnet-lab-pc` | TCP 50051 from approved clients |
 | `client` | `192.168.50.30` | experiment scripts | none |
 
 Exclude each address from DHCP, or reserve it for that computer. The
 certificates contain the server IPs, so changing a server's IP requires a new
-certificate. Each runtime computer needs Python 3.11 and Git for Windows,
-whose Git Bash runs `update_host.sh`.
+certificate. Each runtime computer needs Python 3.11 (`py -3.11` in
+PowerShell).
 
 ### 1. Prepare `development_pc`
 
@@ -152,7 +154,7 @@ Clone the repository and create the development environment:
 
 ```bash
 git clone <repository-url> PQT_network && cd PQT_network
-scripts/dev/setup.sh
+uv sync
 ```
 
 #### The TLS model
@@ -220,28 +222,45 @@ certificate.
 
 ```bash
 # set version = "x.y.z" in every packages/*/pyproject.toml and commit, then:
-scripts/release/build.sh            # --wheelhouse also bundles every dependency for offline hosts
+labnet bundle --site sites/pqt      # --driver <folder> for each driver package; --no-dependencies to use PyPI
 ```
 
-The release directory `PQT_network_releases/x.y.z/` (git-ignored) holds the wheel, `site.zip`
-(the lab's configuration from `site/`), `client-examples.zip`,
-`update_host.sh`, and `RELEASE.TXT` with the SHA-256 of each file. Copy it to
-a restricted, read-only share such as `\\192.168.50.40\LabNet-Releases\x.y.z`.
-The hashes detect wrong or damaged files; controlling who can write to the
-share is what keeps them trustworthy.
+The bundle `dist/labnet-x.y.z-pqt/` (git-ignored) holds the wheels (LabNet,
+the Control Center, the drivers, and every dependency), `site-pqt.zip` (the
+lab's configuration from `sites/pqt/`), and `MANIFEST.json` with the SHA-256
+of each file. Copy it to a restricted, read-only share such as
+`\\192.168.50.40\LabNet-Releases\x.y.z`. The hashes detect wrong or
+damaged files; controlling who can write to the share is what keeps them
+trustworthy.
 
-A wheel is the installable package archive. It contains the `labnet` package
-(Central, Lab PC, client, device families, generated contracts, migrations).
-It does **not** contain settings, keys, certificates, databases, the site
-configuration, or third-party dependencies (pip fetches those, or takes them
-from the `--wheelhouse` folder).
+A wheel is an installable package archive. It does **not** contain settings,
+keys, certificates, or databases; `labnet bundle` refuses a site folder that
+holds any.
+
+#### Installing from the bundle
+
+Every computer installs its role with `labnet update`. Run it from a
+throwaway environment, so it never runs from the environment it replaces:
+
+```powershell
+$B = '\\192.168.50.40\LabNet-Releases\x.y.z'
+py -3.11 -m venv $env:TEMP\labnet-update
+& $env:TEMP\labnet-update\Scripts\pip install --quiet --no-index --find-links $B\wheels labnet
+$labnet = "$env:TEMP\labnet-update\Scripts\labnet.exe"
+& $labnet update --from $B --role <central|control-center|lab-pc|client>
+```
+
+It verifies the bundle, refuses while the role runs, builds
+`C:\ProgramData\LabNet\venvs\<role>-x.y.z-<time>`, checks it, and only then
+points `C:\ProgramData\LabNet\<role>-venv` at it. The steps below use
+`$B` and `$labnet` from this block.
 
 ### 2. Set up `central_server_pc`
 
 1. **Certificates.** Copy `central.crt` and `central.key` to
    `C:\ProgramData\LabNet\certs\`.
 2. **Settings.** Create `C:\ProgramData\LabNet\central.env` from
-   [`site/central.env.example`](../../site/central.env.example):
+   [`sites/pqt/central.env.example`](../../sites/pqt/central.env.example):
 
    ```dotenv
    LABNET_DATABASE_URL=sqlite:///C:/ProgramData/LabNet/Central/labnet.db
@@ -249,12 +268,11 @@ from the `--wheelhouse` folder).
    LABNET_CENTRAL_BIND_PORT=8008
    ```
 
-3. **Install.** In Git Bash, run `update_host.sh`. It verifies the release,
-   creates `C:\ProgramData\LabNet\central-venv`, installs the wheel, and
-   creates the database schema.
+3. **Install.** This verifies the bundle, creates
+   `C:\ProgramData\LabNet\central-venv`, and creates the database schema.
 
-   ```bash
-   bash //192.168.50.40/LabNet-Releases/x.y.z/update_host.sh central
+   ```powershell
+   & $labnet update --from $B --role central
    ```
 
 4. **Users and their settings files**, in one command:
@@ -303,7 +321,7 @@ from the `--wheelhouse` folder).
    and forwards to Central with
    [`reverse_proxy`](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
    Central's private key never touches the Python process.
-   [`site/Caddyfile.example`](../../site/Caddyfile.example) is the whole file,
+   [`sites/pqt/Caddyfile.example`](../../sites/pqt/Caddyfile.example) is the whole file,
    with the Control Center's site and its logins added (see
    [Control Center](#control-center)).
 
@@ -322,7 +340,7 @@ from the `--wheelhouse` folder).
    `lab-pc-01.key` → `…\lab-pc.key`, and `labnet-ca.pem` → `…\labnet-ca.pem`.
 2. **Settings.** Rename the transferred `lab-pc-01.env` to
    `C:\ProgramData\LabNet\lab-pc.env` and add the lines from
-   [`site/lab-pc.env.example`](../../site/lab-pc.env.example):
+   [`sites/pqt/lab-pc.env.example`](../../sites/pqt/lab-pc.env.example):
 
    ```dotenv
    # from setup --write-env
@@ -343,12 +361,13 @@ from the `--wheelhouse` folder).
    The advertised target must match the IP in the certificate.
 3. **Drivers.** Install the vendor drivers or SDKs, and test each instrument
    locally (for example with `examples/05_local_hardware.py` adapted to its
-   family). The inventory module comes from the repository's `site/` directory.
-4. **Install.** This installs the wheel and `site/`, then loads `lab-pc.env`
-   and imports the inventory to catch mistakes immediately.
+   family). The inventory module comes from the repository's `sites/pqt/` folder.
+4. **Install.** This installs LabNet, the drivers and the site, then loads
+   `lab-pc.env` and builds the inventory's devices (without connecting), to
+   catch a mistake or a missing driver immediately.
 
-   ```bash
-   bash //192.168.50.40/LabNet-Releases/x.y.z/update_host.sh lab-pc
+   ```powershell
+   & $labnet update --from $B --role lab-pc
    ```
 
 5. **Start the Lab PC** by hand in its own PowerShell window, and leave it open:
@@ -366,18 +385,18 @@ from the `--wheelhouse` folder).
 
 1. Copy `labnet-ca.pem` to `C:\ProgramData\LabNet\certs\`, and save the
    transferred `researcher.env` as `C:\ProgramData\LabNet\client.env`.
-2. Install the library and the example scripts:
+2. Install the library and the drivers:
 
-   ```bash
-   bash //192.168.50.40/LabNet-Releases/x.y.z/update_host.sh client
+   ```powershell
+   & $labnet update --from $B --role client
    ```
 
 3. Point clients at the settings file once (user environment variable), then
-   run the first example:
+   run the first example (copied from the repository's `examples/`):
 
    ```powershell
    [Environment]::SetEnvironmentVariable("LABNET_ENV_FILE", "C:\ProgramData\LabNet\client.env", "User")
-   C:\ProgramData\LabNet\client-venv\Scripts\python.exe C:\ProgramData\LabNet\client-app\01_hello_device.py
+   C:\ProgramData\LabNet\client-venv\Scripts\python.exe 01_hello_device.py
    ```
 
    The script authenticates with Central at `192.168.50.10`, leases a device,
@@ -401,7 +420,7 @@ in this order; to stop one, press Ctrl+C in its window.
 Only Central has to come first; everything else recovers if it starts early.
 Lab PCs keep retrying their registration, and the Control Center shows a
 banner until Central answers. Before an update, stop the affected windows;
-`update_host.sh` refuses to run while that role is still running.
+`labnet update` refuses to run while that role is still running.
 
 ### Network rules summary
 
@@ -458,7 +477,7 @@ Control Center and every Lab PC.
 
 On `central_server_pc`:
 
-- [ ] Update the Control Center to this release (`update_host.sh
+- [ ] Update the Control Center to this release (`labnet update --role
       control-center`; see [Operations and upgrades](#operations-and-upgrades)).
 - [ ] In `C:\ProgramData\LabNet\control-center.env`, check:
       - `LABNET_AUTOMATION_DIR`, and that the folder is backed up;
@@ -472,7 +491,7 @@ On `central_server_pc`:
          prints ([Logins](#logins)).
 - [ ] The Caddyfile starts with `{ admin off }`, imports the logins snippet,
       and the Control Center's site block uses `import labnet_control_center`
-      ([`site/Caddyfile.example`](../../site/Caddyfile.example)).
+      ([`sites/pqt/Caddyfile.example`](../../sites/pqt/Caddyfile.example)).
 - [ ] Restart Caddy, then the Control Center.
 - [ ] **Check:**
       - opening the Control Center from another computer asks for a login,
@@ -484,7 +503,7 @@ On `central_server_pc`:
 
 On each Lab PC whose instruments may be automated:
 
-- [ ] In its inventory (`site/inventories/<lab-pc>.py`), wrap each such
+- [ ] In its inventory (`sites/pqt/inventories/<lab-pc>.py`), wrap each such
       device in `site_limits(...)` with the ranges from step 1
       ([Site limits](#site-limits)). Narrow the driver's limits; never copy
       them unexamined.
@@ -504,7 +523,7 @@ On `central_server_pc`, following
 - [ ] Create its Central user (`labnet-central-admin setup --user
       automation-watchdog …`).
 - [ ] Put its settings in `C:\ProgramData\LabNet\watchdog.env`, as in
-      [`site/watchdog.env.example`](../../site/watchdog.env.example).
+      [`sites/pqt/watchdog.env.example`](../../sites/pqt/watchdog.env.example).
 - [ ] Start it next to the Control Center. Then register its Task Scheduler
       task, so it also starts at logon.
 - [ ] **Check:** `http://127.0.0.1:8081/health/ready` answers 200 on the
@@ -727,7 +746,7 @@ Central for the network picture, so no API key ever reaches a browser.
 | `/api/me` | Who is signed in: `{"user": "alice", "logins": true}`, or `{"user": null, "logins": false}` without [logins](#logins) |
 | `/health/live`, `/health/ready` | Up, and up *and* reaching Central. No login needed |
 
-In development `scripts/dev/up.sh` starts it at `http://127.0.0.1:8080/status`.
+In development `labnet dev up` starts it at `http://127.0.0.1:8080/status`.
 
 ### Device control pages
 
@@ -1045,8 +1064,8 @@ $ccadmin = "C:\ProgramData\LabNet\control-center-venv\Scripts\labnet-control-cen
 - **`revoke`** works at once: the runner's next request is refused.
 - The Control Center doesn't need a restart for either.
 - In development, `labnet-control-center-admin --env-file .devnet/control-center.env runner …`.
-  On a checkout set up before this command existed, run `scripts/dev/setup.sh`
-  again to install it, or use `python -m labnet_control_center.admin`.
+  On a checkout set up before this command existed, run `uv sync` again to
+  install it, or use `python -m labnet_control_center.admin`.
 
 #### The runner API
 
@@ -1221,16 +1240,19 @@ Needs, once:
 
    Then run `wsl --shutdown`.
 
-Then, from Git Bash at the repository root, with the dev network up:
+Then, from the repository root, with the dev network up (`labnet dev up`):
 
 ```bash
-scripts/dev/runner.sh build        # the three images (again after changing labnet_automation)
-scripts/dev/runner.sh login        # once: in Claude, type /login, open the link, then /exit
-scripts/dev/runner.sh up           # issues a runner token into .devnet/runner.env, starts the runner
-scripts/dev/runner.sh logs         # watch it check itself, then claim runs
-scripts/dev/runner.sh self-check   # the checks alone
-scripts/dev/runner.sh down
+labnet runner build        # the three images (again after changing labnet_automation)
+labnet runner login        # once: in Claude, type /login, open the link, then /exit
+labnet runner up           # issues a runner token into .devnet/runner.env, starts the runner
+labnet runner logs         # watch it check itself, then claim runs
+labnet runner self-check   # the checks alone
+labnet runner status       # its containers, and whether the keep-alive runs
+labnet runner down
 ```
+
+`labnet runner` comes with `labnet-automation`; `uv sync` installs it.
 
 WSL stops a distribution, and its containers, about a minute after the last
 Windows program attached to it exits. So `up` also starts a hidden
@@ -1810,7 +1832,7 @@ A watchdog stopped mid-takeover releases what it holds. If its claim was
 
 2. Move `C:\LabNet-Keys\automation-watchdog.env` to
    `C:\ProgramData\LabNet\watchdog.env`, then delete `C:\LabNet-Keys`. Add
-   the lines from [`site/watchdog.env.example`](../../site/watchdog.env.example):
+   the lines from [`sites/pqt/watchdog.env.example`](../../sites/pqt/watchdog.env.example):
    at least `LABNET_AUTOMATION_DIR`, the Control Center's own (default
    `C:\ProgramData\LabNet\automation`), and `LABNET_CA_FILE` if
    `control-center.env` sets one.
@@ -1845,12 +1867,12 @@ A watchdog stopped mid-takeover releases what it holds. If its claim was
    - It doesn't matter whether it starts before or after the Control Center.
      Stop it before an update, like the Control Center.
 
-**In development,** `scripts/dev/seed.sh` creates the user and
-`.devnet/automation-watchdog.env`. `scripts/dev/up.sh` starts the watchdog
-after the Control Center (log: `.devnet/logs/automation-watchdog.log`,
-health: `http://127.0.0.1:8081/health/ready`). `down.sh` stops it first,
-`status.sh` shows it, and `restart.sh watchdog` restarts it. A network seeded
-before the watchdog existed gets its user with `scripts/dev/seed.sh
+**In development,** `labnet dev seed` creates the user and
+`.devnet/automation-watchdog.env`. `labnet dev up` starts the watchdog
+after the Control Center (log: `.devnet/logs/watchdog.log`,
+health: `http://127.0.0.1:8081/health/ready`). `labnet dev down` stops it first,
+`labnet dev status` shows it, and `labnet dev restart watchdog` restarts it. A
+network seeded before the watchdog existed gets its user with `labnet dev seed
 --watchdog`, which deletes nothing.
 
 ### Photo-Agent
@@ -1930,7 +1952,7 @@ environment.
 
 It writes scripts for people to run. It never runs them.
 
-In development, `scripts/dev/seed.sh` points it at this checkout's `packages/`
+In development, `labnet dev seed` points it at this checkout's `packages/`
 and `examples/`, and at `literature/` at the repository root (git-ignored;
 drop papers there). Its workspace is `.devnet/agent`.
 
@@ -1952,10 +1974,11 @@ people have the page open.
 
    Move `control-center.env` to `C:\ProgramData\LabNet\control-center.env` and
    add `LABNET_CONTROL_CENTER_PORT=8080`, as in
-   [`site/control-center.env.example`](../../site/control-center.env.example).
+   [`sites/pqt/control-center.env.example`](../../sites/pqt/control-center.env.example).
 2. **Install.** On the same computer, run
-   `bash <release>/update_host.sh control-center`. It installs into
-   `control-center-venv` and checks that the settings file loads.
+   `& $labnet update --from $B --role control-center`
+   ([Installing from the bundle](#installing-from-the-bundle)). It installs
+   into `control-center-venv` and checks that the settings file loads.
 3. **Address.** Choose how the lab reaches the page:
 
    | | `https://192.168.50.10:8443/status` | `https://pqt-control-center/status` |
@@ -1967,7 +1990,7 @@ people have the page open.
 
    Either site block forwards to the Control Center through the logins
    snippet that step 4 writes
-   ([`site/Caddyfile.example`](../../site/Caddyfile.example) has the whole file):
+   ([`sites/pqt/Caddyfile.example`](../../sites/pqt/Caddyfile.example) has the whole file):
 
    ```caddyfile
    {
@@ -2138,7 +2161,7 @@ The Control Center exempts the same two prefixes (lowercase, exactly). Caddy
 removes the two headers there, so they can't be forged.
 
 **Caddy's admin API must be off** (`admin off` in the Caddyfile's first
-block, as in [`site/Caddyfile.example`](../../site/Caddyfile.example)). Caddy
+block, as in [`sites/pqt/Caddyfile.example`](../../sites/pqt/Caddyfile.example)). Caddy
 otherwise answers on `localhost:2019` without a password: any program on the
 server could read the running config, secret included, or load one without
 logins.
@@ -2207,7 +2230,7 @@ lease per device. PostgreSQL uses the same models and migrations and suits
 several workers or replicas.
 
 Normal startup never creates or changes tables. Apply migrations explicitly
-(`update_host.sh central` and `setup` both do):
+(`labnet update --role central` and `setup` both do):
 
 ```powershell
 labnet-central-admin --env-file central.env db upgrade
@@ -2298,8 +2321,8 @@ Each removed setting now stops startup with a message naming its replacement.
 | `LABNET_LAB_PC_ENV_FILE` | `labnet-lab-pc --env-file PATH` |
 | `LABNET_GRPC_CA_FILE` (clients), `SSL_CERT_FILE` (for LabNet) | `LABNET_CA_FILE` |
 | `python -m examples.central_server` / `examples.lab_pc` | `labnet-central` / `labnet-lab-pc` |
-| `examples/lab_pc/device_inventory.py` | `site/inventories/<lab pc>.py` + `LABNET_DEVICE_INVENTORY` |
-| `lab-pc-app.zip`, `sync-client-example.zip` | `site.zip`, `client-examples.zip` |
+| `examples/lab_pc/device_inventory.py` | `sites/<lab>/inventories/<lab pc>.py` + `LABNET_DEVICE_INVENTORY` |
+| `lab-pc-app.zip`, `sync-client-example.zip` | the bundle's `site-<lab>.zip`; `examples/` |
 | Keys printed by `user create`, copied by hand | `setup --write-env` writes ready settings files |
 | OpenSSL commands | `labnet-certs` |
 
@@ -2312,9 +2335,9 @@ No code generation is needed:
 1. Install the vendor driver on the Lab PC and confirm the family's driver
    supports the model.
 2. Add an instance with a stable, network-wide unique `device_id` to that Lab
-   PC's inventory in `site/inventories/`, with any [site limits](#site-limits)
+   PC's inventory in `sites/pqt/inventories/`, with any [site limits](#site-limits)
    this bench needs.
-3. Release, run `update_host.sh lab-pc`, and restart the Lab PC.
+3. Make a bundle, run `labnet update --role lab-pc`, and restart the Lab PC.
 4. Confirm Central lists the device and a client can lease it.
 
 ### A new device family
@@ -2438,7 +2461,7 @@ def create_devices():
   (`(site limit)`), and in the review (`limit_source`).
 
 To change site limits, edit the inventory and restart that Lab PC
-(`scripts/dev/restart.sh <lab-pc id>` on the dev network).
+(`labnet dev restart <lab-pc id>` on the dev network).
 
 ### Contract compatibility
 
@@ -2466,8 +2489,8 @@ TLS policy and real TLS handshakes with `labnet-certs` certificates; Lab PC
 settings rules; and a full Central-to-Lab-PC-to-client stack. It also runs
 every script in `examples/` against real servers.
 
-`scripts/dev/codegen.sh` regenerates, checks, and tests in one step.
-Generated files are pinned to LF line endings in `.gitattributes` because
+`labnet driver build --core` regenerates LabNet's own protos (a driver
+package runs `labnet driver build` in its folder). Generated files are pinned to LF line endings in `.gitattributes` because
 `--check` compares bytes.
 
 ## Operations and upgrades
@@ -2475,17 +2498,22 @@ Generated files are pinned to LF line endings in `.gitattributes` because
 Start components in this order: Central (after any migration) and Caddy,
 then Lab PCs, then clients. For an upgrade:
 
-1. build and test a new release (`scripts/release/build.sh`);
-2. keep the previously approved release directory;
+1. test, then build a new bundle (`labnet bundle --site sites/pqt`);
+2. keep the previously approved bundle;
 3. stop the affected processes in reverse order;
-4. run `update_host.sh <role>` on each computer, which installs the wheel
-   and, on Central, backs up SQLite and migrates;
+4. run `labnet update --from <bundle> --role <role>` on each computer
+   ([Installing from the bundle](#installing-from-the-bundle)), which
+   installs side by side and, on Central, backs up SQLite and migrates;
 5. restart in dependency order; and
 6. repeat the deployment verification checks.
 
-Roll back code by stopping the process and running `update_host.sh` from the
-previous release. Reinstalling old code does not reverse a schema migration;
-restore the `labnet.db.before-<version>.<time>` backup for that.
+Roll back code by stopping the process and pointing `<role>-venv` back at
+the previous environment, which `<role>-RELEASE.json` names
+(`cmd /c rmdir C:\ProgramData\LabNet\<role>-venv`, then
+`cmd /c mklink /J C:\ProgramData\LabNet\<role>-venv <previous>`); each role
+keeps its last three in `C:\ProgramData\LabNet\venvs\`. Reinstalling old
+code does not reverse a schema migration; restore the
+`labnet.db.before-<version>.<time>` backup for that.
 
 ## Troubleshooting
 

@@ -1,5 +1,5 @@
 # Local credentials and environment overrides
-# (*.env catches filled-in copies of templates such as site/central.env.example)
+# (*.env catches filled-in copies of templates such as sites/pqt/central.env.example)
 .env
 **/.env
 *.env
@@ -29,7 +29,7 @@ dist/
 # Runtime logs
 *.log
 
-# Local development network state (scripts/dev/seed.sh): database, API keys, logs
+# Local development network state (labnet dev): database, API keys, logs
 .devnet/
 
 # Output of examples/04_scan_two_devices.py
@@ -43,5 +43,5 @@ literature/
 /experiments/
 /automation/
 
-# Release builds (scripts/release/build.sh); releases are kept on the release share
+# LabNet 2.x release builds (labnet bundle now writes to dist/)
 /PQT_network_releases/

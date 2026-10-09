@@ -83,7 +83,7 @@ def check_site(site: Path) -> list[Path]:
 @dataclass
 class Bundle:
     source: Path  # the LabNet checkout: packages/labnet, packages/labnet-control-center, ...
-    site: Path  # e.g. sites/pqt
+    site: Path  # e.g. sites/<lab>
     out: Path | None = None  # default: <source>/dist/labnet-<version>-<site>
     drivers: list[Path] = field(default_factory=list)  # driver package folders (labnet-sim by default)
     python_version: str = "3.11"

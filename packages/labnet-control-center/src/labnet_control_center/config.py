@@ -3,7 +3,7 @@
 Only the values change between the two:
 
 * development: ``LABNET_SERVER_URL=http://127.0.0.1:8008`` and a dev key
-  (``scripts/dev/seed.sh`` writes ``.devnet/control-center.env``);
+  (``labnet dev seed`` writes ``.devnet/control-center.env``);
 * lab: ``LABNET_SERVER_URL=https://<Central's address>``, the lab key, and
   ``LABNET_CA_FILE``. Caddy serves it over HTTPS under the lab's host name.
 

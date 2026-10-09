@@ -13,10 +13,10 @@ Short scripts to copy when writing an experiment. Each one adds one idea:
 ## Running them
 
 Start the local network, then point the examples at the researcher
-settings that `seed.sh` wrote:
+settings that `labnet dev` wrote:
 
 ```bash
-scripts/dev/seed.sh && scripts/dev/up.sh
+labnet dev up
 export LABNET_ENV_FILE=.devnet/researcher.env      # PowerShell: $env:LABNET_ENV_FILE = ".devnet\researcher.env"
 python examples/01_hello_device.py
 ```

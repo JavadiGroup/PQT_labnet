@@ -34,7 +34,7 @@
 
     Caddy's admin API (localhost:2019) would hand the secret to any program on
     this PC; the Caddyfile must turn it off ("admin off", see
-    site/Caddyfile.example). The script warns when -Caddyfile lacks it.
+    sites/<lab>/Caddyfile.example). The script warns when -Caddyfile lacks it.
 
     Health checks (/health/*) and the Automation runner's API
     (/api/automation/runner/*, which uses runner tokens) are forwarded without a
@@ -46,7 +46,7 @@
 .EXAMPLE
     .\setup_logins.ps1
 .EXAMPLE
-    .\setup_logins.ps1 -Reset alice -RunnerAddress 192.168.50.30
+    .\setup_logins.ps1 -Reset alice -RunnerAddress 192.0.2.30
 .EXAMPLE
     .\setup_logins.ps1 -WhatIf
 .EXAMPLE
@@ -63,7 +63,9 @@ param(
     [switch]$AnyRunnerAddress,
     [string]$Upstream = '',
     [string[]]$ServiceAccount = @(),
-    [string]$Caddyfile = 'C:\ProgramData\LabNet\Caddyfile'
+    [string]$Caddyfile = 'C:\ProgramData\LabNet\Caddyfile',
+    # What the browser's login box names; the lab's name, e.g. -Realm 'PQT Lab Control Center'.
+    [string]$Realm = 'LabNet Control Center'
 )
 
 Set-StrictMode -Version Latest
@@ -196,7 +198,7 @@ function Test-RunnerAddress([string]$Text) {
     $parts = $Text.Split('/')
     $address = $null
     if ($parts.Count -gt 2 -or -not [System.Net.IPAddress]::TryParse($parts[0], [ref]$address)) { return $false }
-    # .NET also takes short forms such as 192.168.50 (= 192.168.0.50); Caddy refuses them.
+    # .NET also takes short forms such as 10.0.50 (= 10.0.0.50); Caddy refuses them.
     if ($address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and
         $parts[0] -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { return $false }
     if ($parts.Count -eq 1) { return $true }
@@ -335,7 +337,7 @@ $proxy
 
 	# Everything else: each person's own login.
 	handle {
-		basic_auth bcrypt "PQT Lab Control Center" {
+		basic_auth bcrypt "$Realm" {
 $users
 		}
 $proxy
@@ -483,7 +485,7 @@ Write-Host '  1. Start the Caddyfile with a block that turns off the admin API: 
 Write-Host "     then add:   import $($CaddySnippet -replace '\\', '/')"
 Write-Host '     and in the Control Center''s site block, replace its reverse_proxy line with:'
 Write-Host '         import labnet_control_center'
-Write-Host '     (site/Caddyfile.example shows the whole file.)'
+Write-Host '     (Caddyfile.example in the site folder shows the whole file.)'
 Write-Host '  2. caddy validate --config C:\ProgramData\LabNet\Caddyfile'
 Write-Host '  3. Restart Caddy, then the Control Center, so both use the same secret.'
 Write-Host '  4. Check from a viewing computer: the page asks for a login, and the top bar shows "Signed in as <name>".'

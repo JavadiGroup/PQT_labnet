@@ -5,14 +5,14 @@ attached to other computers safely: one user at a time, through typed
 operations, with the instrument's own computer staying in charge of the
 hardware.
 
-Each everyday workflow is a short sequence of scripts:
+Each everyday workflow is one or two `labnet` commands:
 
 | I want to… | Run |
 | --- | --- |
-| Run the whole network on my laptop | `scripts/dev/setup.sh` → `seed.sh` → `up.sh` |
+| Run the whole network on my laptop | `uv sync`, then `labnet dev up` |
 | Try or copy an experiment script | [`examples/`](examples/README.md) |
-| Pick up code, proto, or device changes | `scripts/dev/redeploy.sh` |
-| Ship a change to the real lab | `scripts/release/build.sh`, then `update_host.sh` on each computer |
+| Pick up code, proto, or device changes | `labnet dev down`, `labnet driver build`, `labnet dev up` |
+| Ship a change to the real lab | `labnet bundle --site sites/pqt`, then `labnet update` on each computer |
 
 First-time setup of the lab computers (static IPs, certificates, reverse
 proxy, firewall) and the full settings reference are in
@@ -23,7 +23,7 @@ proxy, firewall) and the full settings reference are in
 - [Local development network](#local-development-network)
 - [The change loop: down → update → generate → redeploy](#the-change-loop-down--update--generate--redeploy)
 - [Updating the real lab network](#updating-the-real-lab-network)
-- [Script reference](#script-reference)
+- [Command reference](#command-reference)
 - [Repository layout](#repository-layout)
 
 ## How the network fits together
@@ -82,7 +82,7 @@ three small pieces; the rest is generated or shared framework code.
 | Network contract | `protos/<package>/v1/<family>.proto` | **You** |
 | Generated bindings, contracts and facades | `src/<package>/_generated/*` | `labnet driver build` |
 | Driver wrapper | `src/<package>/<family>/physical.py` | **You** |
-| Which instruments a Lab PC serves | `site/inventories/<lab pc>.py` | **You** |
+| Which instruments a Lab PC serves | `sites/<lab>/inventories/<lab pc>.py` | **You** |
 | gRPC server, lease checks, worker threads, client stubs | `labnet` (`grpc`, `device_manager`, `client`) | Framework, do not edit per family |
 
 ### 1. The proto is the contract
@@ -184,29 +184,32 @@ the lease with Central again every few seconds.
 
 ## Local development network
 
-The scripts run a complete network on one machine: Central, **two Lab
-PCs**, and the **Control Center** web interface. Everything binds to
-`127.0.0.1`.
+`labnet dev` runs a complete network on one machine: Central, **two Lab
+PCs**, the **Control Center** web interface and its safe-state watchdog.
+Everything binds to `127.0.0.1`.
 - The first Lab PC serves two DummyDevices and a simulated optics bench: a
   laser, an AOM and an EOM.
 - The second serves a DummyDevice, the SimulatedWavemeter and a two-channel
   AWG.
 
-**Prerequisites:** Python 3.11+ and bash. On Windows, use **Git Bash** (it
-comes with Git for Windows). From PowerShell, call it explicitly with
-`& "C:\Program Files\Git\bin\bash.exe" scripts/dev/up.sh`, because a bare
-`bash` may launch WSL instead.
+**Prerequisites:** Python 3.11+ and [uv](https://docs.astral.sh/uv/). The
+commands work the same from PowerShell, cmd, or a Unix shell; processes start
+in the background without opening windows.
 
 ```bash
-scripts/dev/setup.sh    # once: create .venv, install LabNet editable with all extras
-scripts/dev/seed.sh     # fresh database, users, and one settings file per user
-scripts/dev/up.sh       # start Central, each Lab PC, then the Control Center; waits until ready
-scripts/dev/status.sh   # health of each process + the device table clients see
-scripts/dev/smoke.sh    # lease every device, call it over gRPC, release
-scripts/dev/down.sh     # stop everything (data in .devnet/ is kept)
+uv sync                 # once, and after pulling: .venv with every package, editable
+labnet dev up           # seed .devnet/ if needed, start everything, wait until ready
+labnet dev status       # health of each process + the device table clients see
+labnet dev smoke        # lease every device, call it over gRPC, release
+labnet dev down         # stop everything (data in .devnet/ is kept)
+labnet dev seed         # start over: a fresh database, users, and settings files
 ```
 
-`status.sh` should show:
+Run them from the repository root with the virtual environment active, or
+prefix each with `uv run`. State lives in `.devnet/` under the current folder
+(`--dir` picks another).
+
+`labnet dev status` should show:
 
 ```text
 DEVICE           TYPE                 LAB PC         gRPC TARGET      STATE  LEASABLE
@@ -220,9 +223,9 @@ dev02-dummy-a    dummy_device         lab-pc-dev-02  127.0.0.1:50052  ready  yes
 dev02-wavemeter  simulated_wavemeter  lab-pc-dev-02  127.0.0.1:50052  ready  yes
 ```
 
-### What `seed.sh` creates
+### What `labnet dev seed` creates
 
-`seed.sh` writes `central.env`, then runs `labnet-central-admin setup`. That
+Seeding writes `central.env`, then runs `labnet-central-admin setup`. That
 creates the schema and every user, and writes each user's API key into its
 own settings file:
 
@@ -234,19 +237,22 @@ own settings file:
 | `lab-pc-dev-01.env` | ID + key, gRPC `:50051`, health `:9001`, inventory `labnet_sim.inventories.dev_lab_pc_01` |
 | `lab-pc-dev-02.env` | ID + key, gRPC `:50052`, health `:9002`, inventory `labnet_sim.inventories.dev_lab_pc_02` |
 | `control-center.env` | Central URL + the `control-center` key, port 8080, the experiments and automation folders (`experiments/` and `automation/` at the repository root, git-ignored, so re-seeding keeps them) and Photo-Agent's folders (papers in `literature/`) |
-| `logs/` | One log per process; `up.sh` prints the tail if a start fails |
+| `automation-watchdog.env` | The watchdog's Central key and port 8081 |
+| `run/` | One pid file per process, so `down` stops exactly what `up` started |
+| `logs/` | One log per process; `labnet dev up` prints the tail if a start fails |
 
 A dev Lab PC file is six lines. Having an API key turns on Central
 registration and lease checks; having no certificate keeps it on loopback
 plaintext. `.devnet/` is git-ignored, and its keys are throwaway.
 
-To change the topology (more Lab PCs, other ports), edit
-[`scripts/dev/config.sh`](scripts/dev/config.sh), add an inventory under
-`packages/labnet-sim/src/labnet_sim/inventories/`, then run `down.sh`, `seed.sh`, and `up.sh`.
+To change the topology (more Lab PCs, other ports), edit `DevNetwork` in
+[`labnet/dev/network.py`](packages/labnet/src/labnet/dev/network.py), add an inventory under
+`packages/labnet-sim/src/labnet_sim/inventories/`, then run `labnet dev down`,
+`labnet dev seed`, and `labnet dev up`.
 
 ### The Control Center
 
-`up.sh` also starts the web interface at
+`labnet dev up` also starts the web interface at
 **http://127.0.0.1:8080/status**: every Lab PC, its devices, their state
 (available, leased, unavailable), and each device's callable methods. The
 **Network** tab is that status page, grouped by Lab PC. The **Devices** tab
@@ -295,9 +301,9 @@ settings file's location and the address people open differ:
 
 | | Development | Lab (on `central_server_pc`) |
 | --- | --- | --- |
-| Settings | `.devnet/control-center.env` (written by `seed.sh`) | `C:\ProgramData\LabNet\control-center.env` |
+| Settings | `.devnet/control-center.env` (written by `labnet dev seed`) | `C:\ProgramData\LabNet\control-center.env` |
 | `LABNET_SERVER_URL` | `http://127.0.0.1:8008` | `http://127.0.0.1:8008` (same computer as Central) |
-| Started by | `scripts/dev/up.sh` | you, in its own window (see [starting the lab by hand](packages/labnet/README.md#starting-the-lab-by-hand)) |
+| Started by | `labnet dev up` | you, in its own window (see [starting the lab by hand](packages/labnet/README.md#starting-the-lab-by-hand)) |
 | Address | `http://127.0.0.1:8080/status` | `https://pqt-control-center/status` or `https://192.168.50.10:8443/status`, via Caddy |
 | Logins | none | One per person, checked by Caddy (`scripts/lab/setup_logins.ps1`; see [Logins](packages/labnet/README.md#logins)) |
 
@@ -323,24 +329,23 @@ Running processes never reload code. Device objects are built once at
 startup, so every change follows the same loop:
 
 ```bash
-scripts/dev/down.sh                  # 1. take the network down
+labnet dev down                      # 1. take the network down
 #                                       2. edit protos / physical.py / inventories
-scripts/dev/codegen.sh               # 3. regenerate + check + run tests
-scripts/dev/up.sh                    # 4. bring it back with the new code
-scripts/dev/smoke.sh                 # 5. prove every device still answers
+labnet driver build --core           # 3. regenerate (core protos; in a driver package, labnet driver build)
+pytest                               #    and run the tests
+labnet dev up                        # 4. bring it back with the new code
+labnet dev smoke                     # 5. prove every device still answers
 ```
 
-`scripts/dev/redeploy.sh` runs steps 1, 3, 4, and 5 in order and stops at the
-first failure. Use `redeploy.sh --skip-tests` for a faster loop when you only
-changed an inventory.
+Skip step 3 when you only changed an inventory or Python code.
 
 When the change touches only one component, restart just that one and leave
 the rest running:
 
 ```bash
-scripts/dev/restart.sh control-center      # Control Center Python or its .env
-scripts/dev/restart.sh lab-pc-dev-02       # that Lab PC's inventory or .env
-scripts/dev/restart.sh central             # Central code or central.env
+labnet dev restart control-center    # Control Center Python or its .env
+labnet dev restart lab-pc-dev-02     # that Lab PC's inventory or .env
+labnet dev restart central           # Central code or central.env
 ```
 
 Control Center page files (HTML, CSS, JS) need no restart: refresh the browser.
@@ -359,9 +364,9 @@ def create_devices():
     ]
 ```
 
-Then run `scripts/dev/redeploy.sh --skip-tests`. Device ids must be unique
+Then run `labnet dev restart lab-pc-dev-02`. Device ids must be unique
 across **all** Lab PCs. A removed device stays in Central's table as `stopped`
-and not leasable. Run `seed.sh` to clear it, or if you moved a device id to a
+and not leasable. Run `labnet dev seed` to clear it, or if you moved a device id to a
 different Lab PC (Central rejects that as an ownership conflict).
 
 ### Adding a new device family (a driver package)
@@ -395,7 +400,7 @@ retype fields, add new fields as optional, and reserve removed numbers. See
 ## Updating the real lab network
 
 Runtime computers never run from a git checkout. They install a versioned,
-hash-checked release built on the development PC. Each computer keeps its
+hash-checked bundle built on the development PC. Each computer keeps its
 settings in one file that updates never touch. You start each process by
 hand in its own window, in the order listed in
 [starting the lab by hand](packages/labnet/README.md#starting-the-lab-by-hand):
@@ -411,28 +416,29 @@ First-time setup of a computer is in
 [`packages/labnet/README.md` → Production deployment](packages/labnet/README.md#production-deployment).
 After that, every update follows these steps:
 
-### 1. Build the release (development PC)
+### 1. Build the bundle (development PC)
 
 ```bash
 # bump version = "x.y.z" in every packages/*/pyproject.toml, then:
+pytest && labnet driver build --core --check
 git commit -am "Release x.y.z"
-scripts/release/build.sh                   # add --wheelhouse for offline hosts
+labnet bundle --site sites/pqt             # add --driver <package> for each driver the lab uses
 ```
 
-`build.sh` refuses to run on uncommitted changes or to overwrite an existing
-version. It checks generated files, runs the tests, and stages (git-ignored;
-the release share is where releases are kept):
+`labnet bundle` refuses to overwrite an existing bundle, or to pack a site
+folder holding anything that looks like a secret (`*.env`, keys, logins). It
+makes (in `dist/`, git-ignored):
 
 ```text
-PQT_network_releases/x.y.z/
-  labnet-x.y.z-py3-none-any.whl   the package (all roles; extras pick dependencies)
-  site.zip                        site/: env templates + every Lab PC inventory
-  client-examples.zip             examples/: the 01–05 scripts
-  update_host.sh                  the installer each runtime computer runs
-  RELEASE.TXT                     git revision, version, SHA-256 of every file
+dist/labnet-x.y.z-pqt/
+  MANIFEST.json      version, site, git revision, which wheel each role installs, SHA-256 of every file
+  wheels/*.whl       LabNet, the Control Center, the drivers, and every dependency (for Windows, Python 3.11)
+  site-pqt.zip       sites/pqt/: env templates, the Caddyfile template, every Lab PC inventory
 ```
 
-Copy that directory to the release share (for example
+`--no-dependencies` leaves out the dependencies, for computers that can
+reach PyPI; `--python` and `--platform` choose another target. Copy the
+folder to the release share (for example
 `\\192.168.50.40\LabNet-Releases\x.y.z`).
 
 ### 2. Install it on each computer, in dependency order
@@ -440,61 +446,60 @@ Copy that directory to the release share (for example
 Stop processes in reverse order (clients, then Lab PCs, then the Control
 Center, Caddy, and Central). Then update and start them in this order:
 **Central → Control Center → each Lab PC → clients**. On each computer, in
-Git Bash:
+PowerShell:
 
-```bash
-R=//192.168.50.40/LabNet-Releases/x.y.z      # or a local copy of the directory
-bash $R/update_host.sh central               # on central_server_pc
-bash $R/update_host.sh control-center        # on central_server_pc too
-bash $R/update_host.sh lab-pc                # on each Lab PC
-bash $R/update_host.sh client                # on each client
+```powershell
+$B = '\\192.168.50.40\LabNet-Releases\x.y.z'     # or a local copy of the folder
+# labnet itself, in a throwaway environment, to run the update with:
+py -3.11 -m venv $env:TEMP\labnet-update
+& $env:TEMP\labnet-update\Scripts\pip install --quiet --no-index --find-links $B\wheels labnet
+& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role central          # on central_server_pc
+& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role control-center   # on central_server_pc too
+& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role lab-pc           # on each Lab PC
+& $env:TEMP\labnet-update\Scripts\labnet update --from $B --role client           # on each client
 ```
 
-`update_host.sh` handles the steps that are easy to get wrong:
+(For a `--no-dependencies` bundle, leave out `--no-index`.)
+
+`labnet update` handles the steps that are easy to get wrong:
 
 | Step | What it does |
 | --- | --- |
-| Verify | Compares every file's SHA-256 with `RELEASE.TXT`; stops on any mismatch |
-| Safety | Refuses to run while that role still answers on its loopback health port |
-| Install | Creates `C:/ProgramData/LabNet/<role>-venv` if needed and installs the wheel with the right extra |
+| Verify | Compares every file's SHA-256 with `MANIFEST.json`; stops on any mismatch |
+| Safety | Refuses to run while that role still answers on its loopback health port (for the Control Center, the watchdog's too) |
+| Install | Builds a new environment, `C:\ProgramData\LabNet\venvs\<role>-x.y.z-<time>`, from the bundle's wheels; the current one is untouched |
 | Central | Backs up the SQLite file named in `central.env` (`labnet.db.before-x.y.z.<time>`), then applies migrations |
-| Lab PC | Installs `site/` (the inventories), then loads `lab-pc.env` and imports its inventory, so mistakes appear now rather than at startup |
-| Client | Installs the example scripts in `client-app/` |
-| Record | Copies `RELEASE.TXT` to `C:/ProgramData/LabNet/<role>-RELEASE.TXT` |
+| Lab PC | Installs the site as `C:\ProgramData\LabNet\site\`, then loads `lab-pc.env` and builds its inventory's devices (without connecting), so a missing driver shows now rather than at startup |
+| Control Center | Loads `control-center.env` with the new code |
+| Switch | Points `C:\ProgramData\LabNet\<role>-venv` (a junction) at the new environment, and records the bundle in `<role>-RELEASE.json` |
 
-Start the role again (the script prints the command) and check its
-`/health/ready`. A Control Center installed before logins existed answers
-400 through Caddy until you either set up
-[logins](packages/labnet/README.md#logins) or add
-`LABNET_CONTROL_CENTER_ALLOWED_HOSTS=pqt-control-center,192.168.50.10` to
-`control-center.env`. Then run the
+If any check fails, the new environment is deleted and nothing else has
+changed. Start the role again and check its `/health/ready`. Then run the
 [deployment verification](packages/labnet/README.md#deployment-verification) checklist.
 
-**Rollback:** rerun `update_host.sh` from the previous release directory. The
-old `site/` and `client-app/` trees are also kept as `*.previous`. Reinstalling
-old code does not undo a schema migration: restore the `labnet.db.before-*`
-backup if you need to.
+**Rollback:** each role keeps its last three environments in
+`C:\ProgramData\LabNet\venvs\`, and `<role>-RELEASE.json` names the
+previous one. Point the junction back with
+`cmd /c rmdir C:\ProgramData\LabNet\central-venv` then
+`cmd /c mklink /J C:\ProgramData\LabNet\central-venv <previous environment>`.
+The previous site is kept as `site.previous`. Reinstalling old code does not
+undo a schema migration: restore the `labnet.db.before-*` backup if you need to.
 
-## Script reference
+## Command reference
 
-| Script / command | Where it runs | Purpose |
+| Command | Where it runs | Purpose |
 | --- | --- | --- |
-| `scripts/dev/setup.sh` | dev machine | Create `.venv`, editable install with `dev,central,lab-pc` extras |
-| `scripts/dev/seed.sh` | dev machine | Wipe `.devnet/`, write `central.env`, run `labnet-central-admin setup`, add dev ports and inventories |
-| `scripts/dev/up.sh` | dev machine | Start `labnet-central`, every `labnet-lab-pc` in `config.sh`, then `labnet-control-center`; wait for readiness |
-| `scripts/dev/status.sh` | dev machine | Component health + Central's device table |
-| `scripts/dev/smoke.sh` | dev machine | Lease and read every available device end to end |
-| `scripts/dev/runner.sh` (`build`, `login`, `up`, `logs`, `down`) | dev machine (Docker in WSL) | The [Automation runner](packages/labnet/README.md#the-automation-runner) against the dev Control Center |
-| `scripts/dev/down.sh` | dev machine | Stop Lab PCs, then Central (found by port; only Python processes) |
-| `scripts/dev/codegen.sh [--skip-tests]` | dev machine | Generate protos, `--check`, run pytest |
-| `scripts/dev/redeploy.sh [--skip-tests]` | dev machine | `down` → `codegen` → `up` → `smoke` |
-| `scripts/dev/restart.sh COMPONENT...` | dev machine | Restart only `central`, `control-center`, or a Lab PC id, leaving the rest running |
-| `scripts/dev/config.sh` | — | Dev topology: Lab-PC ids, ports, inventories |
-| `scripts/release/build.sh [--wheelhouse] [--output DIR]` | development PC | Build and stage a hash-recorded release |
-| `update_host.sh <central\|lab-pc\|client\|control-center>` | each runtime computer | Verify, install, migrate or install site/examples, record |
+| `labnet dev up / down / status / smoke` | dev machine | Start, stop, check, and exercise the local network |
+| `labnet dev seed [--watchdog]` | dev machine | Wipe `.devnet/`; write `central.env`, run `labnet-central-admin setup`, write every component's settings |
+| `labnet dev restart COMPONENT...` | dev machine | Restart only `central`, `control-center`, `watchdog`, or a Lab PC id, leaving the rest running |
+| `labnet runner build / login / up / logs / self-check / down` | dev machine (Docker; WSL on Windows) | The [Automation runner](packages/labnet/README.md#the-automation-runner) against the dev Control Center |
+| `labnet driver build [--core] [--check]` | dev machine | Generate protos (a driver package's, or LabNet's own with `--core`); `--check` fails on stale files |
+| `labnet driver new NAME --service SERVICE` | dev machine | A new driver package from the template |
+| `labnet bundle --site sites/<lab>` | development PC | Build a hash-recorded bundle: wheels, site, `MANIFEST.json` |
+| `labnet update --from BUNDLE --role ROLE` | each runtime computer | Verify, install side by side, migrate or check the site, switch over |
 | `labnet-certs init-ca / issue / show` | development PC | Create the private CA and server certificates |
 | `labnet-central-admin setup / user …` | Central | Migrate, create users, write their settings files |
-| `scripts/lab/setup_logins.ps1 [-Reset NAME] [-WhatIf]` | Central (PowerShell) | Control Center logins: Caddy snippet with each person's password hash, and the proxy secret in `control-center.env` |
+| `scripts/lab/setup_logins.ps1 [-Reset NAME] [-Realm TEXT] [-WhatIf]` | Central (PowerShell) | Control Center logins: Caddy snippet with each person's password hash, and the proxy secret in `control-center.env` |
 | `labnet-control-center-admin runner add / list / revoke` | Central | Issue and revoke Automation runner tokens |
 
 ## Repository layout
@@ -508,9 +513,9 @@ backup if you need to.
 | [`packages/labnet/src/labnet/lab_pc/`](packages/labnet/src/labnet/lab_pc/) | The `labnet-lab-pc` runtime and its settings rules |
 | [`packages/labnet-control-center/src/labnet_control_center/`](packages/labnet-control-center/src/labnet_control_center/) | The `labnet-control-center` web interface (backend + `static/` pages) |
 | `packages/*/tests/`, [`tests/`](tests/) | Each package's tests; full-stack and example tests |
-| [`site/`](site/README.md) | The PQT lab's configuration: env templates, the Caddyfile template, and Lab PC inventories |
+| [`sites/pqt/`](sites/pqt/README.md) | The PQT lab's configuration: env templates, the Caddyfile template, and Lab PC inventories |
 | [`examples/`](examples/README.md) | Experiment scripts 01–05 |
-| [`scripts/`](scripts/) | Development, release, and host-update scripts |
+| [`scripts/lab/`](scripts/lab/) | `setup_logins.ps1`, run on Central to manage Control Center logins |
 
 ## Security
 
