@@ -62,8 +62,8 @@ labnet bundle --site sites/pqt --driver <driver package dir> --driver packages/l
 labnet update --from dist\labnet-<version>-pqt --role lab-pc    # or central | control-center | client
 ```
 - Any `--driver` replaces the default `packages/labnet-sim`, but `lab_pc_01.py` still imports `labnet_sim`, so pass it explicitly.
-- *Planned* PQT drivers: add `--driver drivers/pqt_drivers --driver ..\PQT_devices`. `pqt-devices` isn't on PyPI, so its wheel must be in the bundle.
-  <!-- TODO(verify): dry-run that the bundle's pip step resolves the local pqt-devices wheel. -->
+- *Planned* PQT drivers: add `--driver drivers/pqt_drivers --driver ..\PQT_devices`. `pqt-devices` isn't on PyPI; the
+  bundle carries its wheel, built from the working tree, so check out the commit the sync PR names first.
 - Install in this order: Central -> Control Center -> each Lab PC -> clients. Stop processes in reverse order (`docs/deploying/updating.md`).
 - Each role keeps its last three environments for rollback.
 
