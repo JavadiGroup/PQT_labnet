@@ -449,6 +449,8 @@ def _command_value(response: object) -> Any:
         return str(result.text_value)
     if kind == "integer_sequence":
         return tuple(int(value) for value in result.integer_sequence.values)
+    if kind == "floating_point_sequence":
+        return tuple(float(value) for value in result.floating_point_sequence.values)
     raise RuntimeError("The device returned an empty or unknown command result.")
 
 

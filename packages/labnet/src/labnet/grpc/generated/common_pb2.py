@@ -25,21 +25,23 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1elabnet/devices/v1/common.proto\x12\x11labnet.devices.v1\x1a\x1bgoogle/protobuf/empty.proto\"\xb1\x01\n\x11ScalarMeasurement\x12\x10\n\x08sequence\x18\x01 \x01(\x04\x12\x14\n\x0ctimestamp_ns\x18\x02 \x01(\x03\x12\r\n\x05value\x18\x03 \x01(\x01\x12\x0c\n\x04unit\x18\x04 \x01(\t\x12\x36\n\x07quality\x18\x05 \x01(\x0e\x32%.labnet.devices.v1.MeasurementQuality\x12\x0e\n\x06status\x18\x06 \x01(\t\x12\x0f\n\x07\x63hannel\x18\x07 \x01(\t\"!\n\x0fIntegerSequence\x12\x0e\n\x06values\x18\x01 \x03(\x12\"\xed\x01\n\rCommandResult\x12,\n\nnone_value\x18\x01 \x01(\x0b\x32\x16.google.protobuf.EmptyH\x00\x12\x17\n\rboolean_value\x18\x02 \x01(\x08H\x00\x12\x17\n\rinteger_value\x18\x03 \x01(\x12H\x00\x12\x1e\n\x14\x66loating_point_value\x18\x04 \x01(\x01H\x00\x12\x14\n\ntext_value\x18\x05 \x01(\tH\x00\x12>\n\x10integer_sequence\x18\x06 \x01(\x0b\x32\".labnet.devices.v1.IntegerSequenceH\x00\x42\x06\n\x04kind\"Y\n\x0f\x43ommandResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x30\n\x06result\x18\x02 \x01(\x0b\x32 .labnet.devices.v1.CommandResult*\x95\x01\n\x12MeasurementQuality\x12#\n\x1fMEASUREMENT_QUALITY_UNSPECIFIED\x10\x00\x12\x1c\n\x18MEASUREMENT_QUALITY_GOOD\x10\x01\x12\x1f\n\x1bMEASUREMENT_QUALITY_SUSPECT\x10\x02\x12\x1b\n\x17MEASUREMENT_QUALITY_BAD\x10\x03\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1elabnet/devices/v1/common.proto\x12\x11labnet.devices.v1\x1a\x1bgoogle/protobuf/empty.proto\"\xb1\x01\n\x11ScalarMeasurement\x12\x10\n\x08sequence\x18\x01 \x01(\x04\x12\x14\n\x0ctimestamp_ns\x18\x02 \x01(\x03\x12\r\n\x05value\x18\x03 \x01(\x01\x12\x0c\n\x04unit\x18\x04 \x01(\t\x12\x36\n\x07quality\x18\x05 \x01(\x0e\x32%.labnet.devices.v1.MeasurementQuality\x12\x0e\n\x06status\x18\x06 \x01(\t\x12\x0f\n\x07\x63hannel\x18\x07 \x01(\t\"!\n\x0fIntegerSequence\x12\x0e\n\x06values\x18\x01 \x03(\x12\"\'\n\x15\x46loatingPointSequence\x12\x0e\n\x06values\x18\x01 \x03(\x01\"\xba\x02\n\rCommandResult\x12,\n\nnone_value\x18\x01 \x01(\x0b\x32\x16.google.protobuf.EmptyH\x00\x12\x17\n\rboolean_value\x18\x02 \x01(\x08H\x00\x12\x17\n\rinteger_value\x18\x03 \x01(\x12H\x00\x12\x1e\n\x14\x66loating_point_value\x18\x04 \x01(\x01H\x00\x12\x14\n\ntext_value\x18\x05 \x01(\tH\x00\x12>\n\x10integer_sequence\x18\x06 \x01(\x0b\x32\".labnet.devices.v1.IntegerSequenceH\x00\x12K\n\x17\x66loating_point_sequence\x18\x07 \x01(\x0b\x32(.labnet.devices.v1.FloatingPointSequenceH\x00\x42\x06\n\x04kind\"Y\n\x0f\x43ommandResponse\x12\x14\n\x0coperation_id\x18\x01 \x01(\t\x12\x30\n\x06result\x18\x02 \x01(\x0b\x32 .labnet.devices.v1.CommandResult*\x95\x01\n\x12MeasurementQuality\x12#\n\x1fMEASUREMENT_QUALITY_UNSPECIFIED\x10\x00\x12\x1c\n\x18MEASUREMENT_QUALITY_GOOD\x10\x01\x12\x1f\n\x1bMEASUREMENT_QUALITY_SUSPECT\x10\x02\x12\x1b\n\x17MEASUREMENT_QUALITY_BAD\x10\x03\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'labnet.devices.v1.common_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_MEASUREMENTQUALITY']._serialized_start=629
-  _globals['_MEASUREMENTQUALITY']._serialized_end=778
+  _globals['_MEASUREMENTQUALITY']._serialized_start=747
+  _globals['_MEASUREMENTQUALITY']._serialized_end=896
   _globals['_SCALARMEASUREMENT']._serialized_start=83
   _globals['_SCALARMEASUREMENT']._serialized_end=260
   _globals['_INTEGERSEQUENCE']._serialized_start=262
   _globals['_INTEGERSEQUENCE']._serialized_end=295
-  _globals['_COMMANDRESULT']._serialized_start=298
-  _globals['_COMMANDRESULT']._serialized_end=535
-  _globals['_COMMANDRESPONSE']._serialized_start=537
-  _globals['_COMMANDRESPONSE']._serialized_end=626
+  _globals['_FLOATINGPOINTSEQUENCE']._serialized_start=297
+  _globals['_FLOATINGPOINTSEQUENCE']._serialized_end=336
+  _globals['_COMMANDRESULT']._serialized_start=339
+  _globals['_COMMANDRESULT']._serialized_end=653
+  _globals['_COMMANDRESPONSE']._serialized_start=655
+  _globals['_COMMANDRESPONSE']._serialized_end=744
 # @@protoc_insertion_point(module_scope)
