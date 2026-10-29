@@ -24,17 +24,20 @@ Each Lab PC has one inventory module with a `create_devices()` function that
 returns one driver object per attached instrument:
 
 ```python
-from labnet_sim.simulated_wavemeter.physical import PhysicalSimulatedWavemeter
+from pqt_drivers import PhysicalWs7Wavemeter
 
 
 def create_devices():
-    return [PhysicalSimulatedWavemeter(device_id="lab-pc-01-wavemeter")]
+    return [PhysicalWs7Wavemeter("ws7")]
 ```
+
+`inventories/atto_pc.py` is the real one: the WS7, the Sacher VIS laser
+(with site limits) and the Horiba spectrometer on atto-pc.
 
 The Lab PC loads it through its `lab-pc.env`:
 
 ```dotenv
-LABNET_DEVICE_INVENTORY=C:/ProgramData/LabNet/site/inventories/lab_pc_01.py:create_devices
+LABNET_DEVICE_INVENTORY=C:/ProgramData/LabNet/site/inventories/atto_pc.py:create_devices
 ```
 
 Rules:
@@ -49,7 +52,7 @@ Rules:
 
 ## Adding a Lab PC
 
-1. Copy `inventories/lab_pc_01.py` to `inventories/lab_pc_02.py` and list
+1. Copy `inventories/atto_pc.py` to `inventories/<pc name>.py` and list
    that computer's instruments.
 2. On Central, create its identity:
    `labnet-central-admin --env-file central.env setup --lab-pc lab-pc-02 --write-env <dir> --server-url https://192.168.50.10 --ca-file C:/ProgramData/LabNet/certs/labnet-ca.pem`

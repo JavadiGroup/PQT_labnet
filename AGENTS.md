@@ -17,10 +17,10 @@ The lab's own configuration is in `sites/pqt/`.
 - `packages/labnet-automation/`: the Automation runner (`labnet-runner`).
 - `packages/labnet-sim/`: the simulated instruments. It is also the reference driver package; `simulated_wavemeter/` is a good one to copy.
 - `sites/pqt/`: the PQT config.
-  - Env templates, `Caddyfile.example` and `inventories/lab_pc_01.py`.
+  - Env templates, `Caddyfile.example` and `inventories/atto_pc.py` (atto-pc, 192.168.1.149: `ws7`, `sacher-vis`, `horiba-spec-vis`).
   - `labnet bundle` packs it; `labnet update` installs it to `C:\ProgramData\LabNet\site\`.
-- `drivers/pqt_drivers/` (*planned*): the LabNet driver package that wraps `PQT_devices`. The sync writes it, not people.
-  Create it once with `labnet driver new pqt-drivers --service <Family> --directory drivers/pqt_drivers`.
+- `drivers/pqt_drivers/`: the LabNet driver package that wraps `PQT_devices` (WS7, Sacher, Horiba), pinned to one
+  `pqt-devices` version. The sync writes it, not people. Its README lists what each family serves and why.
 - `docs/`: the full documentation. Start with `concepts.md`, `drivers.md`, `clients.md` and `deploying/`.
 - `examples/`: client scripts 01-05, tested by `tests/examples/`.
 
@@ -49,21 +49,20 @@ The full `pytest` run takes about 4 minutes.
   - Its `lab-pc.env` selects the file with `LABNET_DEVICE_INVENTORY`.
   - A `device_id` must be unique across the whole network and must never change.
 - **Site limits.** Wrap automatable instruments in `site_limits(dev, limits=..., choices=...)` from `labnet.devices.core`.
-  - Site limits can only narrow a driver's limits.
-  - `lab_pc_01.py` has a commented-out example.
-- **Current state.** Only simulated devices for now: `lab_pc_01.py` returns one `PhysicalSimulatedWavemeter`.
-  Real instruments will come only through the PQT_devices sync. Don't add other real-device drivers, and don't
-  uncomment the old `PhysicalSacherLaser` example in `lab_pc_01.py`.
+  - Site limits can only narrow a driver's limits. `atto_pc.py` limits the Sacher's moves and rebases to 757-782 nm.
+- **Real instruments come only through the PQT_devices sync** (`drivers/pqt_drivers/`). Don't add other real-device
+  drivers. Never serve the Sacher's `jog_steps`, `calibration_mode` or `reference_wavelength_nm`.
 
 ## Deployment
 Runtime PCs never run from git. A maintainer builds a bundle, and each PC installs it:
 ```powershell
-labnet bundle --site sites/pqt --driver <driver package dir> --driver packages/labnet-sim
+labnet bundle --site sites/pqt --python 3.13 --driver drivers/pqt_drivers --driver ..\PQT_devices --driver packages/labnet-sim
 labnet update --from dist\labnet-<version>-pqt --role lab-pc    # or central | control-center | client
 ```
-- Any `--driver` replaces the default `packages/labnet-sim`, but `lab_pc_01.py` still imports `labnet_sim`, so pass it explicitly.
-- *Planned* PQT drivers: add `--driver drivers/pqt_drivers --driver ..\PQT_devices`. `pqt-devices` isn't on PyPI; the
-  bundle carries its wheel, built from the working tree, so check out the commit the sync PR names first.
+- Every lab PC runs Python 3.13 (`py -3.13`); the bundle names the version and `install.ps1` uses it.
+- Any `--driver` replaces the default `packages/labnet-sim`; keep passing it while anything uses the simulators.
+- `pqt-devices` isn't on PyPI; the bundle carries its wheel, built from the working tree, so check out the
+  PQT_devices commit that `drivers/pqt_drivers` pins (`pqt-devices==X.Y.Z`) first.
 - Install in this order: Central -> Control Center -> each Lab PC -> clients. Stop processes in reverse order (`docs/deploying/updating.md`).
 - Each role keeps its last three environments for rollback.
 

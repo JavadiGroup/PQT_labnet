@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package pqt_drivers.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+
+message HoribaSpectrometerRequest {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message HoribaSpectrometerMeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+message HoribaSpectrometerSetValueRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double value = 3;
+  optional string unit = 4;
+}
+
+message HoribaSpectrometerGratingRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  // One of the grating names LabSpec reports (published as choices).
+  string grating = 3;
+}
+
+// A Horiba spectrometer through LabSpec 6's Raman-AFM server (PQT_devices
+// HoribaSpectrometer). An acquisition blocks for exposure x accumulations
+// plus LabSpec's overhead, so a client needs a timeout longer than that.
+service HoribaSpectrometerService {
+  // Acquire one spectrum and return its detector counts.
+  rpc AcquireSpectrum(HoribaSpectrometerRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "acquire_spectrum"
+      default_unit: "1"
+    };
+  }
+
+  // The wavelength (nm) of each count in the last spectrum acquired. Fails
+  // before the first acquisition.
+  rpc GetSpectrumWavelengths(HoribaSpectrometerRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "get_spectrum_wavelengths"
+      default_unit: "1"
+    };
+  }
+
+  // Exposure per accumulation. LabSpec can't report it, so this is the value last set.
+  rpc ReadExposure(HoribaSpectrometerRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_exposure"
+      default_unit: "s"
+    };
+  }
+
+  rpc SetExposure(HoribaSpectrometerSetValueRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_exposure"
+      default_unit: "s"
+    };
+  }
+
+  // LabSpec can't report it, so this is the value last set.
+  rpc ReadAccumulations(HoribaSpectrometerRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_accumulations"
+      default_unit: "1"
+    };
+  }
+
+  // A whole number of accumulations, at least 1.
+  rpc SetAccumulations(HoribaSpectrometerSetValueRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_accumulations"
+      default_unit: "1"
+    };
+  }
+
+  rpc ReadCenterWavelength(HoribaSpectrometerRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_center_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // Moves the grating. Returns the center wavelength LabSpec reports afterwards.
+  rpc SetCenterWavelength(HoribaSpectrometerSetValueRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_center_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // LabSpec's estimate of the total acquisition time.
+  rpc ReadAcquisitionTime(HoribaSpectrometerRequest) returns (HoribaSpectrometerMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_acquisition_time"
+      default_unit: "s"
+    };
+  }
+
+  rpc GetGrating(HoribaSpectrometerRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "get_grating"
+      default_unit: "1"
+    };
+  }
+
+  // Returns the grating selected afterwards.
+  rpc SetGrating(HoribaSpectrometerGratingRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_grating"
+      default_unit: "1"
+    };
+  }
+}
