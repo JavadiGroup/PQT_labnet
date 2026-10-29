@@ -712,6 +712,24 @@ def _command_result(result: Any) -> common_pb2.CommandResult:
             return common_pb2.CommandResult(
                 integer_sequence=common_pb2.IntegerSequence(values=values)
             )
+        # Not all integers: a sequence of real numbers (ints mixed in are
+        # widened) becomes a floating-point sequence.
+        floats: list[float] = []
+        for item in result:
+            if isinstance(item, bool) or not isinstance(item, numbers.Real):
+                break
+            value = float(item)
+            if not math.isfinite(value):
+                raise GrpcServiceError(
+                    grpc.StatusCode.INTERNAL,
+                    "INVALID_DEVICE_RESPONSE",
+                    "The device returned a non-finite value in a command result sequence.",
+                )
+            floats.append(value)
+        else:
+            return common_pb2.CommandResult(
+                floating_point_sequence=common_pb2.FloatingPointSequence(values=floats)
+            )
     raise GrpcServiceError(
         grpc.StatusCode.INTERNAL,
         "INVALID_DEVICE_RESPONSE",

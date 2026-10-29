@@ -44,7 +44,7 @@ AcmeThing` creates a working one, and
    | --- | --- | --- |
    | `RPC_PATTERN_SCALAR_READ` | Unary | One physical read, returned as a scalar measurement |
    | `RPC_PATTERN_SCALAR_WRITE` | Unary | An absolute double setpoint, returned as a scalar measurement |
-   | `RPC_PATTERN_UNARY_COMMAND` | Unary | Any driver method; its return value comes back as a typed `CommandResult` (none, bool, integer, float, text, or integer list) |
+   | `RPC_PATTERN_UNARY_COMMAND` | Unary | Any driver method; its return value comes back as a typed `CommandResult` (none, bool, integer, float, text, integer list, or float list) |
    | `RPC_PATTERN_POLLED_SCALAR_STREAM` | Server streaming | Repeated physical reads with scheduling, cancellation, lease revalidation, and backpressure |
 
 2. **Generate** with `labnet driver build` (needs `labnet[driver-dev]`).

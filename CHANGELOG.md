@@ -8,6 +8,14 @@ together with the same version.
 
 ## [Unreleased]
 
+### Added
+
+- Unary commands can return a **list of decimal numbers**, e.g. a spectrum.
+  A driver method that returns a sequence of real numbers (not all integers)
+  comes back to clients as a tuple of floats (`CommandResult.floating_point_sequence`).
+  Non-finite values are refused. Lab PCs must be updated before clients that
+  rely on it.
+
 ## [3.0.0] - 2026-10-09
 
 The first public release.

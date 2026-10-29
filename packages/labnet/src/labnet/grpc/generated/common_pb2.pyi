@@ -43,21 +43,29 @@ class IntegerSequence(_message.Message):
     values: _containers.RepeatedScalarFieldContainer[int]
     def __init__(self, values: _Optional[_Iterable[int]] = ...) -> None: ...
 
+class FloatingPointSequence(_message.Message):
+    __slots__ = ("values",)
+    VALUES_FIELD_NUMBER: _ClassVar[int]
+    values: _containers.RepeatedScalarFieldContainer[float]
+    def __init__(self, values: _Optional[_Iterable[float]] = ...) -> None: ...
+
 class CommandResult(_message.Message):
-    __slots__ = ("none_value", "boolean_value", "integer_value", "floating_point_value", "text_value", "integer_sequence")
+    __slots__ = ("none_value", "boolean_value", "integer_value", "floating_point_value", "text_value", "integer_sequence", "floating_point_sequence")
     NONE_VALUE_FIELD_NUMBER: _ClassVar[int]
     BOOLEAN_VALUE_FIELD_NUMBER: _ClassVar[int]
     INTEGER_VALUE_FIELD_NUMBER: _ClassVar[int]
     FLOATING_POINT_VALUE_FIELD_NUMBER: _ClassVar[int]
     TEXT_VALUE_FIELD_NUMBER: _ClassVar[int]
     INTEGER_SEQUENCE_FIELD_NUMBER: _ClassVar[int]
+    FLOATING_POINT_SEQUENCE_FIELD_NUMBER: _ClassVar[int]
     none_value: _empty_pb2.Empty
     boolean_value: bool
     integer_value: int
     floating_point_value: float
     text_value: str
     integer_sequence: IntegerSequence
-    def __init__(self, none_value: _Optional[_Union[_empty_pb2.Empty, _Mapping]] = ..., boolean_value: _Optional[bool] = ..., integer_value: _Optional[int] = ..., floating_point_value: _Optional[float] = ..., text_value: _Optional[str] = ..., integer_sequence: _Optional[_Union[IntegerSequence, _Mapping]] = ...) -> None: ...
+    floating_point_sequence: FloatingPointSequence
+    def __init__(self, none_value: _Optional[_Union[_empty_pb2.Empty, _Mapping]] = ..., boolean_value: _Optional[bool] = ..., integer_value: _Optional[int] = ..., floating_point_value: _Optional[float] = ..., text_value: _Optional[str] = ..., integer_sequence: _Optional[_Union[IntegerSequence, _Mapping]] = ..., floating_point_sequence: _Optional[_Union[FloatingPointSequence, _Mapping]] = ...) -> None: ...
 
 class CommandResponse(_message.Message):
     __slots__ = ("operation_id", "result")
