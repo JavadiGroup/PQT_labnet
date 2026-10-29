@@ -41,6 +41,11 @@ message IntegerSequence {
   repeated sint64 values = 1;
 }
 
+// Finite doubles, e.g. a spectrum's counts or wavelength axis.
+message FloatingPointSequence {
+  repeated double values = 1;
+}
+
 message CommandResult {
   oneof kind {
     google.protobuf.Empty none_value = 1;
@@ -49,6 +54,7 @@ message CommandResult {
     double floating_point_value = 4;
     string text_value = 5;
     IntegerSequence integer_sequence = 6;
+    FloatingPointSequence floating_point_sequence = 7;
   }
 }
 
