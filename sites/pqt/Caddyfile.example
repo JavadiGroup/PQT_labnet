@@ -1,4 +1,5 @@
-# Caddy for the lab, on central_server_pc. Copy to C:\ProgramData\LabNet\Caddyfile.
+# Caddy for the lab, on atto-pc (192.168.1.149), which runs Central, the
+# Control Center and a Lab PC. Copy to C:\ProgramData\LabNet\Caddyfile.
 # Check it:  caddy validate --config C:\ProgramData\LabNet\Caddyfile
 # Start it:  caddy run --config C:\ProgramData\LabNet\Caddyfile
 # Needs Caddy 2.8 or later (the basic_auth directive). See docs/deploying/index.md
@@ -17,7 +18,7 @@
 import C:/ProgramData/LabNet/caddy-logins.caddy
 
 # Central: Lab PCs and Python clients, with their API keys. No logins here.
-https://192.168.50.10 {
+https://192.168.1.149 {
 	tls C:/ProgramData/LabNet/certs/central.crt C:/ProgramData/LabNet/certs/central.key
 	reverse_proxy 127.0.0.1:8008
 }
@@ -26,7 +27,7 @@ https://192.168.50.10 {
 # forwards to 127.0.0.1:8080 with X-LabNet-Proxy (the secret) and
 # X-LabNet-User (the login); /health/* and the Automation runner's API
 # (/api/automation/runner/*, runner tokens) skip the login.
-https://pqt-control-center {  # or: https://192.168.50.10:8443 with Central's tls line
+https://192.168.1.149:8443 {
 	tls C:/ProgramData/LabNet/certs/control-center.crt C:/ProgramData/LabNet/certs/control-center.key
 	import labnet_control_center
 }

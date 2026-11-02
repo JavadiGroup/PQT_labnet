@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pqt-drivers"
+version = "0.1.0"
+description = "LabNet drivers for the PQT lab's instruments, wrapping PQT_devices"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "labnet>=3.0.0,<3.1",
+    # The exact PQT_devices release these wrappers were written and tested against.
+    # The sync updates it; never loosen it to a range.
+    "pqt-devices==1.0.0",
+]
+
+[project.optional-dependencies]
+# Building the protos and testing. grpcio-tools is pinned to labnet's own version:
+# generated code must not change when someone else builds it.
+dev = [
+    "grpcio-tools==1.81.1",
+    "pytest>=8",
+]
+
+# How Lab PCs, clients and the Control Center find this driver: one entry per device type.
+# `labnet driver build` checks these against the protos.
+[project.entry-points."labnet.devices"]
+horiba_spectrometer = "pqt_drivers._generated.contracts:HORIBA_SPECTROMETER_CONTRACT"
+sacher_laser = "pqt_drivers._generated.contracts:SACHER_LASER_CONTRACT"
+ws7_wavemeter = "pqt_drivers._generated.contracts:WS7_WAVEMETER_CONTRACT"
+
+# The Control Center's device page for each type: src/pqt_drivers/panels/<device_type>.js.
+# Needs a Control Center that serves driver panels (labnet-control-center with
+# labnet.control_center.panels); an older one shows its generic page instead.
+[project.entry-points."labnet.control_center.panels"]
+horiba_spectrometer = "pqt_drivers.panels"
+sacher_laser = "pqt_drivers.panels"
+ws7_wavemeter = "pqt_drivers.panels"
+
+# labnet driver build: protos/pqt_drivers/v1/*.proto -> src/pqt_drivers/_generated/
+[tool.labnet.driver]
+package = "pqt_drivers"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pqt_drivers*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"pqt_drivers._generated" = ["*.pyi"]
+"pqt_drivers.panels" = ["*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"

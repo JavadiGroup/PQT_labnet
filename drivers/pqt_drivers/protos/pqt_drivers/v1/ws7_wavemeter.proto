@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+// This driver's own package: labnet.* belongs to LabNet, and a package of its
+// own means its names can never collide with another driver's.
+package pqt_drivers.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+import "labnet/devices/v1/transfer.proto";
+
+message Ws7WavemeterRequest {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message Ws7WavemeterMeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+message Ws7WavemeterSetExposureRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  // Whole milliseconds, within the range the WS7 reports. Auto exposure must be off.
+  double value = 3;
+  optional string unit = 4;
+}
+
+message Ws7WavemeterAutoExposureRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  bool enabled = 3;
+}
+
+// A HighFinesse WS7 wavemeter (PQT_devices WS7Wavemeter), read on its default
+// channel. It reads only; the HighFinesse application keeps running and
+// measuring when a client or the Lab PC lets go of it.
+service Ws7WavemeterService {
+  // The last calculated vacuum wavelength. Fails when there is no usable signal.
+  rpc ReadWavelength(Ws7WavemeterRequest) returns (Ws7WavemeterMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // A live wavelength. A sample without a usable signal (no light, over- or
+  // under-exposed) is marked bad instead of ending the stream.
+  rpc StreamWavelength(labnet.devices.v1.StreamDataRequest) returns (stream labnet.devices.v1.StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_wavelength_sample"
+      default_unit: "nm"
+    };
+  }
+
+  rpc ReadFrequency(Ws7WavemeterRequest) returns (Ws7WavemeterMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_frequency"
+      default_unit: "THz"
+    };
+  }
+
+  rpc ReadTemperature(Ws7WavemeterRequest) returns (Ws7WavemeterMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_temperature"
+      default_unit: "degC"
+    };
+  }
+
+  rpc ReadExposure(Ws7WavemeterRequest) returns (Ws7WavemeterMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_exposure"
+      default_unit: "ms"
+    };
+  }
+
+  // Returns the exposure the WS7 reports afterwards.
+  rpc SetExposure(Ws7WavemeterSetExposureRequest) returns (Ws7WavemeterMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_exposure"
+      default_unit: "ms"
+    };
+  }
+
+  rpc GetAutoExposure(Ws7WavemeterRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "get_auto_exposure"
+      default_unit: "1"
+    };
+  }
+
+  // Returns the auto-exposure state the WS7 reports afterwards.
+  rpc SetAutoExposure(Ws7WavemeterAutoExposureRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "set_auto_exposure"
+      default_unit: "1"
+    };
+  }
+
+  // "stopped", "adjusting" or "measuring".
+  rpc GetMeasurementState(Ws7WavemeterRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "get_measurement_state"
+      default_unit: "1"
+    };
+  }
+
+  // Start or stop HighFinesse acquisition (for every user of the WS7). Both
+  // return the measurement state afterwards.
+  rpc StartMeasurement(Ws7WavemeterRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "start_measurement"
+      default_unit: "1"
+    };
+  }
+
+  rpc StopMeasurement(Ws7WavemeterRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "stop_measurement"
+      default_unit: "1"
+    };
+  }
+}

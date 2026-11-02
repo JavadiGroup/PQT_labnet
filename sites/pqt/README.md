@@ -14,6 +14,9 @@ code: `labnet bundle --site sites/pqt` packs it as `site-pqt.zip`, and
 | `Caddyfile.example` | Central | Template for `C:\ProgramData\LabNet\Caddyfile`: Central's HTTPS site, and the Control Center's with the logins that `scripts/lab/setup_logins.ps1` writes |
 | `inventories/<lab pc>.py` | that Lab PC | Which instruments the Lab PC serves |
 
+atto-pc (192.168.1.149) runs Central (`https://192.168.1.149`), the Control
+Center (`https://192.168.1.149:8443`) and its own Lab PC (gRPC on port 50051).
+
 Real `.env` files hold API keys, and the Caddy logins snippet holds the
 Control Center's proxy secret. They live only on their own computer, never
 in this repository.
@@ -24,17 +27,20 @@ Each Lab PC has one inventory module with a `create_devices()` function that
 returns one driver object per attached instrument:
 
 ```python
-from labnet_sim.simulated_wavemeter.physical import PhysicalSimulatedWavemeter
+from pqt_drivers import PhysicalWs7Wavemeter
 
 
 def create_devices():
-    return [PhysicalSimulatedWavemeter(device_id="lab-pc-01-wavemeter")]
+    return [PhysicalWs7Wavemeter("ws7")]
 ```
+
+`inventories/atto_pc.py` is the real one: the WS7, the Sacher VIS laser
+(with site limits) and the Horiba spectrometer on atto-pc.
 
 The Lab PC loads it through its `lab-pc.env`:
 
 ```dotenv
-LABNET_DEVICE_INVENTORY=C:/ProgramData/LabNet/site/inventories/lab_pc_01.py:create_devices
+LABNET_DEVICE_INVENTORY=C:/ProgramData/LabNet/site/inventories/atto_pc.py:create_devices
 ```
 
 Rules:
@@ -49,10 +55,10 @@ Rules:
 
 ## Adding a Lab PC
 
-1. Copy `inventories/lab_pc_01.py` to `inventories/lab_pc_02.py` and list
+1. Copy `inventories/atto_pc.py` to `inventories/<pc name>.py` and list
    that computer's instruments.
 2. On Central, create its identity:
-   `labnet-central-admin --env-file central.env setup --lab-pc lab-pc-02 --write-env <dir> --server-url https://192.168.50.10 --ca-file C:/ProgramData/LabNet/certs/labnet-ca.pem`
+   `labnet-central-admin --env-file central.env setup --lab-pc lab-pc-02 --write-env <dir> --server-url https://192.168.1.149 --ca-file C:/ProgramData/LabNet/certs/labnet-ca.pem`
 3. Issue its certificate on the development PC:
    `labnet-certs issue lab-pc-02 --ip <its static IP> --dir C:\LabNet-CA`
 4. Commit the inventory, make a bundle, and follow the Lab PC steps in

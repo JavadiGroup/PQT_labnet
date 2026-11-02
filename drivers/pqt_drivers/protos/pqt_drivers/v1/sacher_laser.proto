@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package pqt_drivers.v1;
+
+import "labnet/devices/v1/common.proto";
+import "labnet/devices/v1/rpc_options.proto";
+import "labnet/devices/v1/transfer.proto";
+
+message SacherLaserRequest {
+  string device_id = 1;
+  string operation_id = 2;
+}
+
+message SacherLaserMeasurementResponse {
+  string operation_id = 1;
+  labnet.devices.v1.ScalarMeasurement measurement = 2;
+}
+
+message SacherLaserMoveRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double wavelength_nm = 3;
+}
+
+message SacherLaserRebaseRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  // A trusted wavelength for where the laser is now, read from the wavemeter.
+  double measured_wavelength_nm = 3;
+}
+
+message SacherLaserSetVelocityRequest {
+  string device_id = 1;
+  string operation_id = 2;
+  double value = 3;
+  optional string unit = 4;
+}
+
+// A Sacher laser's tuning motor on a maxon EPOS2 (PQT_devices SacherLaser).
+// Wavelengths come from the motor position and the calibration curve, not
+// from an optical measurement. Moves block until the motor has stopped, so a
+// client waiting for one needs a timeout longer than the move.
+service SacherLaserService {
+  // Move to a wavelength and make it the commanded one. Returns nothing; read
+  // the live wavelength afterwards.
+  rpc MoveToWavelengthNm(SacherLaserMoveRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "move_to_wavelength_nm"
+      default_unit: "1"
+    };
+  }
+
+  // Where the motor is now: calibration(live position + offset).
+  rpc ReadLiveWavelength(SacherLaserRequest) returns (SacherLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_live_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  rpc StreamLiveWavelength(labnet.devices.v1.StreamDataRequest) returns (stream labnet.devices.v1.StreamDataResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_POLLED_SCALAR_STREAM
+      physical_method: "read_live_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // The last wavelength passed to MoveToWavelengthNm. Fails before the first move.
+  rpc ReadCommandedWavelength(SacherLaserRequest) returns (SacherLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_commanded_wavelength"
+      default_unit: "nm"
+    };
+  }
+
+  // Make the motor's positions match a wavemeter reading, without moving.
+  // Returns the live wavelength afterwards.
+  rpc RebasePositionAxis(SacherLaserRebaseRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "rebase_position_axis"
+      default_unit: "1"
+    };
+  }
+
+  rpc ReadVelocity(SacherLaserRequest) returns (SacherLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_READ
+      physical_method: "read_velocity"
+      default_unit: "nm/s"
+    };
+  }
+
+  // Returns the velocity the controller reports afterwards.
+  rpc SetVelocity(SacherLaserSetVelocityRequest) returns (SacherLaserMeasurementResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_SCALAR_WRITE
+      physical_method: "set_velocity"
+      default_unit: "nm/s"
+    };
+  }
+
+  // "ST_DISABLED", "ST_ENABLED", "ST_QUICKSTOP" or "ST_FAULT".
+  rpc GetState(SacherLaserRequest) returns (labnet.devices.v1.CommandResponse) {
+    option (labnet.devices.v1.rpc) = {
+      pattern: RPC_PATTERN_UNARY_COMMAND
+      physical_method: "get_state"
+      default_unit: "1"
+    };
+  }
+}
