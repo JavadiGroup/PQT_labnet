@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pqt-drivers"
-version = "0.1.0"
+version = "0.1.1"
 description = "LabNet drivers for the PQT lab's instruments, wrapping PQT_devices"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,7 +12,7 @@ dependencies = [
     "labnet>=3.0.0,<3.1",
     # The exact PQT_devices release these wrappers were written and tested against.
     # The sync updates it; never loosen it to a range.
-    "pqt-devices==1.0.0",
+    "pqt-devices==1.0.1",
 ]
 
 [project.optional-dependencies]
