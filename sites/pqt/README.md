@@ -13,9 +13,11 @@ code: `labnet bundle --site sites/pqt` packs it as `site-pqt.zip`, and
 | `watchdog.env.example` | Central | Template for `C:\ProgramData\LabNet\watchdog.env` (the safe-state watchdog for Automation grants) |
 | `Caddyfile.example` | Central | Template for `C:\ProgramData\LabNet\Caddyfile`: Central's HTTPS site, and the Control Center's with the logins that `scripts/lab/setup_logins.ps1` writes |
 | `inventories/<lab pc>.py` | that Lab PC | Which instruments the Lab PC serves |
+| `DEPLOY.md` | atto-pc | The deployment checklist, with this lab's values filled in |
 
 atto-pc (192.168.1.149) runs Central (`https://192.168.1.149`), the Control
-Center (`https://192.168.1.149:8443`) and its own Lab PC (gRPC on port 50051).
+Center (`https://192.168.1.149:8443`) and its own Lab PC (gRPC on port 50051),
+with one certificate for that IP. To set it up, follow [DEPLOY.md](DEPLOY.md).
 
 Real `.env` files hold API keys, and the Caddy logins snippet holds the
 Control Center's proxy secret. They live only on their own computer, never
