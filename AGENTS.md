@@ -19,6 +19,8 @@ The lab's own configuration is in `sites/pqt/`.
 - `sites/pqt/`: the PQT config.
   - Env templates, `Caddyfile.example` and `inventories/atto_pc.py`. atto-pc (192.168.1.149) runs Central
     (`https://192.168.1.149`), the Control Center (`:8443`) and the Lab PC serving `ws7`, `sacher-vis`, `horiba-spec-vis`.
+  - `DEPLOY.md` is the deployment checklist for atto-pc. Keep it in step with the templates and with
+    `docs/deploying/` when either changes.
   - `labnet bundle` packs it; `labnet update` installs it to `C:\ProgramData\LabNet\site\`.
 - `drivers/pqt_drivers/`: the LabNet driver package that wraps `PQT_devices` (WS7, Sacher, Horiba), pinned to one
   `pqt-devices` version. The sync writes it, not people. Its README lists what each family serves and why.
