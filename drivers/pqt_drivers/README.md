@@ -31,6 +31,31 @@ tests and the pin together.
   Exposure and accumulations are the values last set (LabSpec can't report
   them). Grating names are published as choices at connect.
 
+## Device pages
+
+The Control Center's page for each device (`https://<control center>/<device id>`)
+comes from `src/pqt_drivers/panels/<device_type>.js`, registered under the
+entry-point group `labnet.control_center.panels`. It needs a Control Center
+that serves driver panels; an older one shows its generic page (script box
+only).
+
+- **WS7** (`ws7`): live wavelength graph (Play), with gaps where the WS7 has no
+  signal; exposure, auto exposure, measurement start/stop; Refresh reads the
+  frequency, temperature and state.
+- **Sacher** (`sacher-vis`): live and commanded wavelength, a live graph, Move to a
+  target inside the Lab PC's limits, velocity. **Rebase** asks the person to check
+  that the wavemeter is reading this laser, asks again if the value is more than
+  2 nm from the live wavelength, and refuses values outside the limits (as the
+  Lab PC does).
+- **Horiba** (`horiba-spec-vis`): Live repeats one acquisition after another, or
+  Acquire takes one; the spectrum plot zooms (drag, scroll, double-click). The
+  settings (exposure, accumulations, center wavelength, grating) apply together.
+
+Opening a page leases nothing. A button that talks to the device leases it for
+the page until Pause/Release, 5 minutes without a command, or the hold limit
+(30 min). `tests/test_panels.py` checks that every method a page calls is in its
+contract with the arguments it passes.
+
 ## Use
 
 A Lab PC creates the drivers in its inventory (`sites/pqt/inventories/`):

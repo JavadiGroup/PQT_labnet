@@ -14,6 +14,9 @@ code: `labnet bundle --site sites/pqt` packs it as `site-pqt.zip`, and
 | `Caddyfile.example` | Central | Template for `C:\ProgramData\LabNet\Caddyfile`: Central's HTTPS site, and the Control Center's with the logins that `scripts/lab/setup_logins.ps1` writes |
 | `inventories/<lab pc>.py` | that Lab PC | Which instruments the Lab PC serves |
 
+atto-pc (192.168.1.149) runs Central (`https://192.168.1.149`), the Control
+Center (`https://192.168.1.149:8443`) and its own Lab PC (gRPC on port 50051).
+
 Real `.env` files hold API keys, and the Caddy logins snippet holds the
 Control Center's proxy secret. They live only on their own computer, never
 in this repository.
@@ -55,7 +58,7 @@ Rules:
 1. Copy `inventories/atto_pc.py` to `inventories/<pc name>.py` and list
    that computer's instruments.
 2. On Central, create its identity:
-   `labnet-central-admin --env-file central.env setup --lab-pc lab-pc-02 --write-env <dir> --server-url https://192.168.50.10 --ca-file C:/ProgramData/LabNet/certs/labnet-ca.pem`
+   `labnet-central-admin --env-file central.env setup --lab-pc lab-pc-02 --write-env <dir> --server-url https://192.168.1.149 --ca-file C:/ProgramData/LabNet/certs/labnet-ca.pem`
 3. Issue its certificate on the development PC:
    `labnet-certs issue lab-pc-02 --ip <its static IP> --dir C:\LabNet-CA`
 4. Commit the inventory, make a bundle, and follow the Lab PC steps in

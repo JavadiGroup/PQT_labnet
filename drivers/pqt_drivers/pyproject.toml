@@ -30,6 +30,14 @@ horiba_spectrometer = "pqt_drivers._generated.contracts:HORIBA_SPECTROMETER_CONT
 sacher_laser = "pqt_drivers._generated.contracts:SACHER_LASER_CONTRACT"
 ws7_wavemeter = "pqt_drivers._generated.contracts:WS7_WAVEMETER_CONTRACT"
 
+# The Control Center's device page for each type: src/pqt_drivers/panels/<device_type>.js.
+# Needs a Control Center that serves driver panels (labnet-control-center with
+# labnet.control_center.panels); an older one shows its generic page instead.
+[project.entry-points."labnet.control_center.panels"]
+horiba_spectrometer = "pqt_drivers.panels"
+sacher_laser = "pqt_drivers.panels"
+ws7_wavemeter = "pqt_drivers.panels"
+
 # labnet driver build: protos/pqt_drivers/v1/*.proto -> src/pqt_drivers/_generated/
 [tool.labnet.driver]
 package = "pqt_drivers"
@@ -41,6 +49,7 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "pqt_drivers._generated" = ["*.pyi"]
+"pqt_drivers.panels" = ["*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
